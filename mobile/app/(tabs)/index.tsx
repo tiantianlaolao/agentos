@@ -9,6 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useChatStore } from '../../src/stores/chatStore';
@@ -20,6 +22,7 @@ import {
   getMessages,
   saveConversation,
   saveMessage,
+  deleteConversation,
 } from '../../src/services/storage';
 import { MessageType } from '../../src/types/protocol';
 import type {
@@ -53,6 +56,7 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const [inputText, setInputText] = useState('');
   const [activeSkill, setActiveSkill] = useState<SkillInfo | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const currentAssistantId = useRef<string | null>(null);
 
   const {
@@ -190,7 +194,35 @@ export default function ChatScreen() {
     currentAssistantId.current = null;
     setActiveSkill(null);
     setGenerating(false);
+    setShowHistory(false);
   }, [setCurrentConversation, setMessages, setGenerating]);
+
+  const handleSelectConversation = useCallback((convId: string) => {
+    setCurrentConversation(convId);
+    setShowHistory(false);
+    currentAssistantId.current = null;
+    setActiveSkill(null);
+    setGenerating(false);
+  }, [setCurrentConversation, setGenerating]);
+
+  const handleDeleteConversation = useCallback((convId: string) => {
+    Alert.alert(t('chat.deleteConfirm'), '', [
+      { text: t('chat.cancel'), style: 'cancel' },
+      {
+        text: t('chat.delete'),
+        style: 'destructive',
+        onPress: async () => {
+          try { await deleteConversation(convId); } catch { /* ignore */ }
+          const updated = conversations.filter((c) => c.id !== convId);
+          setConversations(updated);
+          if (currentConversationId === convId) {
+            setCurrentConversation(null);
+            setMessages([]);
+          }
+        },
+      },
+    ]);
+  }, [conversations, currentConversationId, setConversations, setCurrentConversation, setMessages, t]);
 
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
@@ -281,15 +313,68 @@ export default function ChatScreen() {
         </View>
       )}
 
-      {/* Header bar with new conversation button */}
+      {/* Header bar with history and new conversation buttons */}
       <View style={styles.headerBar}>
-        <Text style={styles.headerTitle}>
+        <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.menuBtn}>
+          <Ionicons name="menu" size={22} color="#6c63ff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>
           {conversations.find((c) => c.id === currentConversationId)?.title || t('tabs.chat')}
         </Text>
         <TouchableOpacity onPress={handleNewConversation} style={styles.newChatBtn}>
           <Ionicons name="create-outline" size={22} color="#6c63ff" />
         </TouchableOpacity>
       </View>
+
+      {/* Conversation history modal */}
+      <Modal visible={showHistory} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('chat.history')}</Text>
+              <TouchableOpacity onPress={() => setShowHistory(false)}>
+                <Ionicons name="close" size={24} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.newChatRow} onPress={handleNewConversation}>
+              <Ionicons name="add-circle-outline" size={20} color="#6c63ff" />
+              <Text style={styles.newChatRowText}>{t('tabs.chat')}</Text>
+            </TouchableOpacity>
+            {conversations.length === 0 ? (
+              <Text style={styles.emptyText}>{t('chat.noConversations')}</Text>
+            ) : (
+              <FlatList
+                data={conversations}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[
+                      styles.convItem,
+                      item.id === currentConversationId && styles.convItemActive,
+                    ]}
+                    onPress={() => handleSelectConversation(item.id)}
+                    onLongPress={() => handleDeleteConversation(item.id)}
+                  >
+                    <Ionicons name="chatbubble-outline" size={16} color="#888" style={{ marginRight: 10 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.convTitle} numberOfLines={1}>{item.title}</Text>
+                      <Text style={styles.convDate}>
+                        {new Date(item.updatedAt).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteConversation(item.id)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#666" />
+                    </TouchableOpacity>
+                  </Pressable>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Message list or welcome */}
       {showWelcome ? (
@@ -364,10 +449,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#2d2d44',
+  },
+  menuBtn: {
+    padding: 6,
+    marginRight: 8,
   },
   headerTitle: {
     color: '#ffffff',
@@ -377,6 +466,73 @@ const styles = StyleSheet.create({
   },
   newChatBtn: {
     padding: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    flex: 1,
+    width: '80%',
+    backgroundColor: '#0f0f23',
+    borderRightWidth: 1,
+    borderRightColor: '#2d2d44',
+    paddingTop: 50,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#2d2d44',
+  },
+  modalTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  newChatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#2d2d44',
+  },
+  newChatRowText: {
+    color: '#6c63ff',
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 10,
+  },
+  emptyText: {
+    color: '#666',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 40,
+  },
+  convItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1a1a2e',
+  },
+  convItemActive: {
+    backgroundColor: '#1a1a2e',
+  },
+  convTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  convDate: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 2,
   },
   welcomeContainer: {
     flex: 1,

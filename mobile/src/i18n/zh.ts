@@ -10,6 +10,11 @@ export default {
     skillRunning: '正在执行技能: {{name}}',
     connectionLost: '连接已断开，正在重连...',
     welcome: '你好！我是 AgentOS 助手，有什么可以帮你的？',
+    history: '会话记录',
+    noConversations: '暂无会话记录',
+    deleteConfirm: '确定删除这个会话吗？',
+    delete: '删除',
+    cancel: '取消',
   },
   settings: {
     title: '设置',

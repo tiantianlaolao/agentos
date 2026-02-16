@@ -10,6 +10,11 @@ export default {
     skillRunning: 'Running skill: {{name}}',
     connectionLost: 'Connection lost. Reconnecting...',
     welcome: 'Hello! I am AgentOS Assistant. How can I help you?',
+    history: 'Conversations',
+    noConversations: 'No conversations yet',
+    deleteConfirm: 'Delete this conversation?',
+    delete: 'Delete',
+    cancel: 'Cancel',
   },
   settings: {
     title: 'Settings',
