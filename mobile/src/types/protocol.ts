@@ -58,6 +58,7 @@ export interface ConnectMessage extends BaseMessage {
     provider?: LLMProvider;
     apiKey?: string;
     openclawUrl?: string;
+    openclawToken?: string;
     deviceId?: string;
   };
 }

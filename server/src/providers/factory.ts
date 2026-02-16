@@ -1,11 +1,13 @@
 import type { ConnectionMode, LLMProvider as LLMProviderType } from '../types/protocol.js';
 import type { LLMProvider } from './base.js';
 import { DeepSeekProvider } from './deepseek.js';
+import { OpenClawAdapter } from '../adapters/openclaw.js';
 
 interface ProviderOptions {
   provider?: LLMProviderType;
   apiKey?: string;
   openclawUrl?: string;
+  openclawToken?: string;
 }
 
 /**
@@ -36,10 +38,10 @@ export function createProvider(mode: ConnectionMode, options: ProviderOptions): 
     }
 
     case 'openclaw': {
-      // TODO: Implement OpenClaw adapter in Step 1
-      // For now, return null — OpenClaw mode will proxy directly
-      console.log(`[Provider] OpenClaw mode, URL: ${options.openclawUrl}`);
-      return null;
+      if (!options.openclawUrl) {
+        throw new Error('OpenClaw URL required for openclaw mode');
+      }
+      return new OpenClawAdapter(options.openclawUrl, options.openclawToken);
     }
 
     default:

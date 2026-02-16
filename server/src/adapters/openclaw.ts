@@ -1,41 +1,62 @@
-import WebSocket from 'ws';
+import OpenAI from 'openai';
 import type { ChatHistoryItem } from '../types/protocol.js';
 import type { LLMProvider, ChatOptions } from '../providers/base.js';
 
 /**
- * OpenClaw WebSocket adapter.
- * Connects to a user's OpenClaw instance and proxies messages.
+ * OpenClaw adapter using the OpenAI-compatible HTTP API.
  *
- * TODO: Implement in Step 1 (backend agent).
- * This is a skeleton showing the expected interface.
+ * OpenClaw's Gateway exposes `/v1/chat/completions` which is OpenAI-compatible.
+ * This adapter leverages the OpenAI SDK pointed at the user's OpenClaw instance.
+ *
+ * Authentication: Bearer token (gateway.auth.token).
+ * Model field: "openclaw:main" routes to the default agent.
  */
 export class OpenClawAdapter implements LLMProvider {
   readonly name = 'openclaw';
-  private url: string;
-  private ws: WebSocket | null = null;
+  private client: OpenAI;
+  private model: string;
 
-  constructor(url: string) {
-    this.url = url;
+  constructor(url: string, token?: string) {
+    // Normalize URL: ensure it ends with /v1 for the OpenAI SDK
+    const baseURL = url.replace(/\/+$/, '').replace(/\/v1$/, '') + '/v1';
+
+    this.client = new OpenAI({
+      apiKey: token || 'openclaw',
+      baseURL,
+    });
+    this.model = 'openclaw:main';
   }
 
   async *chat(
     messages: ChatHistoryItem[],
-    _options?: ChatOptions
+    options?: ChatOptions
   ): AsyncIterable<string> {
-    // TODO: Implement OpenClaw WebSocket protocol
-    // 1. Connect to OpenClaw instance at this.url
-    // 2. Send the last user message
-    // 3. Stream back response chunks
-    // 4. Handle disconnection and reconnection
+    try {
+      const stream = await this.client.chat.completions.create(
+        {
+          model: this.model,
+          messages: messages.map((m) => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })),
+          stream: true,
+        },
+        { signal: options?.signal }
+      );
 
-    void messages;
-    throw new Error('OpenClaw adapter not yet implemented');
-  }
-
-  disconnect(): void {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (delta) {
+          yield delta;
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+      // Wrap connection errors with a friendly message
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`OpenClaw connection failed: ${message}`);
     }
   }
 }
