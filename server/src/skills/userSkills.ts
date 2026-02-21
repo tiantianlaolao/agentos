@@ -30,6 +30,9 @@ export interface CatalogListOptions {
   category?: string;
   search?: string;
   environment?: string;
+  /** User context for visibility filtering (private skills only visible to owner) */
+  userPhone?: string;
+  userId?: string;
 }
 
 // ── Prepared statements (lazy init) ──
@@ -49,6 +52,9 @@ const stmts = {
   ),
   getDefaults: db.prepare(
     'SELECT name FROM skill_catalog WHERE is_default = 1 AND visibility = \'public\''
+  ),
+  deleteCatalogNotIn: db.prepare(
+    'DELETE FROM skill_catalog WHERE name NOT IN (SELECT value FROM json_each(?))'
   ),
   upsertCatalog: db.prepare(`
     INSERT INTO skill_catalog (name, version, description, author, category, environments, permissions, functions, audit, audit_source, visibility, owner, is_default, created_at, updated_at)
@@ -140,6 +146,14 @@ export function syncCatalogFromRegistry(): void {
     }
   });
   syncAll();
+
+  // Remove skills from catalog that are no longer in the registry
+  const activeNames = allSkills.map((s) => s.manifest.name);
+  const deleted = stmts.deleteCatalogNotIn.run(JSON.stringify(activeNames));
+  if (deleted.changes > 0) {
+    console.log(`[UserSkills] Removed ${deleted.changes} stale skill(s) from catalog`);
+  }
+
   console.log(`[UserSkills] Synced ${allSkills.length} skills to catalog`);
 }
 
@@ -156,6 +170,15 @@ export function listSkillCatalog(opts?: CatalogListOptions): SkillCatalogEntry[]
   }
 
   let entries = rows.map(rowToCatalogEntry);
+
+  // Visibility filtering: private skills only visible to their owner
+  entries = entries.filter((e) => {
+    if (!e.visibility || e.visibility === 'public') return true;
+    if (!opts?.userPhone && !opts?.userId) return false;
+    if (!e.owner) return false;
+    return (!!opts.userPhone && e.owner === opts.userPhone) ||
+           (!!opts.userId && e.owner === opts.userId);
+  });
 
   if (opts?.search) {
     const q = opts.search.toLowerCase();

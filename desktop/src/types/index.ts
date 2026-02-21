@@ -47,6 +47,7 @@ export interface SkillManifestInfo {
   installed?: boolean;
   environments?: string[];
   category?: string;
+  visibility?: string;
   emoji?: string;
   eligible?: boolean;
   functions: Array<{ name: string; description: string }>;

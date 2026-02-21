@@ -1244,6 +1244,16 @@
   color: #666;
 }
 
+.skill-private-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin-left: 4px;
+}
+
 .skill-desc {
   font-size: 13px;
   color: #aaa;

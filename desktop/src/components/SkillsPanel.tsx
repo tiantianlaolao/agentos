@@ -275,6 +275,9 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
                         {skill.emoji && <span className="skill-emoji">{skill.emoji}</span>}
                         <span className="skill-name">{skill.name}</span>
                         {skill.version && <span className="skill-version">v{skill.version}</span>}
+                        {(skill as any).visibility === 'private' && (
+                          <span className="skill-private-badge">Private</span>
+                        )}
                       </div>
                       {manageable ? (
                         <button
@@ -358,6 +361,9 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
                       <div className="skill-name-row">
                         <span className="skill-name">{skill.name}</span>
                         {skill.version && <span className="skill-version">v{skill.version}</span>}
+                        {skill.visibility === 'private' && (
+                          <span className="skill-private-badge">Private</span>
+                        )}
                       </div>
                       {skill.installed ? (
                         <span className="skill-installed-badge">Installed</span>

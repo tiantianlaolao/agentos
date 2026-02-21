@@ -284,6 +284,7 @@ async function handleSkillListRequest(ws: WebSocket, session?: Session): Promise
     enabled: s.enabled,
     installed: installedNames ? installedNames.includes(s.manifest.name) : true,
     environments: s.manifest.environments,
+    visibility: s.manifest.visibility || 'public',
     functions: s.manifest.functions.map((f) => ({
       name: f.name,
       description: f.description,
@@ -363,6 +364,8 @@ function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMe
     category: opts.category,
     search: opts.search,
     environment: opts.environment,
+    userPhone: session?.userPhone || undefined,
+    userId: session?.userId || undefined,
   });
 
   const installedNames = session?.userId

@@ -40,6 +40,13 @@ export async function loadBuiltinSkills(): Promise<void> {
     console.error('[SkillLoader] Failed to load translate skill:', err);
   }
 
+  try {
+    const usstockMonitor = await import('./usstock-monitor/index.js');
+    skills.push(usstockMonitor);
+  } catch (err) {
+    console.error('[SkillLoader] Failed to load usstock-monitor skill:', err);
+  }
+
   // Register all loaded skills
   for (const skill of skills) {
     try {

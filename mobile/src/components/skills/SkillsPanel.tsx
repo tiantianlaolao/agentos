@@ -241,6 +241,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
 
   const renderInstalledSkill = useCallback(({ item }: { item: SkillManifestInfo }) => {
     const badge = AUDIT_BADGES[item.audit] || AUDIT_BADGES.unreviewed;
+    const isPrivate = item.visibility === 'private';
 
     return (
       <View style={styles.skillCard}>
@@ -249,6 +250,12 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
             {item.emoji ? <Text style={styles.skillEmoji}>{item.emoji}</Text> : null}
             <Text style={styles.skillName}>{item.name}</Text>
             {item.version ? <Text style={styles.skillVersion}>v{item.version}</Text> : null}
+            {isPrivate && (
+              <View style={styles.privateBadge}>
+                <Ionicons name="lock-closed" size={10} color="#f59e0b" />
+                <Text style={styles.privateText}>Private</Text>
+              </View>
+            )}
           </View>
           {manageable ? (
             <TouchableOpacity
@@ -306,6 +313,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
 
   const renderLibrarySkill = useCallback(({ item }: { item: SkillLibraryItem }) => {
     const badge = AUDIT_BADGES[item.audit] || AUDIT_BADGES.unreviewed;
+    const isPrivate = item.visibility === 'private';
 
     return (
       <View style={styles.skillCard}>
@@ -313,6 +321,12 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
           <View style={styles.skillNameRow}>
             <Text style={styles.skillName}>{item.name}</Text>
             {item.version ? <Text style={styles.skillVersion}>v{item.version}</Text> : null}
+            {isPrivate && (
+              <View style={styles.privateBadge}>
+                <Ionicons name="lock-closed" size={10} color="#f59e0b" />
+                <Text style={styles.privateText}>Private</Text>
+              </View>
+            )}
           </View>
           {item.installed ? (
             <View style={styles.installedBadge}>
@@ -688,6 +702,21 @@ const styles = StyleSheet.create({
   installedText: {
     color: '#22c55e',
     fontSize: 13,
+    fontWeight: '600',
+  },
+  privateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  privateText: {
+    color: '#f59e0b',
+    fontSize: 10,
     fontWeight: '600',
   },
   functionsSection: {
