@@ -202,4 +202,4 @@ Register your adapter in the WebSocket handler, and it will automatically work w
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE)
