@@ -120,7 +120,12 @@ export function handleConnection(ws: WebSocket): void {
     try {
       switch (message.type) {
         case MessageType.CONNECT:
-          session = await handleConnect(ws, message);
+          try {
+            session = await handleConnect(ws, message);
+          } catch (e) {
+            // handleConnect already sent error to client before throwing
+            console.error('[WS] Connect failed:', e instanceof Error ? e.message : e);
+          }
           break;
 
         case MessageType.CHAT_SEND:

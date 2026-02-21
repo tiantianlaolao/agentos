@@ -1,0 +1,77 @@
+{
+  "name": "file-manager",
+  "version": "0.1.0",
+  "description": "Local filesystem operations: list directory, read file, write file, search files. Runs on the desktop client via Tauri FS API.",
+  "author": "AgentOS",
+  "agents": "*",
+  "environments": ["desktop"],
+  "permissions": ["filesystem"],
+  "functions": [
+    {
+      "name": "list_directory",
+      "description": "List files and directories in a given path",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path to the directory"
+          }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "read_file",
+      "description": "Read the contents of a text file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path to the file"
+          }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "write_file",
+      "description": "Write content to a file (creates or overwrites)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path to the file"
+          },
+          "content": {
+            "type": "string",
+            "description": "Content to write to the file"
+          }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "search_files",
+      "description": "Search for files matching a pattern in a directory",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Directory to search in"
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Glob pattern or filename to search for"
+          }
+        },
+        "required": ["path", "pattern"]
+      }
+    }
+  ],
+  "audit": "platform",
+  "auditSource": "AgentOS"
+}

@@ -30,3 +30,13 @@ npm-debug.log*
 
 # Coverage
 coverage/
+
+# Rust / Tauri build
+desktop/src-tauri/target/
+desktop/src-tauri/gen/schemas/
+
+# Server data
+server/data/
+
+# Package locks (keep only root if needed)
+package-lock.json

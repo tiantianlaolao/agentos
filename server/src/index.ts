@@ -40,6 +40,9 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
+// APK download page (static files from /var/www/agentos-download)
+app.use('/download', express.static('/var/www/agentos-download'));
+
 // WebSocket server
 const wss = new WebSocketServer({ server, path: '/ws' });
 

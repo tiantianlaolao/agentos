@@ -54,7 +54,7 @@ let wsClient: WebSocketClient | null = null;
 let openclawClient: OpenClawDirectClient | null = null;
 
 function getWsClient(url: string): WebSocketClient {
-  if (!wsClient || !wsClient.isConnected) {
+  if (!wsClient) {
     wsClient = new WebSocketClient(url);
   }
   return wsClient;
@@ -372,6 +372,11 @@ export default function ChatScreen() {
       if (cleanupRef.current) {
         cleanupRef.current();
         cleanupRef.current = null;
+      }
+      // Disconnect WS client to cancel reconnect timers and prevent zombie connections
+      if (wsClient) {
+        wsClient.disconnect();
+        wsClient = null;
       }
     };
   }, [
@@ -698,7 +703,9 @@ export default function ChatScreen() {
     setInputText(`> ${quoted}\n\n`);
   }, []);
 
-  // Date separator helper
+  // Date separator helper — read labels once to keep callback stable (t changes every render)
+  const todayLabel = t('chat.today');
+  const yesterdayLabel = t('chat.yesterday');
   const getDateLabel = useCallback((timestamp: number): string => {
     const msgDate = new Date(timestamp);
     const today = new Date();
@@ -708,10 +715,10 @@ export default function ChatScreen() {
     const isSameDay = (a: Date, b: Date) =>
       a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-    if (isSameDay(msgDate, today)) return t('chat.today');
-    if (isSameDay(msgDate, yesterday)) return t('chat.yesterday');
+    if (isSameDay(msgDate, today)) return todayLabel;
+    if (isSameDay(msgDate, yesterday)) return yesterdayLabel;
     return msgDate.toLocaleDateString();
-  }, [t]);
+  }, [todayLabel, yesterdayLabel]);
 
   const renderItem = useCallback(({ item, index }: { item: ChatMessage; index: number }) => {
     const isLast = index === messages.length - 1 && item.role === 'assistant';

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentOS — Download</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f0f23;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: #1a1a2e;
+    border-radius: 20px;
+    padding: 48px 40px;
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .logo {
+    font-size: 56px;
+    margin-bottom: 12px;
+  }
+  h1 {
+    font-size: 32px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+  .tagline {
+    color: #888;
+    font-size: 15px;
+    margin-bottom: 32px;
+    line-height: 1.5;
+  }
+  .version {
+    display: inline-block;
+    background: #252540;
+    color: #6c63ff;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-bottom: 24px;
+  }
+  .download-btn {
+    display: block;
+    background: linear-gradient(135deg, #6c63ff, #5a52d5);
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    padding: 16px 32px;
+    border-radius: 14px;
+    text-decoration: none;
+    margin-bottom: 16px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .download-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(108,99,255,0.4);
+  }
+  .file-info {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 32px;
+  }
+  .features {
+    text-align: left;
+    margin-bottom: 24px;
+  }
+  .features h3 {
+    color: #aaa;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  .features ul {
+    list-style: none;
+    padding: 0;
+  }
+  .features li {
+    color: #ccc;
+    font-size: 14px;
+    padding: 6px 0;
+    border-bottom: 1px solid #252540;
+  }
+  .features li:last-child { border-bottom: none; }
+  .features li::before {
+    content: "\2713";
+    color: #6c63ff;
+    font-weight: 700;
+    margin-right: 10px;
+  }
+  .links {
+    margin-top: 24px;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+  }
+  .links a {
+    color: #6c63ff;
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .links a:hover { text-decoration: underline; }
+  .footer {
+    margin-top: 32px;
+    color: #444;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">&#x1F916;</div>
+    <h1>AgentOS</h1>
+    <p class="tagline">The browser for the Agent era.<br>Run, manage, and chat with AI agents — anywhere.</p>
+    <span class="version">v0.1.0 Beta</span>
+    <a class="download-btn" href="/apk/agentos-latest.apk">Download for Android</a>
+    <p class="file-info">APK (~81 MB) &middot; Requires Android 7.0+</p>
+    <div class="features">
+      <h3>What's included</h3>
+      <ul>
+        <li>Built-in AI assistant (zero config)</li>
+        <li>OpenClaw agent support (hosted & self-hosted)</li>
+        <li>CoPaw / AgentScope integration</li>
+        <li>Bring Your Own Key (DeepSeek, OpenAI, Claude, Kimi)</li>
+        <li>Skills system (weather, translation, and more)</li>
+        <li>Conversation memory</li>
+        <li>Chinese / English UI</li>
+      </ul>
+    </div>
+    <div class="links">
+      <a href="https://github.com/skingway/agentos">GitHub</a>
+      <a href="https://github.com/skingway/agentos/issues">Feedback</a>
+    </div>
+  </div>
+  <p class="footer">&copy; 2026 AgentOS &middot; MIT License</p>
+</body>
+</html>
