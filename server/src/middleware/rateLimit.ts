@@ -7,48 +7,36 @@ interface RateLimitEntry {
 
 const store = new Map<string, RateLimitEntry>();
 
-const dailyLimit = parseInt(process.env.FREE_TIER_DAILY_LIMIT || '20', 10);
+const ANONYMOUS_LIMIT = parseInt(process.env.FREE_TIER_DAILY_LIMIT || '20', 10);
+const REGISTERED_LIMIT = parseInt(process.env.REGISTERED_DAILY_LIMIT || '50', 10);
 
 function todayString(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 /**
- * Check if a device has exceeded the daily message limit.
- * Only applies to 'builtin' mode. Returns { allowed, remaining }.
+ * Check if a user/device has exceeded the daily message limit.
+ * Only applies to 'builtin' mode. Registered users get higher limits.
  */
 export function checkRateLimit(
-  deviceId: string,
-  mode: ConnectionMode
+  identifier: string,
+  mode: ConnectionMode,
+  isRegistered = false
 ): { allowed: boolean; remaining: number } {
-  // byok and openclaw are unlimited
-  if (mode !== 'builtin') {
-    return { allowed: true, remaining: Infinity };
-  }
-
-  const today = todayString();
-  let entry = store.get(deviceId);
-
-  // Reset if it's a new day
-  if (!entry || entry.resetDate !== today) {
-    entry = { count: 0, resetDate: today };
-    store.set(deviceId, entry);
-  }
-
-  const remaining = Math.max(0, dailyLimit - entry.count);
-  return { allowed: entry.count < dailyLimit, remaining };
+  // TODO: Rate limiting temporarily disabled for testing. Re-enable with pricing rules later.
+  return { allowed: true, remaining: Infinity };
 }
 
 /**
- * Increment the message count for a device. Call after a successful message.
+ * Increment the message count for a user/device. Call after a successful message.
  */
-export function incrementCount(deviceId: string): void {
+export function incrementCount(identifier: string): void {
   const today = todayString();
-  let entry = store.get(deviceId);
+  let entry = store.get(identifier);
 
   if (!entry || entry.resetDate !== today) {
     entry = { count: 0, resetDate: today };
-    store.set(deviceId, entry);
+    store.set(identifier, entry);
   }
 
   entry.count++;

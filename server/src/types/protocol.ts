@@ -13,6 +13,8 @@ export enum MessageType {
   CONNECT = 'connect',
   CHAT_SEND = 'chat.send',
   CHAT_STOP = 'chat.stop',
+  SKILL_LIST_REQUEST = 'skill.list.request',
+  SKILL_TOGGLE = 'skill.toggle',
 
   // Server -> Client
   CONNECTED = 'connected',
@@ -20,16 +22,23 @@ export enum MessageType {
   CHAT_DONE = 'chat.done',
   SKILL_START = 'skill.start',
   SKILL_RESULT = 'skill.result',
+  PUSH_MESSAGE = 'push.message',
+  SKILL_LIST_RESPONSE = 'skill.list.response',
   ERROR = 'error',
+
+  // Desktop <-> Server
+  DESKTOP_REGISTER = 'desktop.register',
+  DESKTOP_COMMAND = 'desktop.command',
+  DESKTOP_RESULT = 'desktop.result',
 
   // Bidirectional
   PING = 'ping',
   PONG = 'pong',
 }
 
-export type ConnectionMode = 'builtin' | 'openclaw' | 'byok';
+export type ConnectionMode = 'builtin' | 'openclaw' | 'copaw' | 'byok' | 'desktop';
 
-export type LLMProvider = 'deepseek' | 'openai' | 'anthropic';
+export type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
 
 export enum ErrorCode {
   INVALID_MESSAGE = 'INVALID_MESSAGE',
@@ -38,6 +47,7 @@ export enum ErrorCode {
   PROVIDER_ERROR = 'PROVIDER_ERROR',
   SKILL_ERROR = 'SKILL_ERROR',
   OPENCLAW_DISCONNECTED = 'OPENCLAW_DISCONNECTED',
+  HOSTED_QUOTA_EXCEEDED = 'HOSTED_QUOTA_EXCEEDED',
   INTERNAL_ERROR = 'INTERNAL_ERROR',
 }
 
@@ -59,7 +69,12 @@ export interface ConnectMessage extends BaseMessage {
     apiKey?: string;
     openclawUrl?: string;
     openclawToken?: string;
+    openclawHosted?: boolean;
+    copawUrl?: string;
+    copawToken?: string;
     deviceId?: string;
+    authToken?: string;
+    model?: string;
   };
 }
 
@@ -79,6 +94,18 @@ export interface ChatStopMessage extends BaseMessage {
   };
 }
 
+export interface SkillListRequestMessage extends BaseMessage {
+  type: MessageType.SKILL_LIST_REQUEST;
+}
+
+export interface SkillToggleMessage extends BaseMessage {
+  type: MessageType.SKILL_TOGGLE;
+  payload: {
+    skillName: string;
+    enabled: boolean;
+  };
+}
+
 // ===== Server -> Client =====
 
 export interface ConnectedMessage extends BaseMessage {
@@ -87,6 +114,7 @@ export interface ConnectedMessage extends BaseMessage {
     sessionId: string;
     mode: ConnectionMode;
     skills: string[];
+    hostedQuota?: { used: number; total: number };
   };
 }
 
@@ -128,12 +156,75 @@ export interface SkillResultMessage extends BaseMessage {
   };
 }
 
+export interface PushMessage extends BaseMessage {
+  type: MessageType.PUSH_MESSAGE;
+  payload: {
+    content: string;
+    source: string; // e.g. 'openclaw-cron'
+  };
+}
+
+export interface SkillListResponseMessage extends BaseMessage {
+  type: MessageType.SKILL_LIST_RESPONSE;
+  payload: {
+    skills: SkillManifestInfo[];
+  };
+}
+
+export interface SkillManifestInfo {
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  audit: string;
+  auditSource?: string;
+  enabled: boolean;
+  emoji?: string;
+  eligible?: boolean;
+  functions: Array<{ name: string; description: string }>;
+}
+
 export interface ErrorMessage extends BaseMessage {
   type: MessageType.ERROR;
   payload: {
     code: ErrorCode;
     message: string;
     conversationId?: string;
+  };
+}
+
+// ===== Desktop Messages =====
+
+/** Desktop client registers with server, reports capabilities */
+export interface DesktopRegisterMessage extends BaseMessage {
+  type: MessageType.DESKTOP_REGISTER;
+  payload: {
+    os?: string;
+    arch?: string;
+    hostname?: string;
+    localAgents?: string[];
+    localSkills?: string[];
+  };
+}
+
+/** Mobile sends command to desktop (routed through server) */
+export interface DesktopCommandMessage extends BaseMessage {
+  type: MessageType.DESKTOP_COMMAND;
+  payload: {
+    command: string;
+    args?: Record<string, unknown>;
+    targetDeviceId?: string;
+  };
+}
+
+/** Desktop sends execution result back */
+export interface DesktopResultMessage extends BaseMessage {
+  type: MessageType.DESKTOP_RESULT;
+  payload: {
+    commandId: string;
+    success: boolean;
+    data?: Record<string, unknown>;
+    error?: string;
   };
 }
 
@@ -149,7 +240,7 @@ export interface PongMessage extends BaseMessage {
 
 // ===== Union =====
 
-export type ClientMessage = ConnectMessage | ChatSendMessage | ChatStopMessage | PingMessage;
+export type ClientMessage = ConnectMessage | ChatSendMessage | ChatStopMessage | SkillListRequestMessage | SkillToggleMessage | DesktopRegisterMessage | DesktopCommandMessage | DesktopResultMessage | PingMessage;
 
 export type ServerMessage =
   | ConnectedMessage
@@ -157,6 +248,10 @@ export type ServerMessage =
   | ChatDoneMessage
   | SkillStartMessage
   | SkillResultMessage
+  | PushMessage
+  | SkillListResponseMessage
+  | DesktopCommandMessage
+  | DesktopResultMessage
   | ErrorMessage
   | PongMessage;
 

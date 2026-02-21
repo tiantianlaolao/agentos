@@ -9,6 +9,7 @@
  * - Integration with chatStore
  */
 
+import { randomUUID } from 'expo-crypto';
 import {
   MessageType,
   type ClientMessage,
@@ -25,17 +26,19 @@ export class WebSocketClient {
   private handlers: Map<string, MessageHandler[]> = new Map();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectAttempts = 0;
 
   constructor(url: string) {
     this.url = url;
   }
 
-  connect(mode: ConnectionMode, options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string }): void {
-    this.disconnect();
+  connect(mode: ConnectionMode, options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string }): void {
+    this.cleanup();
 
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
+      this.reconnectAttempts = 0; // Reset on successful connection
       this.sendConnect(mode, options);
       this.startPing();
     };
@@ -55,7 +58,7 @@ export class WebSocketClient {
         id: '',
         type: MessageType.ERROR,
         timestamp: Date.now(),
-        payload: { code: 'CONNECTION_CLOSED' as never, message: 'Connection closed' },
+        payload: { code: 'CONNECTION_CLOSED' as never, message: 'Reconnecting...' },
       } as never);
       this.scheduleReconnect(mode, options);
     };
@@ -65,16 +68,26 @@ export class WebSocketClient {
     };
   }
 
-  disconnect(): void {
+  /** Silently close current connection without triggering error/reconnect. */
+  private cleanup(): void {
     this.stopPing();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     if (this.ws) {
+      // Null out handlers BEFORE close to prevent zombie callbacks
+      this.ws.onopen = null;
+      this.ws.onclose = null;
+      this.ws.onmessage = null;
+      this.ws.onerror = null;
       this.ws.close();
       this.ws = null;
     }
+  }
+
+  disconnect(): void {
+    this.cleanup();
   }
 
   send(message: ClientMessage): void {
@@ -99,10 +112,10 @@ export class WebSocketClient {
 
   private sendConnect(
     mode: ConnectionMode,
-    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string }
+    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string }
   ): void {
     this.send({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       type: MessageType.CONNECT,
       timestamp: Date.now(),
       payload: {
@@ -110,6 +123,13 @@ export class WebSocketClient {
         provider: options?.provider,
         apiKey: options?.apiKey,
         openclawUrl: options?.openclawUrl,
+        openclawToken: options?.openclawToken,
+        openclawHosted: options?.openclawHosted,
+        copawUrl: options?.copawUrl,
+        copawToken: options?.copawToken,
+        authToken: options?.authToken,
+        model: options?.model,
+        deviceId: options?.deviceId,
       },
     });
   }
@@ -129,11 +149,11 @@ export class WebSocketClient {
   private startPing(): void {
     this.pingTimer = setInterval(() => {
       this.send({
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         type: MessageType.PING,
         timestamp: Date.now(),
       });
-    }, 30000);
+    }, 15000);
   }
 
   private stopPing(): void {
@@ -145,11 +165,14 @@ export class WebSocketClient {
 
   private scheduleReconnect(
     mode: ConnectionMode,
-    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string }
+    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string }
   ): void {
+    // Exponential backoff: 1s, 2s, 4s, 8s, ... max 30s
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => {
-      console.log('[WS] Reconnecting...');
+      console.log(`[WS] Reconnecting (attempt ${this.reconnectAttempts}, delay ${delay}ms)...`);
       this.connect(mode, options);
-    }, 3000);
+    }, delay);
   }
 }

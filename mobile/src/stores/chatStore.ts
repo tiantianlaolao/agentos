@@ -1,13 +1,28 @@
 import { create } from 'zustand';
+import type { ConnectionMode } from '../types/protocol';
 
 export interface ChatMessage {
   id: string;
   conversationId: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
   isStreaming?: boolean;
   skillName?: string;
+  // Message type for special rendering
+  messageType?: 'text' | 'skill_result' | 'error' | 'push';
+  skillResult?: {
+    skillName: string;
+    success: boolean;
+    data?: Record<string, unknown>;
+    error?: string;
+  };
+  // Push metadata
+  isPush?: boolean;
+  source?: string;
+  // Error metadata
+  isError?: boolean;
+  errorCode?: string;
 }
 
 export interface Conversation {
@@ -15,6 +30,8 @@ export interface Conversation {
   title: string;
   createdAt: number;
   updatedAt: number;
+  mode: ConnectionMode;
+  userId: string;
 }
 
 interface ChatState {

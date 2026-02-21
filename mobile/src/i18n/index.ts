@@ -1,5 +1,6 @@
 import { I18n } from 'i18n-js';
 import { getLocales } from 'expo-localization';
+import { useSettingsStore } from '../stores/settingsStore';
 import en from './en';
 import zh from './zh';
 
@@ -23,9 +24,11 @@ export function t(key: string, options?: Record<string, string>): string {
 
 /**
  * Hook-style accessor for use in components.
- * Returns the translation function bound to current locale.
+ * Subscribes to settingsStore locale so components re-render on language change.
  */
 export function useTranslation(): (key: string, options?: Record<string, string>) => string {
+  const locale = useSettingsStore((s) => s.locale);
+  i18n.locale = locale;
   return (key: string, options?: Record<string, string>) => i18n.t(key, options);
 }
 

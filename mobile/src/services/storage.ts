@@ -10,6 +10,7 @@
 
 import * as SQLite from 'expo-sqlite';
 import type { ChatMessage, Conversation } from '../stores/chatStore';
+import type { ConnectionMode } from '../types/protocol';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -21,7 +22,9 @@ export async function initDatabase(): Promise<void> {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'builtin',
+      user_id TEXT NOT NULL DEFAULT 'anonymous'
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -42,33 +45,69 @@ export async function initDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_messages_conversation
       ON messages(conversation_id, timestamp);
   `);
+
+  // Migration: add mode column to existing databases
+  try {
+    await db.runAsync("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'builtin'");
+  } catch {
+    // Column already exists — ignore
+  }
+
+  // Migration: add user_id column for per-user conversation isolation
+  try {
+    await db.runAsync("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT 'anonymous'");
+  } catch {
+    // Column already exists — ignore
+  }
+
+  // One-time cleanup: purge old builtin conversations that were polluted by cross-mode history
+  const cleaned = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM settings WHERE key = 'builtin_purged_v1'"
+  );
+  if (!cleaned) {
+    await db.execAsync(`
+      DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE mode = 'builtin');
+      DELETE FROM conversations WHERE mode = 'builtin';
+    `);
+    await db.runAsync("INSERT OR REPLACE INTO settings (key, value) VALUES ('builtin_purged_v1', '1')");
+  }
 }
 
-export async function getConversations(): Promise<Conversation[]> {
+export async function getConversations(mode?: ConnectionMode, userId?: string): Promise<Conversation[]> {
   if (!db) throw new Error('Database not initialized');
-  const rows = await db.getAllAsync<{
-    id: string;
-    title: string;
-    created_at: number;
-    updated_at: number;
-  }>('SELECT * FROM conversations ORDER BY updated_at DESC');
+
+  type Row = { id: string; title: string; created_at: number; updated_at: number; mode: string; user_id: string };
+  let rows: Row[];
+  if (mode && userId) {
+    rows = await db.getAllAsync<Row>('SELECT * FROM conversations WHERE mode = ? AND user_id = ? ORDER BY updated_at DESC', mode, userId);
+  } else if (mode) {
+    rows = await db.getAllAsync<Row>('SELECT * FROM conversations WHERE mode = ? ORDER BY updated_at DESC', mode);
+  } else if (userId) {
+    rows = await db.getAllAsync<Row>('SELECT * FROM conversations WHERE user_id = ? ORDER BY updated_at DESC', userId);
+  } else {
+    rows = await db.getAllAsync<Row>('SELECT * FROM conversations ORDER BY updated_at DESC');
+  }
 
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    mode: (r.mode || 'builtin') as ConnectionMode,
+    userId: r.user_id || 'anonymous',
   }));
 }
 
 export async function saveConversation(conv: Conversation): Promise<void> {
   if (!db) throw new Error('Database not initialized');
   await db.runAsync(
-    'INSERT OR REPLACE INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)',
+    'INSERT OR REPLACE INTO conversations (id, title, created_at, updated_at, mode, user_id) VALUES (?, ?, ?, ?, ?, ?)',
     conv.id,
     conv.title,
     conv.createdAt,
-    conv.updatedAt
+    conv.updatedAt,
+    conv.mode || 'builtin',
+    conv.userId || 'anonymous'
   );
 }
 

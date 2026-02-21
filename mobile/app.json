@@ -23,7 +23,8 @@
         "backgroundColor": "#1a1a2e"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.agentos.app"
+      "package": "com.agentos.app",
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -31,7 +32,8 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      "expo-localization"
+      "expo-localization",
+      "./plugins/withCleartextTraffic"
     ]
   }
 }
