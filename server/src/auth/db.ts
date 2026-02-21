@@ -3,6 +3,13 @@ import { randomUUID } from 'crypto';
 import path from 'path';
 import fs from 'fs';
 
+// Late-bound import to avoid circular dependency (userSkills imports db)
+let _installDefaultSkillsForUser: ((userId: string) => void) | null = null;
+
+export function setInstallDefaultSkillsFn(fn: (userId: string) => void): void {
+  _installDefaultSkillsForUser = fn;
+}
+
 const DATA_DIR = path.resolve('data');
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -47,6 +54,32 @@ db.exec(`
     instance_token TEXT,
     instance_status TEXT DEFAULT 'pending'
   );
+
+  CREATE TABLE IF NOT EXISTS skill_catalog (
+    name TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    description TEXT,
+    author TEXT,
+    category TEXT DEFAULT 'general',
+    environments TEXT DEFAULT '["cloud"]',
+    permissions TEXT DEFAULT '[]',
+    functions TEXT DEFAULT '[]',
+    audit TEXT DEFAULT 'unreviewed',
+    audit_source TEXT,
+    visibility TEXT DEFAULT 'public',
+    owner TEXT,
+    is_default INTEGER DEFAULT 1,
+    created_at INTEGER,
+    updated_at INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS user_installed_skills (
+    user_id TEXT NOT NULL,
+    skill_name TEXT NOT NULL,
+    installed_at INTEGER NOT NULL,
+    source TEXT DEFAULT 'library',
+    PRIMARY KEY (user_id, skill_name)
+  );
 `);
 
 // Migration: add per-user instance columns for existing DBs
@@ -64,6 +97,16 @@ export function createUser(phone: string, passwordHash: string): { id: string; p
   db.prepare(
     'INSERT INTO users (id, phone, password_hash, created_at) VALUES (?, ?, ?, ?)'
   ).run(id, phone, passwordHash, now);
+
+  // Auto-install default skills for new user
+  if (_installDefaultSkillsForUser) {
+    try {
+      _installDefaultSkillsForUser(id);
+    } catch (err) {
+      console.error('[DB] Failed to install default skills for new user:', err);
+    }
+  }
+
   return { id, phone };
 }
 

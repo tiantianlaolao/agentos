@@ -53,6 +53,7 @@ impl WsClient {
         copaw_url: Option<String>,
         copaw_token: Option<String>,
         openclaw_hosted: Option<bool>,
+        copaw_hosted: Option<bool>,
         channel: Channel<Value>,
     ) -> Result<ConnectResult, Box<dyn std::error::Error + Send + Sync>> {
         self.disconnect().await;
@@ -79,6 +80,7 @@ impl WsClient {
                 "copawUrl": copaw_url,
                 "copawToken": copaw_token,
                 "openclawHosted": openclaw_hosted,
+                "copawHosted": copaw_hosted,
             }
         });
 
@@ -193,6 +195,9 @@ impl WsClient {
                             "skill.list.response" => {
                                 let _ = channel.send(json!({"type": "skill.list.response", "payload": &parsed["payload"]}));
                             }
+                            "skill.library.response" => {
+                                let _ = channel.send(json!({"type": "skill.library.response", "payload": &parsed["payload"]}));
+                            }
                             "ping" => {
                                 let pong = json!({
                                     "id": uuid::Uuid::new_v4().to_string(),
@@ -293,6 +298,55 @@ impl WsClient {
                 "skillName": name,
                 "enabled": enabled
             }
+        });
+        let mut s = sink.lock().await;
+        s.send(Message::Text(msg.to_string())).await?;
+        Ok(())
+    }
+
+    pub async fn send_skill_install(
+        &self,
+        name: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let sink = self.sink.as_ref().ok_or("Not connected")?;
+        let msg = json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "type": "skill.install",
+            "timestamp": chrono_timestamp(),
+            "payload": {
+                "skillName": name
+            }
+        });
+        let mut s = sink.lock().await;
+        s.send(Message::Text(msg.to_string())).await?;
+        Ok(())
+    }
+
+    pub async fn send_skill_uninstall(
+        &self,
+        name: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let sink = self.sink.as_ref().ok_or("Not connected")?;
+        let msg = json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "type": "skill.uninstall",
+            "timestamp": chrono_timestamp(),
+            "payload": {
+                "skillName": name
+            }
+        });
+        let mut s = sink.lock().await;
+        s.send(Message::Text(msg.to_string())).await?;
+        Ok(())
+    }
+
+    pub async fn send_skill_library_request(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let sink = self.sink.as_ref().ok_or("Not connected")?;
+        let msg = json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "type": "skill.library.request",
+            "timestamp": chrono_timestamp(),
+            "payload": {}
         });
         let mut s = sink.lock().await;
         s.send(Message::Text(msg.to_string())).await?;

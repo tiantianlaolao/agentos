@@ -6,6 +6,8 @@ import { ChatInput } from './components/ChatInput.tsx';
 import { StatusBar } from './components/StatusBar.tsx';
 import { SettingsPanel } from './components/SettingsPanel.tsx';
 import { SkillsPanel } from './components/SkillsPanel.tsx';
+import { MemoryPanel } from './components/MemoryPanel.tsx';
+import { ProcessPanel } from './components/ProcessPanel.tsx';
 import { useWebSocket } from './hooks/useWebSocket.ts';
 import { useSettingsStore } from './stores/settingsStore.ts';
 import { useAuthStore } from './stores/authStore.ts';
@@ -38,10 +40,13 @@ function App() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showSkills, setShowSkills] = useState(false);
+  const [showMemory, setShowMemory] = useState(false);
+  const [showProcess, setShowProcess] = useState(false);
   const [directStreaming, setDirectStreaming] = useState(false);
   const [openclawConnected, setOpenclawConnected] = useState(false);
   const [openclawError, setOpenclawError] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [quotedText, setQuotedText] = useState<string | null>(null);
   const conversationId = useRef(generateId());
   const abortRef = useRef<AbortController | null>(null);
   const openclawClientRef = useRef<OpenClawDirectClient | null>(null);
@@ -52,6 +57,7 @@ function App() {
   const setServerUrl = useSettingsStore((s) => s.setServerUrl);
   const copawUrl = useSettingsStore((s) => s.copawUrl);
   const copawToken = useSettingsStore((s) => s.copawToken);
+  const copawSubMode = useSettingsStore((s) => s.copawSubMode);
   const openclawSubMode = useSettingsStore((s) => s.openclawSubMode);
   const hostedActivated = useSettingsStore((s) => s.hostedActivated);
   const authToken = useAuthStore((s) => s.authToken);
@@ -198,9 +204,10 @@ function App() {
     // Admin users: no openclawHosted flag → server ADMIN_PHONES check → built-in OpenClaw
     // Normal users with hosted activated: pass openclawHosted flag
     const useHosted = mode === 'openclaw' && !isAdmin && openclawSubMode === 'hosted' && hostedActivated;
+    const useCopawHosted = mode === 'copaw' && copawSubMode === 'hosted';
 
     invoke('frontend_log', {
-      msg: `handleConnect: mode=${mode}, subMode=${openclawSubMode}, hostedActivated=${hostedActivated}, useHosted=${useHosted}, hasToken=${!!authToken}`,
+      msg: `handleConnect: mode=${mode}, subMode=${openclawSubMode}, copawSubMode=${copawSubMode}, hostedActivated=${hostedActivated}, useHosted=${useHosted}, useCopawHosted=${useCopawHosted}, hasToken=${!!authToken}`,
     }).catch(() => {});
 
     ws.connect(
@@ -209,11 +216,12 @@ function App() {
       authToken || undefined,
       undefined,
       undefined,
-      mode === 'copaw' ? copawUrl || undefined : undefined,
-      mode === 'copaw' ? copawToken || undefined : undefined,
+      mode === 'copaw' && copawSubMode === 'selfhosted' ? copawUrl || undefined : undefined,
+      mode === 'copaw' && copawSubMode === 'selfhosted' ? copawToken || undefined : undefined,
       useHosted ? true : undefined,
+      useCopawHosted ? true : undefined,
     );
-  }, [ws, serverUrl, mode, copawUrl, copawToken, isDirectOpenClaw, isDirectBYOK, getOrCreateOpenClawClient, authToken, isLoggedIn, openclawSubMode, hostedActivated, isAdmin]);
+  }, [ws, serverUrl, mode, copawUrl, copawToken, copawSubMode, isDirectOpenClaw, isDirectBYOK, getOrCreateOpenClawClient, authToken, isLoggedIn, openclawSubMode, hostedActivated, isAdmin]);
 
   const handleDisconnect = useCallback(() => {
     if (isDirectOpenClaw && openclawClientRef.current) {
@@ -231,6 +239,36 @@ function App() {
     setStreamingContent(null);
     conversationId.current = generateId();
     setActiveConversationId(null);
+  }, []);
+
+  // Keyboard shortcuts: Cmd/Ctrl+N (new chat), Escape (close panels)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === 'n') {
+        e.preventDefault();
+        handleNewChat();
+        setShowSettings(false);
+        setShowSkills(false);
+        setShowMemory(false);
+        setShowProcess(false);
+      }
+      if (e.key === 'Escape') {
+        if (showSettings) setShowSettings(false);
+        else if (showSkills) setShowSkills(false);
+        else if (showMemory) setShowMemory(false);
+        else if (showProcess) setShowProcess(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleNewChat, showSettings, showSkills, showMemory, showProcess]);
+
+  // Request notification permission for desktop push messages
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   }, []);
 
   const handleSelectConversation = useCallback((id: string) => {
@@ -470,6 +508,34 @@ function App() {
     [ws, messages, ensureConversation, refreshConversations, isDirectBYOK, isDirectOpenClaw, getOrCreateOpenClawClient, persistAssistantMessage]
   );
 
+  const handleRetry = useCallback(() => {
+    // Find last user message and remove last assistant reply
+    const lastAssistantIdx = messages.findLastIndex((m: ChatMessageItem) => m.role === 'assistant');
+    if (lastAssistantIdx === -1) return;
+    // Find the user message right before (or the last user message)
+    let lastUserMsg: ChatMessageItem | null = null;
+    for (let i = lastAssistantIdx - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserMsg = messages[i];
+        break;
+      }
+    }
+    if (!lastUserMsg) return;
+    // Remove the last assistant message
+    const newMessages = messages.filter((_, i) => i !== lastAssistantIdx);
+    setMessages(newMessages);
+    // Resend the user's message
+    handleSend(lastUserMsg.content);
+  }, [messages, handleSend]);
+
+  const handleQuoteReply = useCallback((text: string) => {
+    setQuotedText(text);
+  }, []);
+
+  const handleClearQuote = useCallback(() => {
+    setQuotedText(null);
+  }, []);
+
   const handleStop = useCallback(() => {
     // Abort direct streams
     if (isDirect && abortRef.current) {
@@ -517,8 +583,10 @@ function App() {
         activeConversationId={activeConversationId}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
-        onOpenSettings={() => { setShowSettings(true); setShowSkills(false); }}
-        onOpenSkills={() => { setShowSkills(true); setShowSettings(false); }}
+        onOpenSettings={() => { setShowSettings(true); setShowSkills(false); setShowMemory(false); setShowProcess(false); }}
+        onOpenSkills={() => { setShowSkills(true); setShowSettings(false); setShowMemory(false); setShowProcess(false); }}
+        onOpenMemory={() => { setShowMemory(true); setShowSettings(false); setShowSkills(false); setShowProcess(false); }}
+        onOpenProcess={() => { setShowProcess(true); setShowSettings(false); setShowSkills(false); setShowMemory(false); }}
       />
       <div className="main-panel">
         {showSettings ? (
@@ -529,18 +597,26 @@ function App() {
             openclawClient={openclawClientRef.current}
             ws={ws}
           />
+        ) : showMemory ? (
+          <MemoryPanel onClose={() => setShowMemory(false)} />
+        ) : showProcess ? (
+          <ProcessPanel onClose={() => setShowProcess(false)} />
         ) : (
           <>
             <MessageList
               messages={messages}
               streamingContent={streamingContent}
               activeSkill={ws.activeSkill}
+              onRetry={handleRetry}
+              onQuoteReply={handleQuoteReply}
             />
             <ChatInput
               onSend={handleSend}
               onStop={handleStop}
               disabled={!effectiveConnected}
               streaming={effectiveStreaming}
+              quotedText={quotedText || undefined}
+              onClearQuote={handleClearQuote}
             />
           </>
         )}

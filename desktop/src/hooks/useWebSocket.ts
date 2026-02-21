@@ -43,6 +43,8 @@ export function useWebSocket() {
   const onDoneRef = useRef<((fullContent: string, skills?: ChatMessageItem['skillsInvoked']) => void) | null>(null);
   const onErrorRef = useRef<((error: string) => void) | null>(null);
   const onSkillListRef = useRef<((skills: SkillManifestInfo[]) => void) | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onSkillLibraryRef = useRef<((items: any[]) => void) | null>(null);
   const channelRef = useRef<Channel<WsEvent> | null>(null);
 
   const connect = useCallback(
@@ -54,7 +56,8 @@ export function useWebSocket() {
       model?: string,
       copawUrl?: string,
       copawToken?: string,
-      openclawHosted?: boolean
+      openclawHosted?: boolean,
+      copawHosted?: boolean
     ) => {
       try {
         flog('connect() called, mode=' + mode + ', url=' + url);
@@ -98,6 +101,11 @@ export function useWebSocket() {
               onSkillListRef.current?.(skills);
               break;
             }
+            case 'skill.library.response': {
+              const items = (payload as unknown as { skills?: unknown[] })?.skills || [];
+              onSkillLibraryRef.current?.(items);
+              break;
+            }
             case 'error': {
               flog('channel error: ' + (payload?.message || 'Unknown'));
               const errMsg = payload?.message || 'Unknown error';
@@ -127,6 +135,7 @@ export function useWebSocket() {
           copawUrl: copawUrl || null,
           copawToken: copawToken || null,
           openclawHosted: openclawHosted || null,
+          copawHosted: copawHosted || null,
           onEvent: channel,
         });
 
@@ -211,6 +220,23 @@ export function useWebSocket() {
     onSkillListRef.current = cb;
   }, []);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const setOnSkillLibrary = useCallback((cb: ((items: any[]) => void) | null) => {
+    onSkillLibraryRef.current = cb;
+  }, []);
+
+  const installSkill = useCallback(async (skillName: string) => {
+    await invoke('install_skill', { name: skillName });
+  }, []);
+
+  const uninstallSkill = useCallback(async (skillName: string) => {
+    await invoke('uninstall_skill', { name: skillName });
+  }, []);
+
+  const requestSkillLibrary = useCallback(async () => {
+    await invoke('request_skill_library');
+  }, []);
+
   return {
     connected,
     connecting,
@@ -225,5 +251,9 @@ export function useWebSocket() {
     requestSkillList,
     toggleSkill,
     setOnSkillList,
+    setOnSkillLibrary,
+    installSkill,
+    uninstallSkill,
+    requestSkillLibrary,
   };
 }

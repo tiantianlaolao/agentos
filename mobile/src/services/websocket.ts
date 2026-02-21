@@ -32,7 +32,7 @@ export class WebSocketClient {
     this.url = url;
   }
 
-  connect(mode: ConnectionMode, options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string }): void {
+  connect(mode: ConnectionMode, options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean }): void {
     this.cleanup();
 
     this.ws = new WebSocket(this.url);
@@ -112,7 +112,7 @@ export class WebSocketClient {
 
   private sendConnect(
     mode: ConnectionMode,
-    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string }
+    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean }
   ): void {
     this.send({
       id: randomUUID(),
@@ -127,6 +127,7 @@ export class WebSocketClient {
         openclawHosted: options?.openclawHosted,
         copawUrl: options?.copawUrl,
         copawToken: options?.copawToken,
+        copawHosted: options?.copawHosted,
         authToken: options?.authToken,
         model: options?.model,
         deviceId: options?.deviceId,
@@ -165,7 +166,7 @@ export class WebSocketClient {
 
   private scheduleReconnect(
     mode: ConnectionMode,
-    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string }
+    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean }
   ): void {
     // Exponential backoff: 1s, 2s, 4s, 8s, ... max 30s
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);

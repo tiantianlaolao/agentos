@@ -6,6 +6,9 @@ export interface ChatMessageItem {
   content: string;
   timestamp: number;
   skillsInvoked?: SkillInvocation[];
+  isError?: boolean;
+  isPush?: boolean;
+  source?: string;
 }
 
 export interface SkillInvocation {
@@ -41,6 +44,9 @@ export interface SkillManifestInfo {
   audit: string;
   auditSource?: string;
   enabled: boolean;
+  installed?: boolean;
+  environments?: string[];
+  category?: string;
   emoji?: string;
   eligible?: boolean;
   functions: Array<{ name: string; description: string }>;

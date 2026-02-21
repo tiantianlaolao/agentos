@@ -12,14 +12,38 @@ interface Props {
   ws?: WsHandle | null;
 }
 
+interface SkillLibraryItem {
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  category: string;
+  environments: string[];
+  audit: string;
+  auditSource?: string;
+  visibility: string;
+  installed: boolean;
+  isDefault: boolean;
+  functions: Array<{ name: string; description: string }>;
+}
+
+type TabKey = 'installed' | 'library';
+
 const AUDIT_BADGES: Record<string, { label: string; color: string }> = {
   platform: { label: 'Official', color: '#22c55e' },
   ecosystem: { label: 'Reviewed', color: '#eab308' },
   unreviewed: { label: 'Unreviewed', color: '#9ca3af' },
 };
 
-// Module-level cache keyed by source type
+const ENV_LABELS: Record<string, string> = {
+  cloud: 'Cloud',
+  desktop: 'Desktop',
+  mobile: 'Mobile',
+};
+
+// Module-level caches
 const skillsCache = new Map<string, SkillManifestInfo[]>();
+const libraryCache = new Map<string, SkillLibraryItem[]>();
 
 function getCacheKey(mode: AgentMode, openclawSubMode?: string): string {
   if (mode === 'openclaw' && openclawSubMode === 'selfhosted') return 'openclaw-selfhosted';
@@ -28,21 +52,25 @@ function getCacheKey(mode: AgentMode, openclawSubMode?: string): string {
   return 'builtin';
 }
 
-function canToggle(mode: AgentMode): boolean {
-  return mode === 'builtin';
+function canManageSkills(mode: AgentMode): boolean {
+  return mode === 'builtin' || mode === 'desktop';
 }
 
 export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
   const mode = useSettingsStore((s) => s.mode);
   const openclawSubMode = useSettingsStore((s) => s.openclawSubMode);
   const cacheKey = getCacheKey(mode, openclawSubMode);
-  const cached = skillsCache.get(cacheKey) || null;
-  const [skills, setSkills] = useState<SkillManifestInfo[]>(cached || []);
-  const [loading, setLoading] = useState(!cached);
+  const manageable = canManageSkills(mode);
+  const [activeTab, setActiveTab] = useState<TabKey>('installed');
+  const [skills, setSkills] = useState<SkillManifestInfo[]>(skillsCache.get(cacheKey) || []);
+  const [library, setLibrary] = useState<SkillLibraryItem[]>(libraryCache.get(cacheKey) || []);
+  const [loading, setLoading] = useState(!skillsCache.has(cacheKey));
+  const [libraryLoading, setLibraryLoading] = useState(false);
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
-  const showToggle = canToggle(mode);
 
-  // Self-hosted OpenClaw: fetch skills directly from Gateway
+  const wsCallbackRegistered = useRef(false);
+
+  // Self-hosted OpenClaw: fetch skills directly
   const fetchDirectSkills = useCallback(async (force = false) => {
     if (!openclawClient) return;
     if (!force && skillsCache.has(cacheKey)) return;
@@ -57,6 +85,7 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
         audit: 'ecosystem',
         auditSource: 'OpenClaw',
         enabled: s.disabled !== true,
+        installed: true,
         emoji: s.emoji,
         eligible: s.eligible ?? undefined,
         functions: [],
@@ -70,10 +99,7 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
     }
   }, [openclawClient, cacheKey]);
 
-  // Track whether the WS callback is registered
-  const wsCallbackRegistered = useRef(false);
-
-  // Server-based: request via WS (listen for skill_list_response event)
+  // Server-based: request skills via WS
   const requestSkillListWS = useCallback((force = false) => {
     if (!force && skillsCache.has(cacheKey)) {
       setSkills(skillsCache.get(cacheKey)!);
@@ -85,7 +111,6 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
       return;
     }
     setLoading(true);
-    // (Re-)register callback — cacheKey may have changed
     ws.setOnSkillList((skills) => {
       skillsCache.set(cacheKey, skills);
       setSkills(skills);
@@ -95,14 +120,71 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
     ws.requestSkillList().catch(() => setLoading(false));
   }, [cacheKey, ws]);
 
+  // Request library via WS
+  const requestLibrary = useCallback((force = false) => {
+    if (!force && libraryCache.has(cacheKey)) {
+      setLibrary(libraryCache.get(cacheKey)!);
+      setLibraryLoading(false);
+      return;
+    }
+    if (!ws) {
+      setLibraryLoading(false);
+      return;
+    }
+    setLibraryLoading(true);
+    ws.setOnSkillLibrary?.((items: SkillLibraryItem[]) => {
+      libraryCache.set(cacheKey, items);
+      setLibrary(items);
+      setLibraryLoading(false);
+    });
+    ws.requestSkillLibrary?.().catch(() => setLibraryLoading(false));
+  }, [cacheKey, ws]);
+
+  // Install skill
+  const installSkill = useCallback((skillName: string) => {
+    if (!ws) return;
+    ws.installSkill?.(skillName).catch(() => {});
+    // Optimistic update
+    setLibrary((prev) => {
+      const updated = prev.map((s) =>
+        s.name === skillName ? { ...s, installed: true } : s
+      );
+      libraryCache.set(cacheKey, updated);
+      return updated;
+    });
+  }, [ws, cacheKey]);
+
+  // Uninstall skill
+  const uninstallSkill = useCallback((skillName: string) => {
+    if (!ws) return;
+    ws.uninstallSkill?.(skillName).catch(() => {});
+    // Optimistic update
+    setSkills((prev) => {
+      const updated = prev.filter((s) => s.name !== skillName);
+      skillsCache.set(cacheKey, updated);
+      return updated;
+    });
+    setLibrary((prev) => {
+      const updated = prev.map((s) =>
+        s.name === skillName ? { ...s, installed: false } : s
+      );
+      libraryCache.set(cacheKey, updated);
+      return updated;
+    });
+  }, [ws, cacheKey]);
+
   const handleRefresh = useCallback(() => {
     skillsCache.delete(cacheKey);
+    libraryCache.delete(cacheKey);
     if (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawClient) {
       fetchDirectSkills(true);
     } else {
       requestSkillListWS(true);
+      if (activeTab === 'library') {
+        requestLibrary(true);
+      }
     }
-  }, [mode, openclawSubMode, openclawClient, fetchDirectSkills, requestSkillListWS, cacheKey]);
+  }, [mode, openclawSubMode, openclawClient, fetchDirectSkills, requestSkillListWS, requestLibrary, cacheKey, activeTab]);
 
   // Cleanup WS callback on unmount
   useEffect(() => {
@@ -124,20 +206,15 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
     }
   }, [mode, openclawSubMode, openclawClient, cacheKey, fetchDirectSkills, requestSkillListWS]);
 
-  const toggleSkill = useCallback((skillName: string, enabled: boolean) => {
-    // Optimistic update
-    setSkills((prev) => {
-      const updated = prev.map((s) =>
-        s.name === skillName ? { ...s, enabled } : s
-      );
-      skillsCache.set(cacheKey, updated);
-      return updated;
-    });
-    // Send toggle via WS — server will respond with updated skill list
-    if (ws) {
-      ws.toggleSkill(skillName, enabled).catch(() => {});
+  // Load library when tab switches
+  useEffect(() => {
+    if (activeTab === 'library' && !libraryCache.has(cacheKey) && manageable) {
+      requestLibrary();
     }
-  }, [ws, cacheKey]);
+  }, [activeTab, cacheKey, manageable, requestLibrary]);
+
+  const showTabs = manageable;
+  const installedSkills = skills.filter((s) => s.installed !== false);
 
   return (
     <div className="skills-panel">
@@ -151,71 +228,172 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
         </button>
       </div>
 
-      <div className="skills-content">
-        {loading ? (
-          <div className="skills-loading">
-            <div className="spinner" />
-            <span>Loading skills...</span>
-          </div>
-        ) : skills.length === 0 ? (
-          <div className="skills-empty">
-            <span className="skills-empty-icon">?</span>
-            <span>No skills registered</span>
-            <span className="skills-empty-hint">
-              Skills will appear here when connected to a server with registered skills.
-            </span>
-          </div>
-        ) : (
-          <div className="skills-list">
-            {skills.map((skill) => {
-              const badge = AUDIT_BADGES[skill.audit] || AUDIT_BADGES.unreviewed;
-              const isExpanded = expandedSkill === skill.name;
+      {showTabs && (
+        <div className="skills-tab-bar">
+          <button
+            className={`skills-tab ${activeTab === 'installed' ? 'skills-tab-active' : ''}`}
+            onClick={() => setActiveTab('installed')}
+          >
+            Installed ({installedSkills.length})
+          </button>
+          <button
+            className={`skills-tab ${activeTab === 'library' ? 'skills-tab-active' : ''}`}
+            onClick={() => setActiveTab('library')}
+          >
+            Library
+          </button>
+        </div>
+      )}
 
-              return (
-                <div key={skill.name} className="skill-card">
-                  <div className="skill-card-header">
-                    <div className="skill-name-row">
-                      {skill.emoji && <span className="skill-emoji">{skill.emoji}</span>}
-                      <span className="skill-name">{skill.name}</span>
-                      {skill.version && <span className="skill-version">v{skill.version}</span>}
-                    </div>
-                    {showToggle ? (
-                      <label className="skill-toggle">
-                        <input
-                          type="checkbox"
-                          checked={skill.enabled}
-                          onChange={(e) => toggleSkill(skill.name, e.target.checked)}
+      <div className="skills-content">
+        {activeTab === 'installed' ? (
+          loading ? (
+            <div className="skills-loading">
+              <div className="spinner" />
+              <span>Loading skills...</span>
+            </div>
+          ) : installedSkills.length === 0 ? (
+            <div className="skills-empty">
+              <span className="skills-empty-icon">?</span>
+              <span>No skills installed</span>
+              {manageable && (
+                <button className="skills-browse-btn" onClick={() => setActiveTab('library')}>
+                  Browse Library
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="skills-list">
+              {installedSkills.map((skill) => {
+                const badge = AUDIT_BADGES[skill.audit] || AUDIT_BADGES.unreviewed;
+                const isExpanded = expandedSkill === skill.name;
+
+                return (
+                  <div key={skill.name} className="skill-card">
+                    <div className="skill-card-header">
+                      <div className="skill-name-row">
+                        {skill.emoji && <span className="skill-emoji">{skill.emoji}</span>}
+                        <span className="skill-name">{skill.name}</span>
+                        {skill.version && <span className="skill-version">v{skill.version}</span>}
+                      </div>
+                      {manageable ? (
+                        <button
+                          className="skill-uninstall-btn"
+                          onClick={() => uninstallSkill(skill.name)}
+                        >
+                          Uninstall
+                        </button>
+                      ) : (
+                        <span
+                          className="skill-status-dot"
+                          style={{ background: skill.enabled ? '#22c55e' : '#666' }}
+                          title={skill.enabled ? 'Active' : 'Inactive'}
                         />
-                        <span className="skill-toggle-slider" />
-                      </label>
-                    ) : (
-                      <span
-                        className="skill-status-dot"
-                        style={{ background: skill.enabled ? '#22c55e' : '#666' }}
-                        title={skill.enabled ? 'Active' : 'Inactive'}
-                      />
+                      )}
+                    </div>
+
+                    <div className="skill-desc">{skill.description}</div>
+
+                    <div className="skill-meta">
+                      <span className="skill-audit-badge" style={{ borderColor: badge.color, color: badge.color }}>
+                        {badge.label}
+                        {skill.auditSource ? ` (${skill.auditSource})` : ''}
+                      </span>
+                      {skill.environments && skill.environments.length > 0 && (
+                        <span className="skill-env-tags">
+                          {skill.environments.map((env) => (
+                            <span key={env} className="skill-env-tag">
+                              {ENV_LABELS[env] || env}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                      <span className="skill-author">by {skill.author}</span>
+                    </div>
+
+                    {skill.functions.length > 0 && (
+                      <div className="skill-functions-section">
+                        <button
+                          className="skill-functions-toggle"
+                          onClick={() => setExpandedSkill(isExpanded ? null : skill.name)}
+                        >
+                          {isExpanded ? 'Hide' : 'Show'} {skill.functions.length} function{skill.functions.length > 1 ? 's' : ''}
+                        </button>
+                        {isExpanded && (
+                          <div className="skill-functions-list">
+                            {skill.functions.map((fn) => (
+                              <div key={fn.name} className="skill-function-row">
+                                <span className="skill-function-name">{fn.name}</span>
+                                <span className="skill-function-desc"> - {fn.description}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          libraryLoading ? (
+            <div className="skills-loading">
+              <div className="spinner" />
+              <span>Loading library...</span>
+            </div>
+          ) : library.length === 0 ? (
+            <div className="skills-empty">
+              <span className="skills-empty-icon">?</span>
+              <span>No skills available in library</span>
+            </div>
+          ) : (
+            <div className="skills-list">
+              {library.map((skill) => {
+                const badge = AUDIT_BADGES[skill.audit] || AUDIT_BADGES.unreviewed;
 
-                  <div className="skill-desc">{skill.description}</div>
+                return (
+                  <div key={skill.name} className="skill-card">
+                    <div className="skill-card-header">
+                      <div className="skill-name-row">
+                        <span className="skill-name">{skill.name}</span>
+                        {skill.version && <span className="skill-version">v{skill.version}</span>}
+                      </div>
+                      {skill.installed ? (
+                        <span className="skill-installed-badge">Installed</span>
+                      ) : (
+                        <button
+                          className="skill-install-btn"
+                          onClick={() => installSkill(skill.name)}
+                        >
+                          Install
+                        </button>
+                      )}
+                    </div>
 
-                  <div className="skill-meta">
-                    <span className="skill-audit-badge" style={{ borderColor: badge.color, color: badge.color }}>
-                      {badge.label}
-                      {skill.auditSource ? ` (${skill.auditSource})` : ''}
-                    </span>
-                    <span className="skill-author">by {skill.author}</span>
-                  </div>
+                    <div className="skill-desc">{skill.description}</div>
 
-                  {skill.functions.length > 0 && (
-                    <div className="skill-functions-section">
-                      <button
-                        className="skill-functions-toggle"
-                        onClick={() => setExpandedSkill(isExpanded ? null : skill.name)}
-                      >
-                        {isExpanded ? 'Hide' : 'Show'} {skill.functions.length} function{skill.functions.length > 1 ? 's' : ''}
-                      </button>
-                      {isExpanded && (
+                    <div className="skill-meta">
+                      <span className="skill-audit-badge" style={{ borderColor: badge.color, color: badge.color }}>
+                        {badge.label}
+                      </span>
+                      {skill.environments && skill.environments.length > 0 && (
+                        <span className="skill-env-tags">
+                          {skill.environments.map((env) => (
+                            <span key={env} className="skill-env-tag">
+                              {ENV_LABELS[env] || env}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                      {skill.category && skill.category !== 'general' && (
+                        <span className="skill-category-tag">{skill.category}</span>
+                      )}
+                      <span className="skill-author">by {skill.author}</span>
+                    </div>
+
+                    {skill.functions.length > 0 && (
+                      <div className="skill-functions-section">
                         <div className="skill-functions-list">
                           {skill.functions.map((fn) => (
                             <div key={fn.name} className="skill-function-row">
@@ -224,13 +402,13 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
                             </div>
                           ))}
                         </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
         )}
       </div>
     </div>

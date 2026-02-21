@@ -102,7 +102,8 @@ const markdownStyles = StyleSheet.create({
 function MessageBubbleInner({ message, isLast, onRetry, onQuoteReply }: MessageBubbleProps) {
   const t = useTranslation();
   const isUser = message.role === 'user';
-  const [textMode, setTextMode] = useState(false);
+  // Default to plain text for very long messages to prevent JS thread freeze
+  const [textMode, setTextMode] = useState(message.content.length > 5000);
 
   const handleCopy = useCallback(async () => {
     if (!message.content) return;

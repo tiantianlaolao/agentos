@@ -31,12 +31,13 @@ async fn connect_server(
     copaw_url: Option<String>,
     copaw_token: Option<String>,
     openclaw_hosted: Option<bool>,
+    copaw_hosted: Option<bool>,
     on_event: Channel<Value>,
 ) -> Result<ConnectResult, String> {
     println!("[Tauri] connect_server called (mode: {})", mode);
     let mut client = state.ws_client.lock().await;
     let result = client
-        .connect(&url, &mode, auth_token, api_key, model, copaw_url, copaw_token, openclaw_hosted, on_event)
+        .connect(&url, &mode, auth_token, api_key, model, copaw_url, copaw_token, openclaw_hosted, copaw_hosted, on_event)
         .await
         .map_err(|e| e.to_string());
     println!("[Tauri] connect_server result: {:?}", result);
@@ -148,6 +149,39 @@ async fn toggle_skill(
     let client = state.ws_client.lock().await;
     client
         .send_skill_toggle(&name, enabled)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn install_skill(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
+    let client = state.ws_client.lock().await;
+    client
+        .send_skill_install(&name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn uninstall_skill(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
+    let client = state.ws_client.lock().await;
+    client
+        .send_skill_uninstall(&name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn request_skill_library(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let client = state.ws_client.lock().await;
+    client
+        .send_skill_library_request()
         .await
         .map_err(|e| e.to_string())
 }
@@ -270,6 +304,9 @@ pub fn run() {
             http_fetch,
             request_skill_list,
             toggle_skill,
+            install_skill,
+            uninstall_skill,
+            request_skill_library,
         ])
         .on_window_event(|window, event| {
             // Minimize to tray instead of closing

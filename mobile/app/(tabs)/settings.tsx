@@ -110,6 +110,7 @@ export default function SettingsScreen() {
   const [formLocale, setFormLocale] = useState(store.locale);
   const [formModel, setFormModel] = useState(store.selectedModel);
   const [formSubMode, setFormSubMode] = useState<'hosted' | 'selfhosted'>(store.openclawSubMode);
+  const [formCopawSubMode, setFormCopawSubMode] = useState<'hosted' | 'selfhosted'>(store.copawSubMode);
   const [formCopawUrl, setFormCopawUrl] = useState(store.copawUrl);
   const [formCopawToken, setFormCopawToken] = useState(store.copawToken);
   const [invitationCode, setInvitationCode] = useState('');
@@ -130,6 +131,7 @@ export default function SettingsScreen() {
         const selectedModel = await getSetting('selectedModel');
         const openclawSubMode = await getSetting('openclawSubMode');
         const hostedActivated = await getSetting('hostedActivated');
+        const copawSubMode = await getSetting('copawSubMode');
         const copawUrl = await getSetting('copawUrl');
         const copawToken = await getSetting('copawToken');
 
@@ -138,6 +140,11 @@ export default function SettingsScreen() {
         if (apiKey) { store.setApiKey(apiKey); setFormApiKey(apiKey); }
         if (openclawUrl) { store.setOpenclawUrl(openclawUrl); setFormOpenclawUrl(openclawUrl); }
         if (openclawToken) { store.setOpenclawToken(openclawToken); setFormOpenclawToken(openclawToken); }
+        if (copawSubMode) {
+          const csm = copawSubMode as 'hosted' | 'selfhosted';
+          store.setCopawSubMode(csm);
+          setFormCopawSubMode(csm);
+        }
         if (copawUrl) { store.setCopawUrl(copawUrl); setFormCopawUrl(copawUrl); }
         if (copawToken) { store.setCopawToken(copawToken); setFormCopawToken(copawToken); }
         if (serverUrl) { store.setServerUrl(serverUrl); }
@@ -210,6 +217,7 @@ export default function SettingsScreen() {
     store.setApiKey(formApiKey);
     store.setOpenclawUrl(formOpenclawUrl);
     store.setOpenclawToken(formOpenclawToken);
+    store.setCopawSubMode(formCopawSubMode);
     store.setCopawUrl(formCopawUrl);
     store.setCopawToken(formCopawToken);
     store.setLocale(formLocale);
@@ -225,6 +233,7 @@ export default function SettingsScreen() {
         setSetting('apiKey', formApiKey),
         setSetting('openclawUrl', formOpenclawUrl),
         setSetting('openclawToken', formOpenclawToken),
+        setSetting('copawSubMode', formCopawSubMode),
         setSetting('copawUrl', formCopawUrl),
         setSetting('copawToken', formCopawToken),
         setSetting('locale', formLocale),
@@ -236,7 +245,7 @@ export default function SettingsScreen() {
     }
 
     Alert.alert(t('settings.saved'));
-  }, [formMode, formProvider, formApiKey, formOpenclawUrl, formOpenclawToken, formCopawUrl, formCopawToken, formLocale, formModel, formSubMode, store, t]);
+  }, [formMode, formProvider, formApiKey, formOpenclawUrl, formOpenclawToken, formCopawSubMode, formCopawUrl, formCopawToken, formLocale, formModel, formSubMode, store, t]);
 
   const handleLogout = useCallback(() => {
     authStore.logout();
@@ -440,39 +449,76 @@ export default function SettingsScreen() {
         </View>
       )}
 
-      {/* CoPaw fields - shown when mode is copaw */}
+      {/* CoPaw sub-mode options */}
       {formMode === 'copaw' && (
-        <>
-          <View style={styles.fieldContainer}>
-            <Text style={styles.fieldLabel}>{t('settings.copawUrl')}</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formCopawUrl}
-              onChangeText={setFormCopawUrl}
-              placeholder={t('settings.copawUrlPlaceholder')}
-              placeholderTextColor="#888888"
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-            />
-            <Text style={styles.fieldHint}>{t('settings.copawUrlHint')}</Text>
-          </View>
+        <View style={styles.subModeContainer}>
+          {/* Hosted sub-option */}
+          <TouchableOpacity
+            style={[styles.subModeCard, formCopawSubMode === 'hosted' && styles.subModeCardSelected]}
+            onPress={() => setFormCopawSubMode('hosted')}
+          >
+            <View style={styles.cardRow}>
+              <View style={[styles.subRadio, formCopawSubMode === 'hosted' && styles.radioSelected]}>
+                {formCopawSubMode === 'hosted' && <View style={styles.subRadioDot} />}
+              </View>
+              <View style={styles.cardTextContainer}>
+                <Text style={styles.subModeTitle}>{t('settings.copawHosted')}</Text>
+                <Text style={styles.cardDesc}>{t('settings.copawHostedDesc')}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
 
-          <View style={styles.fieldContainer}>
-            <Text style={styles.fieldLabel}>{t('settings.copawToken')}</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formCopawToken}
-              onChangeText={setFormCopawToken}
-              placeholder={t('settings.copawTokenPlaceholder')}
-              placeholderTextColor="#888888"
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Text style={styles.fieldHint}>{t('settings.copawTokenHint')}</Text>
-          </View>
-        </>
+          {/* Self-hosted sub-option */}
+          <TouchableOpacity
+            style={[styles.subModeCard, formCopawSubMode === 'selfhosted' && styles.subModeCardSelected]}
+            onPress={() => setFormCopawSubMode('selfhosted')}
+          >
+            <View style={styles.cardRow}>
+              <View style={[styles.subRadio, formCopawSubMode === 'selfhosted' && styles.radioSelected]}>
+                {formCopawSubMode === 'selfhosted' && <View style={styles.subRadioDot} />}
+              </View>
+              <View style={styles.cardTextContainer}>
+                <Text style={styles.subModeTitle}>{t('settings.copawSelfhosted')}</Text>
+                <Text style={styles.cardDesc}>{t('settings.copawSelfhostedDesc')}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {/* Self-hosted fields */}
+          {formCopawSubMode === 'selfhosted' && (
+            <>
+              <View style={styles.fieldContainer}>
+                <Text style={styles.fieldLabel}>{t('settings.copawUrl')}</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={formCopawUrl}
+                  onChangeText={setFormCopawUrl}
+                  placeholder={t('settings.copawUrlPlaceholder')}
+                  placeholderTextColor="#888888"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+                <Text style={styles.fieldHint}>{t('settings.copawUrlHint')}</Text>
+              </View>
+
+              <View style={styles.fieldContainer}>
+                <Text style={styles.fieldLabel}>{t('settings.copawToken')}</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={formCopawToken}
+                  onChangeText={setFormCopawToken}
+                  placeholder={t('settings.copawTokenPlaceholder')}
+                  placeholderTextColor="#888888"
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Text style={styles.fieldHint}>{t('settings.copawTokenHint')}</Text>
+              </View>
+            </>
+          )}
+        </View>
       )}
 
       {/* BYOK fields - shown when mode is byok */}

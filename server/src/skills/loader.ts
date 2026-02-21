@@ -8,6 +8,8 @@
  */
 
 import { skillRegistry } from './registry.js';
+import { syncCatalogFromRegistry, installDefaultSkillsForUser } from './userSkills.js';
+import { setInstallDefaultSkillsFn } from '../auth/db.js';
 import type { SkillManifest } from '../adapters/base.js';
 import type { SkillHandler } from './registry.js';
 
@@ -48,4 +50,10 @@ export async function loadBuiltinSkills(): Promise<void> {
   }
 
   console.log(`[SkillLoader] Loaded ${skillRegistry.list().length} skills`);
+
+  // Sync all registered skills to the skill_catalog DB table
+  syncCatalogFromRegistry();
+
+  // Register the auto-install function for new user creation
+  setInstallDefaultSkillsFn(installDefaultSkillsForUser);
 }

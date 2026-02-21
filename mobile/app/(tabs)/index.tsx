@@ -126,7 +126,7 @@ export default function ChatScreen() {
     conversations,
   } = useChatStore();
 
-  const { mode, provider, apiKey, openclawUrl, openclawToken, serverUrl, selectedModel, settingsLoaded, openclawSubMode, setHostedQuota, setMode, hostedActivated, copawUrl, copawToken } = useSettingsStore();
+  const { mode, provider, apiKey, openclawUrl, openclawToken, serverUrl, selectedModel, settingsLoaded, openclawSubMode, setHostedQuota, setMode, hostedActivated, copawSubMode, copawUrl, copawToken } = useSettingsStore();
   const { authToken, userId, isLoggedIn } = useAuthStore();
   const currentUserId = isLoggedIn ? userId : 'anonymous';
 
@@ -352,7 +352,8 @@ export default function ChatScreen() {
       });
 
       const isOpenclawHosted = mode === 'openclaw' && openclawSubMode === 'hosted';
-      client.connect(mode, { provider, apiKey, openclawUrl, openclawToken, authToken: authToken || undefined, model: selectedModel || undefined, deviceId, openclawHosted: isOpenclawHosted || undefined, copawUrl: copawUrl || undefined, copawToken: copawToken || undefined });
+      const isCopawHosted = mode === 'copaw' && copawSubMode === 'hosted';
+      client.connect(mode, { provider, apiKey, openclawUrl, openclawToken, authToken: authToken || undefined, model: selectedModel || undefined, deviceId, openclawHosted: isOpenclawHosted || undefined, copawUrl: isCopawHosted ? undefined : (copawUrl || undefined), copawToken: isCopawHosted ? undefined : (copawToken || undefined), copawHosted: isCopawHosted || undefined });
 
       cleanupRef.current = () => {
         unsubConnected();
@@ -381,7 +382,7 @@ export default function ChatScreen() {
     };
   }, [
     settingsLoaded, serverUrl, mode, provider, apiKey, openclawUrl, openclawToken,
-    copawUrl, copawToken, authToken, selectedModel, openclawSubMode, handlePushMessage,
+    copawUrl, copawToken, copawSubMode, authToken, selectedModel, openclawSubMode, handlePushMessage,
     setConnected, setGenerating, addMessage,
     addConversation, setCurrentConversation, setHostedQuota,
   ]);

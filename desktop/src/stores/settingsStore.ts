@@ -24,6 +24,7 @@ interface SettingsState {
   // CoPaw
   copawUrl: string;
   copawToken: string;
+  copawSubMode: 'hosted' | 'selfhosted';
 
   // App
   locale: 'zh' | 'en';
@@ -45,6 +46,7 @@ interface SettingsState {
   setHostedInstanceStatus: (status: string) => void;
   setCopawUrl: (url: string) => void;
   setCopawToken: (token: string) => void;
+  setCopawSubMode: (mode: 'hosted' | 'selfhosted') => void;
   setLocale: (locale: 'zh' | 'en') => void;
   loadSettings: () => void;
   saveSettings: () => void;
@@ -67,6 +69,7 @@ export const useSettingsStore = create<SettingsState>()(
       hostedInstanceStatus: '',
       copawUrl: '',
       copawToken: '',
+      copawSubMode: 'hosted',
       locale: 'zh',
       settingsLoaded: false,
 
@@ -83,6 +86,7 @@ export const useSettingsStore = create<SettingsState>()(
       setHostedInstanceStatus: (status) => set({ hostedInstanceStatus: status }),
       setCopawUrl: (url) => set({ copawUrl: url }),
       setCopawToken: (token) => set({ copawToken: token }),
+      setCopawSubMode: (mode) => set({ copawSubMode: mode }),
       setLocale: (locale) => set({ locale }),
       loadSettings: () => {
         // Persist middleware auto-loads from localStorage on creation.
@@ -112,6 +116,7 @@ export const useSettingsStore = create<SettingsState>()(
         hostedInstanceStatus: state.hostedInstanceStatus,
         copawUrl: state.copawUrl,
         copawToken: state.copawToken,
+        copawSubMode: state.copawSubMode,
         locale: state.locale,
       }),
       version: 3,

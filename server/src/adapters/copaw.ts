@@ -247,6 +247,7 @@ export class CoPawAdapter implements AgentAdapter {
     const reader = (response.body as unknown as { getReader(): ReadableStreamDefaultReader<Uint8Array> }).getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let hasReceivedDelta = false;
 
     try {
       while (true) {
@@ -269,29 +270,36 @@ export class CoPawAdapter implements AgentAdapter {
           try {
             const event = JSON.parse(dataStr);
 
-            // Extract text from /process SSE format
-            // Format: {"output":[{"content":[{"type":"text","text":"..."}]}]}
-            // OR flat text delta format:
-            // Format: {"status":"in_progress","type":"text","delta":true,"text":"Hello"}
-            // Both formats may appear in the same event — only yield once.
-            let yielded = false;
-            const output = event.output;
-            if (Array.isArray(output)) {
-              for (const msg of output) {
-                if (Array.isArray(msg.content)) {
-                  for (const part of msg.content) {
-                    if (part.type === 'text' && part.text) {
-                      yield part.text as string;
-                      yielded = true;
+            // CoPaw /process SSE sends the same text multiple times in different event types:
+            //   seq N:   {"object":"content", "delta":true, "text":"chunk"}  — streaming delta
+            //   seq N+1: {"object":"content", "delta":null, "text":"chunk"}  — content completed
+            //   seq N+2: {"object":"message", "content":[{..."text":"full"}]} — message completed
+            //   seq N+3: {"object":"response", "output":[{"content":[...]}]}  — response completed
+            //
+            // We ONLY yield from delta events (delta===true). The completed events contain
+            // the same text again and would cause duplication.
+
+            if (event.object === 'content' && event.delta === true && event.text) {
+              hasReceivedDelta = true;
+              yield event.text as string;
+              continue;
+            }
+
+            // Fallback: if no delta events were received (old CoPaw format),
+            // extract text from the final response.output array.
+            if (!hasReceivedDelta && event.object === 'response' && event.status === 'completed') {
+              const output = event.output;
+              if (Array.isArray(output)) {
+                for (const msg of output) {
+                  if (Array.isArray(msg.content)) {
+                    for (const part of msg.content) {
+                      if (part.type === 'text' && part.text) {
+                        yield part.text as string;
+                      }
                     }
                   }
                 }
               }
-            }
-
-            // Fallback to flat text delta format only if structured format didn't yield
-            if (!yielded && event.type === 'text' && event.delta && event.text) {
-              yield event.text as string;
             }
           } catch {
             // skip malformed SSE lines

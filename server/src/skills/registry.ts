@@ -237,6 +237,64 @@ class SkillRegistry {
     const result = await found.handler(args);
     return { skillName: found.skill.manifest.name, result };
   }
+
+  // ── Installed-user variants (filter by user's installed skill names) ──
+
+  /** List skills that are both enabled+visible AND in the user's installed list */
+  private listInstalledForUser(ctx: SkillUserContext | undefined, installedNames: string[]): RegisteredSkill[] {
+    return this.listEnabledForUser(ctx).filter((s) => installedNames.includes(s.manifest.name));
+  }
+
+  /** Convert installed + enabled + visible skills to FC tools */
+  toToolsForInstalledUser(ctx: SkillUserContext | undefined, installedNames: string[]): FunctionCallingTool[] {
+    const tools: FunctionCallingTool[] = [];
+    for (const skill of this.listInstalledForUser(ctx, installedNames)) {
+      for (const fn of skill.manifest.functions) {
+        tools.push({
+          type: 'function',
+          function: {
+            name: fn.name,
+            description: fn.description,
+            parameters: fn.parameters,
+          },
+        });
+      }
+    }
+    return tools;
+  }
+
+  /** Find a function only among installed skills */
+  findFunctionForInstalledUser(functionName: string, ctx: SkillUserContext | undefined, installedNames: string[]): {
+    skill: RegisteredSkill;
+    handler: SkillHandler;
+    functionDef: SkillFunction;
+  } | null {
+    for (const skill of this.listInstalledForUser(ctx, installedNames)) {
+      const handler = skill.handlers.get(functionName);
+      if (handler) {
+        const functionDef = skill.manifest.functions.find(
+          (f) => f.name === functionName,
+        )!;
+        return { skill, handler, functionDef };
+      }
+    }
+    return null;
+  }
+
+  /** Execute a function with installed + visibility check */
+  async executeForInstalledUser(
+    functionName: string,
+    args: Record<string, unknown>,
+    ctx: SkillUserContext | undefined,
+    installedNames: string[],
+  ): Promise<{ skillName: string; result: string }> {
+    const found = this.findFunctionForInstalledUser(functionName, ctx, installedNames);
+    if (!found) {
+      throw new Error(`No handler found for function "${functionName}"`);
+    }
+    const result = await found.handler(args);
+    return { skillName: found.skill.manifest.name, result };
+  }
 }
 
 /** Singleton registry instance */

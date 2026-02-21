@@ -11,6 +11,9 @@ import {
   type SkillInvocation,
   type ChatHistoryItem,
   type SkillToggleMessage,
+  type SkillInstallMessage,
+  type SkillUninstallMessage,
+  type SkillLibraryRequestMessage,
   type DesktopRegisterMessage,
   type DesktopCommandMessage,
   type DesktopResultMessage,
@@ -22,6 +25,12 @@ import { isAgentAdapter, type AgentAdapter } from '../adapters/base.js';
 import { DesktopAdapter, registerDesktopSession, unregisterDesktopSession, getDesktopSession } from '../adapters/desktop.js';
 import { skillRegistry } from '../skills/registry.js';
 import { checkRateLimit, incrementCount } from '../middleware/rateLimit.js';
+import {
+  installSkillForUser,
+  uninstallSkillForUser,
+  getUserInstalledSkillNames,
+  listSkillCatalog,
+} from '../skills/userSkills.js';
 import { verifyToken } from '../auth/jwt.js';
 import { getMemory, migrateMemory } from '../memory/store.js';
 import { extractAndUpdateMemory } from '../memory/extractor.js';
@@ -151,6 +160,18 @@ export function handleConnection(ws: WebSocket): void {
           handleSkillToggle(ws, message as SkillToggleMessage, session ?? undefined);
           break;
 
+        case MessageType.SKILL_INSTALL:
+          handleSkillInstall(ws, message as SkillInstallMessage, session ?? undefined);
+          break;
+
+        case MessageType.SKILL_UNINSTALL:
+          handleSkillUninstall(ws, message as SkillUninstallMessage, session ?? undefined);
+          break;
+
+        case MessageType.SKILL_LIBRARY_REQUEST:
+          handleSkillLibraryRequest(ws, message as SkillLibraryRequestMessage, session ?? undefined);
+          break;
+
         case MessageType.DESKTOP_REGISTER:
           if (session) {
             handleDesktopRegister(session, message as DesktopRegisterMessage);
@@ -249,6 +270,10 @@ async function handleSkillListRequest(ws: WebSocket, session?: Session): Promise
   // Default: return builtin skills from registry (for builtin/byok modes)
   // Filter by user visibility (public + user's private skills)
   const userCtx = session ? { userId: session.userId, userPhone: session.userPhone } : undefined;
+  const installedNames = session?.userId
+    ? getUserInstalledSkillNames(session.userId)
+    : null; // null = anonymous, show all
+
   const skills = skillRegistry.listForUser(userCtx).map((s) => ({
     name: s.manifest.name,
     version: s.manifest.version,
@@ -257,6 +282,8 @@ async function handleSkillListRequest(ws: WebSocket, session?: Session): Promise
     audit: s.manifest.audit,
     auditSource: s.manifest.auditSource,
     enabled: s.enabled,
+    installed: installedNames ? installedNames.includes(s.manifest.name) : true,
+    environments: s.manifest.environments,
     functions: s.manifest.functions.map((f) => ({
       name: f.name,
       description: f.description,
@@ -271,15 +298,102 @@ async function handleSkillListRequest(ws: WebSocket, session?: Session): Promise
   });
 }
 
-/** Handle SKILL_TOGGLE: no-op, just return current skill list (toggle disabled) */
+/** Handle SKILL_TOGGLE: legacy no-op, redirect to install/uninstall */
 function handleSkillToggle(ws: WebSocket, _message: SkillToggleMessage, session?: Session): void {
-  // Toggle disabled — all skills are always enabled.
-  // Future: per-user install/uninstall from a skill marketplace.
   handleSkillListRequest(ws, session).catch(() => {});
 }
 
+/** Handle SKILL_INSTALL: install a skill for the current user */
+function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, session?: Session): void {
+  const { skillName } = message.payload;
+  if (!session?.userId) {
+    sendError(ws, ErrorCode.AUTH_FAILED, '请先登录后再安装技能');
+    return;
+  }
+
+  try {
+    installSkillForUser(session.userId, skillName);
+
+    // If hosted mode with agent adapter, also install on remote agent
+    if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.installSkill) {
+      const manifest = skillRegistry.get(skillName)?.manifest;
+      if (manifest) {
+        session.provider.installSkill(manifest).catch((err: Error) => {
+          console.error(`[Skills] Remote install failed for ${skillName}:`, err.message);
+        });
+      }
+    }
+
+    // Return updated skill list
+    handleSkillListRequest(ws, session).catch(() => {});
+  } catch (err) {
+    sendError(ws, ErrorCode.SKILL_ERROR, `安装技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
+  }
+}
+
+/** Handle SKILL_UNINSTALL: uninstall a skill for the current user */
+function handleSkillUninstall(ws: WebSocket, message: SkillUninstallMessage, session?: Session): void {
+  const { skillName } = message.payload;
+  if (!session?.userId) {
+    sendError(ws, ErrorCode.AUTH_FAILED, '请先登录后再卸载技能');
+    return;
+  }
+
+  try {
+    uninstallSkillForUser(session.userId, skillName);
+
+    // If hosted mode with agent adapter, also uninstall on remote agent
+    if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.uninstallSkill) {
+      session.provider.uninstallSkill(skillName).catch((err: Error) => {
+        console.error(`[Skills] Remote uninstall failed for ${skillName}:`, err.message);
+      });
+    }
+
+    // Return updated skill list
+    handleSkillListRequest(ws, session).catch(() => {});
+  } catch (err) {
+    sendError(ws, ErrorCode.SKILL_ERROR, `卸载技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
+  }
+}
+
+/** Handle SKILL_LIBRARY_REQUEST: return full catalog with installed status */
+function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMessage, session?: Session): void {
+  const opts = message.payload || {};
+  const catalog = listSkillCatalog({
+    category: opts.category,
+    search: opts.search,
+    environment: opts.environment,
+  });
+
+  const installedNames = session?.userId
+    ? getUserInstalledSkillNames(session.userId)
+    : [];
+
+  const skills = catalog.map((entry) => ({
+    name: entry.name,
+    version: entry.version,
+    description: entry.description || '',
+    author: entry.author || 'AgentOS',
+    category: entry.category,
+    environments: entry.environments as string[],
+    audit: entry.audit,
+    auditSource: entry.auditSource || undefined,
+    visibility: entry.visibility,
+    installed: installedNames.includes(entry.name),
+    isDefault: entry.isDefault,
+    functions: entry.functions as Array<{ name: string; description: string }>,
+  }));
+
+  send(ws, {
+    id: uuidv4(),
+    type: MessageType.SKILL_LIBRARY_RESPONSE,
+    timestamp: Date.now(),
+    payload: { skills },
+  });
+}
+
 async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Session> {
-  const { mode, provider: providerName, apiKey, openclawUrl, openclawToken, openclawHosted, copawUrl, copawToken, deviceId, authToken, model } = message.payload;
+  const { mode, provider: providerName, apiKey, openclawUrl, openclawToken, openclawHosted, copawUrl, copawToken, copawHosted, deviceId, authToken, model } = message.payload;
 
   // Verify JWT if provided
   let userId: string | null = null;
@@ -306,6 +420,23 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
         sendError(ws, ErrorCode.AUTH_FAILED, '请在设置中配置自己的 OpenClaw 连接方式');
         throw new Error('Non-admin user cannot use server proxy OpenClaw');
       }
+    }
+  }
+
+  // CoPaw access control
+  let isCopawHosted = false;
+  if (mode === 'copaw') {
+    if (copawHosted) {
+      // Hosted mode: shared instance, require auth
+      if (!userId) {
+        sendError(ws, ErrorCode.AUTH_FAILED, '请先登录后再使用 CoPaw 托管服务');
+        throw new Error('CoPaw hosted mode requires authentication');
+      }
+      isCopawHosted = true;
+    } else if (!copawUrl) {
+      // Self-hosted mode without URL
+      sendError(ws, ErrorCode.INVALID_MESSAGE, '请在设置中填写 CoPaw 地址');
+      throw new Error('CoPaw self-hosted mode requires URL');
     }
   }
 
@@ -347,6 +478,9 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
       throw new Error(`Hosted instance not ready: ${hostedInstanceStatus}`);
     }
     llmProvider = new OpenClawAdapter(`ws://127.0.0.1:${hostedPort}`, hostedInstanceToken);
+  } else if (isCopawHosted) {
+    // CoPaw hosted: use server's default CoPaw URL (shared instance, no user URL)
+    llmProvider = createProvider('copaw', { model });
   } else if (mode === 'desktop') {
     // Desktop mode: use builtin LLM for chat, register DesktopAdapter separately
     llmProvider = createProvider('builtin', { model });
@@ -369,11 +503,11 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
     userPhone,
     provider: llmProvider,
     abortController: null,
-    isHosted,
+    isHosted: isHosted || isCopawHosted,
   };
 
   // For agent adapter modes: register as push target and connect for chat
-  if ((mode === 'openclaw' || isHosted) && llmProvider && isAgentAdapter(llmProvider)) {
+  if ((mode === 'openclaw' || mode === 'copaw' || isHosted || isCopawHosted) && llmProvider && isAgentAdapter(llmProvider)) {
     const adapter = llmProvider;
 
     // Register as active push target and flush queued messages
@@ -429,8 +563,8 @@ async function handleChatSend(
 ): Promise<void> {
   const { conversationId, content, history } = message.payload;
 
-  // Hosted quota check
-  if (session.isHosted) {
+  // Hosted quota check (OpenClaw hosted only — CoPaw hosted is a shared instance, no per-user quota)
+  if (session.isHosted && session.mode !== 'copaw') {
     if (!session.userId) {
       sendError(ws, ErrorCode.AUTH_FAILED, '请先登录', conversationId);
       return;
@@ -570,7 +704,13 @@ async function handleChatSend(
       // Builtin / BYOK: use Function Calling with skill registry
       const llmProvider = session.provider as LLMProvider;
       const userCtx = { userId: session.userId, userPhone: session.userPhone };
-      const tools = skillRegistry.toFunctionCallingToolsForUser(userCtx);
+      // If logged in, only provide tools for installed skills; anonymous gets all public defaults
+      const userInstalledNames = session.userId
+        ? getUserInstalledSkillNames(session.userId)
+        : null;
+      const tools = userInstalledNames
+        ? skillRegistry.toToolsForInstalledUser(userCtx, userInstalledNames)
+        : skillRegistry.toFunctionCallingToolsForUser(userCtx);
       const hasToolSupport = tools.length > 0 && llmProvider.chatWithTools;
 
       if (hasToolSupport) {
@@ -730,7 +870,12 @@ async function handleFunctionCallingChat(
       let toolResult: string;
       try {
         const userCtxExec = { userId: session.userId, userPhone: session.userPhone };
-        const { skillName, result: execResult } = await skillRegistry.executeForUser(functionName, args, userCtxExec);
+        const execInstalledNames = session.userId
+          ? getUserInstalledSkillNames(session.userId)
+          : null;
+        const { skillName, result: execResult } = execInstalledNames
+          ? await skillRegistry.executeForInstalledUser(functionName, args, userCtxExec, execInstalledNames)
+          : await skillRegistry.executeForUser(functionName, args, userCtxExec);
 
         let resultData: Record<string, unknown>;
         try {

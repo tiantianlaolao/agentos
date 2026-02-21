@@ -14,9 +14,11 @@ AgentOS is a universal AI Agent client that connects to multiple agent backends 
 
 **Skill System**
 - Extensible skill framework with `SkillManifest` standard
+- **Skill Library** — browse, install, and uninstall skills per user
 - Built-in skills: Weather, Translation, US Stock Monitor
 - Function Calling integration with all LLM providers
-- Per-user skill visibility (public/private)
+- Per-user skill visibility (public/private) and install state
+- Skill Catalog database with audit badges and environment tags
 - Visual skill execution cards with real-time status
 
 **Three Clients, One Platform**
@@ -84,7 +86,7 @@ agentos/
 │   └── src/
 │       ├── adapters/    # AgentAdapter implementations
 │       ├── providers/   # LLM provider integrations
-│       ├── skills/      # Skill definitions and handlers
+│       ├── skills/      # Skill definitions, registry, user state
 │       ├── auth/        # User auth, hosted provisioning
 │       ├── memory/      # Conversation memory extraction
 │       └── websocket/   # WebSocket connection handler
@@ -172,7 +174,9 @@ Register your adapter in the WebSocket handler, and it will automatically work w
 1. Create a directory under `server/src/skills/your-skill/`
 2. Define a `manifest.ts` with `SkillManifest` (name, description, functions in OpenAI Function Calling format)
 3. Implement a `handler.ts` that processes function calls and returns results
-4. The skill auto-loads on server start via `SkillLoader`
+4. The skill auto-loads on server start via `SkillLoader` and syncs to the Skill Catalog
+
+See [docs/skills-development.md](docs/skills-development.md) for the full development guide, and [docs/skills-guide.md](docs/skills-guide.md) for the end-user guide.
 
 ## Tech Stack
 
@@ -193,10 +197,12 @@ Register your adapter in the WebSocket handler, and it will automatically work w
 - [x] Conversation memory
 - [x] Desktop MVP (Tauri v2)
 - [x] Hosted agent provisioning
-- [ ] Skill marketplace
-- [ ] Desktop local skills (file ops, browser automation)
+- [x] User-level Skill management (install/uninstall, Skill Library)
+- [x] Skill Catalog database with audit and environment metadata
+- [ ] Desktop remote skill execution (file ops, browser automation)
+- [ ] Hosted mode skill management (OpenClaw/CoPaw)
+- [ ] Skill marketplace and community ecosystem
 - [ ] Multi-agent collaboration
-- [ ] Cross-user agent communication
 - [ ] iOS client (TestFlight)
 - [ ] Payment integration
 

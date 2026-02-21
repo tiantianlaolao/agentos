@@ -15,6 +15,9 @@ export enum MessageType {
   CHAT_STOP = 'chat.stop',
   SKILL_LIST_REQUEST = 'skill.list.request',
   SKILL_TOGGLE = 'skill.toggle',
+  SKILL_INSTALL = 'skill.install',
+  SKILL_UNINSTALL = 'skill.uninstall',
+  SKILL_LIBRARY_REQUEST = 'skill.library.request',
 
   // Server -> Client
   CONNECTED = 'connected',
@@ -24,6 +27,7 @@ export enum MessageType {
   SKILL_RESULT = 'skill.result',
   PUSH_MESSAGE = 'push.message',
   SKILL_LIST_RESPONSE = 'skill.list.response',
+  SKILL_LIBRARY_RESPONSE = 'skill.library.response',
   ERROR = 'error',
 
   // Bidirectional
@@ -69,6 +73,7 @@ export interface ConnectMessage extends BaseMessage {
     openclawHosted?: boolean;
     copawUrl?: string;
     copawToken?: string;
+    copawHosted?: boolean;
     deviceId?: string;
     authToken?: string;
     model?: string;
@@ -100,6 +105,29 @@ export interface SkillToggleMessage extends BaseMessage {
   payload: {
     skillName: string;
     enabled: boolean;
+  };
+}
+
+export interface SkillInstallMessage extends BaseMessage {
+  type: MessageType.SKILL_INSTALL;
+  payload: {
+    skillName: string;
+  };
+}
+
+export interface SkillUninstallMessage extends BaseMessage {
+  type: MessageType.SKILL_UNINSTALL;
+  payload: {
+    skillName: string;
+  };
+}
+
+export interface SkillLibraryRequestMessage extends BaseMessage {
+  type: MessageType.SKILL_LIBRARY_REQUEST;
+  payload?: {
+    category?: string;
+    search?: string;
+    environment?: string;
   };
 }
 
@@ -176,8 +204,33 @@ export interface SkillManifestInfo {
   audit: string;
   auditSource?: string;
   enabled: boolean;
+  installed?: boolean;
+  environments?: string[];
+  category?: string;
   emoji?: string;
   eligible?: boolean;
+  functions: Array<{ name: string; description: string }>;
+}
+
+export interface SkillLibraryResponseMessage extends BaseMessage {
+  type: MessageType.SKILL_LIBRARY_RESPONSE;
+  payload: {
+    skills: SkillLibraryItem[];
+  };
+}
+
+export interface SkillLibraryItem {
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  category: string;
+  environments: string[];
+  audit: string;
+  auditSource?: string;
+  visibility: string;
+  installed: boolean;
+  isDefault: boolean;
   functions: Array<{ name: string; description: string }>;
 }
 
@@ -202,7 +255,7 @@ export interface PongMessage extends BaseMessage {
 
 // ===== Union =====
 
-export type ClientMessage = ConnectMessage | ChatSendMessage | ChatStopMessage | SkillListRequestMessage | SkillToggleMessage | PingMessage;
+export type ClientMessage = ConnectMessage | ChatSendMessage | ChatStopMessage | SkillListRequestMessage | SkillToggleMessage | SkillInstallMessage | SkillUninstallMessage | SkillLibraryRequestMessage | PingMessage;
 
 export type ServerMessage =
   | ConnectedMessage
@@ -212,6 +265,7 @@ export type ServerMessage =
   | SkillResultMessage
   | PushMessage
   | SkillListResponseMessage
+  | SkillLibraryResponseMessage
   | ErrorMessage
   | PongMessage;
 

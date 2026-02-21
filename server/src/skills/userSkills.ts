@@ -1,0 +1,202 @@
+/**
+ * User-level Skill state management.
+ *
+ * Provides install/uninstall per user, catalog sync from registry,
+ * and catalog query functions.
+ */
+
+import db from '../auth/db.js';
+import { skillRegistry } from './registry.js';
+
+// ── Types ──
+
+export interface SkillCatalogEntry {
+  name: string;
+  version: string;
+  description: string | null;
+  author: string | null;
+  category: string;
+  environments: string[];
+  permissions: string[];
+  functions: Array<{ name: string; description: string }>;
+  audit: string;
+  auditSource: string | null;
+  visibility: string;
+  owner: string | null;
+  isDefault: boolean;
+}
+
+export interface CatalogListOptions {
+  category?: string;
+  search?: string;
+  environment?: string;
+}
+
+// ── Prepared statements (lazy init) ──
+
+const stmts = {
+  install: db.prepare(
+    'INSERT OR IGNORE INTO user_installed_skills (user_id, skill_name, installed_at, source) VALUES (?, ?, ?, ?)'
+  ),
+  uninstall: db.prepare(
+    'DELETE FROM user_installed_skills WHERE user_id = ? AND skill_name = ?'
+  ),
+  getInstalled: db.prepare(
+    'SELECT skill_name FROM user_installed_skills WHERE user_id = ?'
+  ),
+  isInstalled: db.prepare(
+    'SELECT 1 FROM user_installed_skills WHERE user_id = ? AND skill_name = ?'
+  ),
+  getDefaults: db.prepare(
+    'SELECT name FROM skill_catalog WHERE is_default = 1 AND visibility = \'public\''
+  ),
+  upsertCatalog: db.prepare(`
+    INSERT INTO skill_catalog (name, version, description, author, category, environments, permissions, functions, audit, audit_source, visibility, owner, is_default, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      version = excluded.version,
+      description = excluded.description,
+      author = excluded.author,
+      environments = excluded.environments,
+      permissions = excluded.permissions,
+      functions = excluded.functions,
+      audit = excluded.audit,
+      audit_source = excluded.audit_source,
+      visibility = excluded.visibility,
+      owner = excluded.owner,
+      updated_at = excluded.updated_at
+  `),
+  listCatalog: db.prepare('SELECT * FROM skill_catalog'),
+  listCatalogByCategory: db.prepare('SELECT * FROM skill_catalog WHERE category = ?'),
+};
+
+// ── User Skill CRUD ──
+
+export function installSkillForUser(userId: string, skillName: string, source = 'library'): boolean {
+  const result = stmts.install.run(userId, skillName, Date.now(), source);
+  return result.changes > 0;
+}
+
+export function uninstallSkillForUser(userId: string, skillName: string): boolean {
+  const result = stmts.uninstall.run(userId, skillName);
+  return result.changes > 0;
+}
+
+export function getUserInstalledSkillNames(userId: string): string[] {
+  const rows = stmts.getInstalled.all(userId) as Array<{ skill_name: string }>;
+  return rows.map((r) => r.skill_name);
+}
+
+export function isSkillInstalledForUser(userId: string, skillName: string): boolean {
+  return !!stmts.isInstalled.get(userId, skillName);
+}
+
+/**
+ * Install all default skills for a newly registered user.
+ * Called from createUser().
+ */
+export function installDefaultSkillsForUser(userId: string): void {
+  const defaults = stmts.getDefaults.all() as Array<{ name: string }>;
+  const now = Date.now();
+  const insertMany = db.transaction(() => {
+    for (const { name } of defaults) {
+      stmts.install.run(userId, name, now, 'library');
+    }
+  });
+  insertMany();
+  console.log(`[UserSkills] Installed ${defaults.length} default skills for user ${userId}`);
+}
+
+// ── Catalog ──
+
+/**
+ * Sync all skills currently in the registry into the skill_catalog DB table.
+ * Called once at startup after loadBuiltinSkills().
+ */
+export function syncCatalogFromRegistry(): void {
+  const now = Date.now();
+  const allSkills = skillRegistry.list();
+
+  const syncAll = db.transaction(() => {
+    for (const registered of allSkills) {
+      const m = registered.manifest;
+      stmts.upsertCatalog.run(
+        m.name,
+        m.version,
+        m.description,
+        m.author,
+        'general', // category
+        JSON.stringify(m.environments || ['cloud']),
+        JSON.stringify(m.permissions || []),
+        JSON.stringify((m.functions || []).map((f) => ({ name: f.name, description: f.description }))),
+        m.audit || 'platform',
+        m.auditSource || 'AgentOS',
+        m.visibility || 'public',
+        m.owner || null,
+        1, // is_default
+        now,
+        now,
+      );
+    }
+  });
+  syncAll();
+  console.log(`[UserSkills] Synced ${allSkills.length} skills to catalog`);
+}
+
+/**
+ * List skill catalog entries with optional filters.
+ */
+export function listSkillCatalog(opts?: CatalogListOptions): SkillCatalogEntry[] {
+  let rows: Array<Record<string, unknown>>;
+
+  if (opts?.category) {
+    rows = stmts.listCatalogByCategory.all(opts.category) as Array<Record<string, unknown>>;
+  } else {
+    rows = stmts.listCatalog.all() as Array<Record<string, unknown>>;
+  }
+
+  let entries = rows.map(rowToCatalogEntry);
+
+  if (opts?.search) {
+    const q = opts.search.toLowerCase();
+    entries = entries.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        (e.description || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (opts?.environment) {
+    entries = entries.filter((e) => e.environments.includes(opts.environment!));
+  }
+
+  return entries;
+}
+
+function rowToCatalogEntry(row: Record<string, unknown>): SkillCatalogEntry {
+  return {
+    name: row.name as string,
+    version: row.version as string,
+    description: row.description as string | null,
+    author: row.author as string | null,
+    category: (row.category as string) || 'general',
+    environments: safeJsonArray(row.environments as string) as string[],
+    permissions: safeJsonArray(row.permissions as string) as string[],
+    functions: safeJsonArray(row.functions as string) as Array<{ name: string; description: string }>,
+    audit: (row.audit as string) || 'unreviewed',
+    auditSource: row.audit_source as string | null,
+    visibility: (row.visibility as string) || 'public',
+    owner: row.owner as string | null,
+    isDefault: (row.is_default as number) === 1,
+  };
+}
+
+function safeJsonArray(val: string | null | undefined): unknown[] {
+  if (!val) return [];
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}

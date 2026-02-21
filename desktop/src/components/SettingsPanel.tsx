@@ -59,6 +59,7 @@ export function SettingsPanel({ onClose }: Props) {
   const [formOpenclawSubMode, setFormOpenclawSubMode] = useState(store.openclawSubMode);
   const [formCopawUrl, setFormCopawUrl] = useState(store.copawUrl);
   const [formCopawToken, setFormCopawToken] = useState(store.copawToken);
+  const [formCopawSubMode, setFormCopawSubMode] = useState(store.copawSubMode);
   const [formLocale, setFormLocale] = useState(store.locale);
   const [saved, setSaved] = useState(false);
 
@@ -87,13 +88,14 @@ export function SettingsPanel({ onClose }: Props) {
     store.setOpenclawSubMode(formOpenclawSubMode);
     store.setCopawUrl(formCopawUrl);
     store.setCopawToken(formCopawToken);
+    store.setCopawSubMode(formCopawSubMode);
     store.setLocale(formLocale);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }, [
     store, formMode, formProvider, formApiKey, formServerUrl,
     formSelectedModel, formOpenclawUrl, formOpenclawToken,
-    formOpenclawSubMode, formCopawUrl, formCopawToken, formLocale,
+    formOpenclawSubMode, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,
   ]);
 
   const handleAuth = useCallback(async () => {
@@ -415,27 +417,48 @@ export function SettingsPanel({ onClose }: Props) {
         {formMode === 'copaw' && (
           <div className="settings-section">
             <h3 className="settings-section-title">{t('settings.copawConfig')}</h3>
-            <div className="settings-field">
-              <label className="settings-label">{t('settings.copawUrl')}</label>
-              <input
-                className="settings-input"
-                value={formCopawUrl}
-                onChange={(e) => setFormCopawUrl(e.target.value)}
-                placeholder={t('settings.copawUrlPlaceholder')}
-              />
-              <span className="settings-hint">{t('settings.copawUrlHint')}</span>
+            <div className="settings-submode-row">
+              <button
+                className={`settings-submode-btn ${formCopawSubMode === 'hosted' ? 'active' : ''}`}
+                onClick={() => setFormCopawSubMode('hosted')}
+              >
+                {t('settings.copawHosted')}
+              </button>
+              <button
+                className={`settings-submode-btn ${formCopawSubMode === 'selfhosted' ? 'active' : ''}`}
+                onClick={() => setFormCopawSubMode('selfhosted')}
+              >
+                {t('settings.copawSelfhosted')}
+              </button>
             </div>
-            <div className="settings-field">
-              <label className="settings-label">{t('settings.accessToken')}</label>
-              <input
-                className="settings-input"
-                type="password"
-                value={formCopawToken}
-                onChange={(e) => setFormCopawToken(e.target.value)}
-                placeholder={t('settings.accessTokenPlaceholder')}
-              />
-              <span className="settings-hint">{t('settings.copawTokenHint')}</span>
-            </div>
+            {formCopawSubMode === 'hosted' && (
+              <p className="settings-hosted-note">{t('settings.copawHostedDesc')}</p>
+            )}
+            {formCopawSubMode === 'selfhosted' && (
+              <>
+                <div className="settings-field">
+                  <label className="settings-label">{t('settings.copawUrl')}</label>
+                  <input
+                    className="settings-input"
+                    value={formCopawUrl}
+                    onChange={(e) => setFormCopawUrl(e.target.value)}
+                    placeholder={t('settings.copawUrlPlaceholder')}
+                  />
+                  <span className="settings-hint">{t('settings.copawUrlHint')}</span>
+                </div>
+                <div className="settings-field">
+                  <label className="settings-label">{t('settings.accessToken')}</label>
+                  <input
+                    className="settings-input"
+                    type="password"
+                    value={formCopawToken}
+                    onChange={(e) => setFormCopawToken(e.target.value)}
+                    placeholder={t('settings.accessTokenPlaceholder')}
+                  />
+                  <span className="settings-hint">{t('settings.copawTokenHint')}</span>
+                </div>
+              </>
+            )}
           </div>
         )}
 

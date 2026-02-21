@@ -1,6 +1,5 @@
-import React, { useMemo, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform, ToastAndroid, Alert } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
+import { useMemo, useCallback, useState } from 'react';
+import { useTranslation } from '../i18n/index.ts';
 
 // VS Code Dark+ token colors
 const COLORS = {
@@ -28,17 +27,17 @@ const KEYWORDS: Record<string, Set<string>> = {
   go: new Set(['func', 'return', 'if', 'else', 'for', 'range', 'switch', 'case', 'default', 'break', 'continue', 'go', 'select', 'chan', 'defer', 'fallthrough', 'goto', 'package', 'import', 'var', 'const', 'type', 'struct', 'interface', 'map', 'make', 'new', 'append', 'len', 'cap', 'nil', 'true', 'false', 'iota']),
   rust: new Set(['fn', 'let', 'mut', 'const', 'return', 'if', 'else', 'for', 'while', 'loop', 'break', 'continue', 'match', 'struct', 'enum', 'impl', 'trait', 'pub', 'use', 'mod', 'crate', 'self', 'super', 'type', 'where', 'as', 'in', 'ref', 'move', 'async', 'await', 'dyn', 'true', 'false', 'Some', 'None', 'Ok', 'Err']),
   java: new Set(['public', 'private', 'protected', 'static', 'final', 'abstract', 'class', 'interface', 'extends', 'implements', 'return', 'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break', 'continue', 'new', 'this', 'super', 'try', 'catch', 'finally', 'throw', 'throws', 'import', 'package', 'void', 'int', 'long', 'double', 'float', 'boolean', 'char', 'byte', 'short', 'true', 'false', 'null', 'instanceof']),
-  sql: new Set(['SELECT', 'FROM', 'WHERE', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'TABLE', 'ALTER', 'DROP', 'INDEX', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'AND', 'OR', 'NOT', 'NULL', 'IS', 'IN', 'LIKE', 'BETWEEN', 'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'AS', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'UNION', 'ALL', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'DEFAULT', 'NOT', 'INTEGER', 'TEXT', 'REAL', 'BLOB', 'VARCHAR', 'BOOLEAN']),
+  sql: new Set(['SELECT', 'FROM', 'WHERE', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'TABLE', 'ALTER', 'DROP', 'INDEX', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'AND', 'OR', 'NOT', 'NULL', 'IS', 'IN', 'LIKE', 'BETWEEN', 'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'AS', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'UNION', 'ALL', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'DEFAULT', 'INTEGER', 'TEXT', 'REAL', 'BLOB', 'VARCHAR', 'BOOLEAN']),
   bash: new Set(['if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'do', 'done', 'case', 'esac', 'in', 'function', 'return', 'exit', 'echo', 'export', 'local', 'readonly', 'shift', 'set', 'unset', 'source', 'true', 'false']),
 };
 
 // Map aliases
 const LANG_ALIAS: Record<string, string> = {
   javascript: 'js', typescript: 'js', ts: 'js', tsx: 'js', jsx: 'js',
-  py: 'python', rb: 'python', // close enough for keywords
+  py: 'python',
   golang: 'go',
   rs: 'rust',
-  c: 'java', cpp: 'java', 'c++': 'java', csharp: 'java', cs: 'java', // close enough
+  c: 'java', cpp: 'java', 'c++': 'java', csharp: 'java', cs: 'java',
   sh: 'bash', shell: 'bash', zsh: 'bash',
   mysql: 'sql', postgres: 'sql', sqlite: 'sql',
   html: 'js', css: 'js', json: 'js', xml: 'js',
@@ -50,7 +49,6 @@ function resolveKeywords(lang?: string): Set<string> {
   return KEYWORDS[normalized] || KEYWORDS[LANG_ALIAS[normalized] || 'js'] || KEYWORDS.js;
 }
 
-// Comment style per language
 function getCommentStyle(lang?: string): { line: string; blockStart?: string; blockEnd?: string } {
   const normalized = (lang || '').toLowerCase().trim();
   const resolved = LANG_ALIAS[normalized] || normalized;
@@ -85,14 +83,14 @@ function tokenize(code: string, language?: string): Token[] {
       continue;
     }
 
-    // Strings (single/double/backtick)
+    // Strings
     const ch = code[i];
     if (ch === '"' || ch === "'" || ch === '`') {
       let j = i + 1;
       while (j < code.length) {
         if (code[j] === '\\') { j += 2; continue; }
         if (code[j] === ch) { j++; break; }
-        if (ch !== '`' && code[j] === '\n') break; // unterminated
+        if (ch !== '`' && code[j] === '\n') break;
         j++;
       }
       tokens.push({ type: 'string', value: code.slice(i, j) });
@@ -114,7 +112,7 @@ function tokenize(code: string, language?: string): Token[] {
       continue;
     }
 
-    // Words (keywords, functions, properties)
+    // Words
     if (/[a-zA-Z_$]/.test(ch)) {
       let j = i + 1;
       while (j < code.length && /[a-zA-Z0-9_$]/.test(code[j])) j++;
@@ -142,7 +140,7 @@ function tokenize(code: string, language?: string): Token[] {
       continue;
     }
 
-    // Punctuation / operators
+    // Punctuation
     tokens.push({ type: 'punctuation', value: ch });
     i++;
   }
@@ -150,99 +148,46 @@ function tokenize(code: string, language?: string): Token[] {
   return tokens;
 }
 
+const MAX_TOKENIZE_LENGTH = 3000;
+
 interface CodeBlockProps {
   code: string;
   language?: string;
 }
 
-// Skip tokenization for very long code to prevent JS thread freeze
-const MAX_TOKENIZE_LENGTH = 3000;
-
-export default function CodeBlock({ code, language }: CodeBlockProps) {
+export function CodeBlock({ code, language }: CodeBlockProps) {
+  const t = useTranslation();
+  const [copied, setCopied] = useState(false);
   const isLong = code.length > MAX_TOKENIZE_LENGTH;
   const tokens = useMemo(
     () => isLong ? null : tokenize(code, language),
     [code, language, isLong],
   );
 
-  const handleCopy = useCallback(async () => {
-    await Clipboard.setStringAsync(code);
-    if (Platform.OS === 'android') {
-      ToastAndroid.show('Copied', ToastAndroid.SHORT);
-    }
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
   }, [code]);
 
   const displayLang = language?.toLowerCase().trim() || '';
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        {displayLang ? (
-          <View style={styles.langPill}>
-            <Text style={styles.langText}>{displayLang}</Text>
-          </View>
-        ) : (
-          <View />
-        )}
-        <TouchableOpacity onPress={handleCopy} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={styles.copyText}>Copy</Text>
-        </TouchableOpacity>
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.codeScroll}>
-        {tokens ? (
-          <Text style={styles.codeText}>
-            {tokens.map((token, idx) => (
-              <Text key={idx} style={{ color: COLORS[token.type] }}>
-                {token.value}
-              </Text>
-            ))}
-          </Text>
-        ) : (
-          <Text selectable style={styles.codeText}>{code}</Text>
-        )}
-      </ScrollView>
-    </View>
+    <div className="code-block">
+      <div className="code-block-header">
+        <span className="code-block-lang">{displayLang}</span>
+        <button className="code-block-copy" onClick={handleCopy}>
+          {copied ? t('chat.copied') : t('chat.copy')}
+        </button>
+      </div>
+      <pre className="code-block-body">
+        <code>
+          {tokens ? tokens.map((token, idx) => (
+            <span key={idx} style={{ color: COLORS[token.type] }}>{token.value}</span>
+          )) : code}
+        </code>
+      </pre>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#1e1e2e',
-    borderRadius: 8,
-    marginVertical: 6,
-    overflow: 'hidden',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#181828',
-  },
-  langPill: {
-    backgroundColor: '#2d2d44',
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  langText: {
-    color: '#888',
-    fontSize: 11,
-    fontFamily: 'monospace',
-  },
-  copyText: {
-    color: '#888',
-    fontSize: 12,
-  },
-  codeScroll: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  codeText: {
-    fontFamily: 'monospace',
-    fontSize: 13,
-    lineHeight: 20,
-    color: '#D4D4D4',
-  },
-});

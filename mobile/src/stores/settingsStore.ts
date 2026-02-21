@@ -19,6 +19,7 @@ interface SettingsState {
   hostedInstanceStatus: string; // 'pending' | 'provisioning' | 'ready' | 'error'
 
   // CoPaw
+  copawSubMode: 'hosted' | 'selfhosted';
   copawUrl: string;
   copawToken: string;
 
@@ -40,6 +41,7 @@ interface SettingsState {
   setHostedActivated: (v: boolean) => void;
   setHostedQuota: (used: number, total: number) => void;
   setHostedInstanceStatus: (status: string) => void;
+  setCopawSubMode: (mode: 'hosted' | 'selfhosted') => void;
   setCopawUrl: (url: string) => void;
   setCopawToken: (token: string) => void;
   setLocale: (locale: string) => void;
@@ -59,6 +61,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   hostedQuotaUsed: 0,
   hostedQuotaTotal: 50,
   hostedInstanceStatus: 'pending',
+  copawSubMode: 'hosted',
   copawUrl: '',
   copawToken: '',
   locale: 'zh',
@@ -75,6 +78,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setHostedActivated: (v) => set({ hostedActivated: v }),
   setHostedQuota: (used, total) => set({ hostedQuotaUsed: used, hostedQuotaTotal: total }),
   setHostedInstanceStatus: (status) => set({ hostedInstanceStatus: status }),
+  setCopawSubMode: (mode) => set({ copawSubMode: mode }),
   setCopawUrl: (url) => set({ copawUrl: url }),
   setCopawToken: (token) => set({ copawToken: token }),
   setLocale: (locale) => set({ locale }),
