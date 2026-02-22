@@ -42,11 +42,6 @@ router.put('/', (req: Request, res: Response) => {
     return;
   }
 
-  if (content.length > 500) {
-    res.status(400).json({ ok: false, error: 'content exceeds 500 characters' });
-    return;
-  }
-
   updateMemory(decoded.userId, content);
   const data = getMemoryWithMeta(decoded.userId);
   res.json({ ok: true, data: { updatedAt: data?.updatedAt ?? new Date().toISOString() } });

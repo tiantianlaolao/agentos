@@ -163,8 +163,7 @@ export function MemoryPanel({ onClose }: Props) {
           <textarea
             className="memory-textarea"
             value={editContent}
-            onChange={(e) => setEditContent(e.target.value.slice(0, 2000))}
-            maxLength={2000}
+            onChange={(e) => setEditContent(e.target.value)}
             autoFocus
             placeholder={t('memory.empty')}
           />

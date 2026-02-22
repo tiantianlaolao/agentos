@@ -107,7 +107,7 @@ export default {
     save: '保存',
     cancel: '取消',
     saving: '保存中...',
-    charCount: '%{count}/2000 字',
+    charCount: '%{count} 字',
     updatedAt: '更新于 %{time}',
     loginRequired: '请先登录以查看记忆',
     externalAgent: '当前 Agent 管理自己的记忆',

@@ -207,7 +207,15 @@ export function handleConnection(ws: WebSocket): void {
     }
   });
 
+  // Keep-alive ping every 30 seconds to prevent NAT/firewall timeout
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === ws.OPEN) {
+      ws.ping();
+    }
+  }, 30000);
+
   ws.on('close', () => {
+    clearInterval(pingInterval);
     if (session) {
       session.abortController?.abort();
       if (activePushWs === ws) {

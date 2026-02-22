@@ -151,17 +151,16 @@ function App() {
   }, [isLoggedIn, authToken, isAdmin]);
 
   // Auto-connect for WS modes (builtin, openclaw-hosted, copaw)
-  // Since we removed the manual Connect button from sidebar, connect automatically
+  // Watches ws.connected so it auto-reconnects when connection drops
   useEffect(() => {
-    if (isDirect) return; // BYOK / OpenClaw selfhosted don't need WS
+    if (isDirect) return;
     if (ws.connected || ws.connecting) return;
-    // Small delay to let mode/auth state settle after changes
     const timer = setTimeout(() => {
       handleConnect();
-    }, 300);
+    }, 500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, isDirect, authToken, copawSubMode, openclawSubMode, hostedActivated]);
+  }, [mode, isDirect, authToken, copawSubMode, openclawSubMode, hostedActivated, ws.connected, ws.connecting]);
 
   // Load conversation history on mount and when mode/user changes
   useEffect(() => {

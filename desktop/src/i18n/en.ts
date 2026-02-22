@@ -107,7 +107,7 @@ export default {
     save: 'Save',
     cancel: 'Cancel',
     saving: 'Saving...',
-    charCount: '%{count}/2000 chars',
+    charCount: '%{count} chars',
     updatedAt: 'Updated at %{time}',
     loginRequired: 'Please login to view memory',
     externalAgent: 'Current agent manages its own memory',
