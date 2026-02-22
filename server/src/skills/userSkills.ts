@@ -16,6 +16,7 @@ export interface SkillCatalogEntry {
   description: string | null;
   author: string | null;
   category: string;
+  emoji: string | null;
   environments: string[];
   permissions: string[];
   functions: Array<{ name: string; description: string }>;
@@ -24,6 +25,8 @@ export interface SkillCatalogEntry {
   visibility: string;
   owner: string | null;
   isDefault: boolean;
+  installCount: number;
+  featured: boolean;
 }
 
 export interface CatalogListOptions {
@@ -57,12 +60,14 @@ const stmts = {
     'DELETE FROM skill_catalog WHERE name NOT IN (SELECT value FROM json_each(?))'
   ),
   upsertCatalog: db.prepare(`
-    INSERT INTO skill_catalog (name, version, description, author, category, environments, permissions, functions, audit, audit_source, visibility, owner, is_default, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO skill_catalog (name, version, description, author, category, emoji, environments, permissions, functions, audit, audit_source, visibility, owner, is_default, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET
       version = excluded.version,
       description = excluded.description,
       author = excluded.author,
+      category = excluded.category,
+      emoji = excluded.emoji,
       environments = excluded.environments,
       permissions = excluded.permissions,
       functions = excluded.functions,
@@ -74,17 +79,25 @@ const stmts = {
   `),
   listCatalog: db.prepare('SELECT * FROM skill_catalog'),
   listCatalogByCategory: db.prepare('SELECT * FROM skill_catalog WHERE category = ?'),
+  incrementInstallCount: db.prepare('UPDATE skill_catalog SET install_count = COALESCE(install_count, 0) + 1 WHERE name = ?'),
+  decrementInstallCount: db.prepare('UPDATE skill_catalog SET install_count = MAX(0, COALESCE(install_count, 0) - 1) WHERE name = ?'),
 };
 
 // ── User Skill CRUD ──
 
 export function installSkillForUser(userId: string, skillName: string, source = 'library'): boolean {
   const result = stmts.install.run(userId, skillName, Date.now(), source);
+  if (result.changes > 0) {
+    stmts.incrementInstallCount.run(skillName);
+  }
   return result.changes > 0;
 }
 
 export function uninstallSkillForUser(userId: string, skillName: string): boolean {
   const result = stmts.uninstall.run(userId, skillName);
+  if (result.changes > 0) {
+    stmts.decrementInstallCount.run(skillName);
+  }
   return result.changes > 0;
 }
 
@@ -131,7 +144,8 @@ export function syncCatalogFromRegistry(): void {
         m.version,
         m.description,
         m.author,
-        'general', // category
+        m.category || 'general',
+        m.emoji || null,
         JSON.stringify(m.environments || ['cloud']),
         JSON.stringify(m.permissions || []),
         JSON.stringify((m.functions || []).map((f) => ({ name: f.name, description: f.description }))),
@@ -139,7 +153,7 @@ export function syncCatalogFromRegistry(): void {
         m.auditSource || 'AgentOS',
         m.visibility || 'public',
         m.owner || null,
-        1, // is_default
+        m.isDefault !== false ? 1 : 0,
         now,
         now,
       );
@@ -203,6 +217,7 @@ function rowToCatalogEntry(row: Record<string, unknown>): SkillCatalogEntry {
     description: row.description as string | null,
     author: row.author as string | null,
     category: (row.category as string) || 'general',
+    emoji: (row.emoji as string) || null,
     environments: safeJsonArray(row.environments as string) as string[],
     permissions: safeJsonArray(row.permissions as string) as string[],
     functions: safeJsonArray(row.functions as string) as Array<{ name: string; description: string }>,
@@ -211,6 +226,8 @@ function rowToCatalogEntry(row: Record<string, unknown>): SkillCatalogEntry {
     visibility: (row.visibility as string) || 'public',
     owner: row.owner as string | null,
     isDefault: (row.is_default as number) === 1,
+    installCount: (row.install_count as number) || 0,
+    featured: (row.featured as number) === 1,
   };
 }
 
@@ -222,4 +239,31 @@ function safeJsonArray(val: string | null | undefined): unknown[] {
   } catch {
     return [];
   }
+}
+
+// ── User Skill Config ──
+
+const configStmts = {
+  get: db.prepare('SELECT config_json FROM user_skill_config WHERE user_id = ? AND skill_name = ?'),
+  set: db.prepare(`
+    INSERT INTO user_skill_config (user_id, skill_name, config_json, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id, skill_name) DO UPDATE SET
+      config_json = excluded.config_json,
+      updated_at = excluded.updated_at
+  `),
+};
+
+export function getUserSkillConfig(userId: string, skillName: string): Record<string, unknown> {
+  const row = configStmts.get.get(userId, skillName) as { config_json: string } | undefined;
+  if (!row) return {};
+  try {
+    return JSON.parse(row.config_json);
+  } catch {
+    return {};
+  }
+}
+
+export function setUserSkillConfig(userId: string, skillName: string, config: Record<string, unknown>): void {
+  configStmts.set.run(userId, skillName, JSON.stringify(config), Date.now());
 }

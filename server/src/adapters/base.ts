@@ -38,11 +38,41 @@ export interface SkillManifest {
   /** Visual trust badge shown in UI */
   auditSource?: string; // e.g. "AgentOS", "ClawHub", "CoPaw Community"
 
+  /** Skill category for Library grouping */
+  category?: SkillCategory;
+  /** Emoji icon shown in Library UI */
+  emoji?: string;
+
+  /** Whether this skill is auto-installed for new users (default: true for public skills) */
+  isDefault?: boolean;
+
+  /** User-configurable fields for this skill (e.g. API keys) */
+  config?: SkillConfigField[];
+
   /** Skill visibility: 'public' (default) | 'private' (only owner can see/use) */
   visibility?: 'public' | 'private';
   /** Owner identifier (phone number) — required when visibility='private' */
   owner?: string;
 }
+
+export interface SkillConfigField {
+  key: string;
+  label: string;
+  type: 'string' | 'number' | 'boolean';
+  required?: boolean;
+  /** If true, value is masked in UI (like a password field) */
+  secret?: boolean;
+  description?: string;
+  defaultValue?: string | number | boolean;
+}
+
+export type SkillCategory =
+  | 'tools'
+  | 'knowledge'
+  | 'productivity'
+  | 'finance'
+  | 'creative'
+  | 'general';
 
 export type SkillEnvironment = 'cloud' | 'desktop' | 'mobile';
 

@@ -371,6 +371,47 @@ export class CoPawAdapter implements AgentAdapter {
     }
   }
 
+  async installSkill(manifest: SkillManifest): Promise<void> {
+    try {
+      const url = `${this.baseUrl}/api/skills/install`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify({ name: manifest.name }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        console.log(`[CoPaw] Skill "${manifest.name}" install request sent`);
+        this.skillsCache = null; // Invalidate cache
+      } else {
+        console.log(`[CoPaw] Skill install not supported (HTTP ${response.status}), ignoring`);
+      }
+    } catch (err) {
+      // CoPaw may not support skill install API yet — log and continue
+      console.log(`[CoPaw] installSkill not available: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  async uninstallSkill(skillName: string): Promise<void> {
+    try {
+      const url = `${this.baseUrl}/api/skills/uninstall`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify({ name: skillName }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        console.log(`[CoPaw] Skill "${skillName}" uninstall request sent`);
+        this.skillsCache = null;
+      } else {
+        console.log(`[CoPaw] Skill uninstall not supported (HTTP ${response.status}), ignoring`);
+      }
+    } catch (err) {
+      console.log(`[CoPaw] uninstallSkill not available: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
   // --- Internal helpers ---
 
   private _headers(): Record<string, string> {

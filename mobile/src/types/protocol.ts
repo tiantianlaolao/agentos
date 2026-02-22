@@ -18,6 +18,8 @@ export enum MessageType {
   SKILL_INSTALL = 'skill.install',
   SKILL_UNINSTALL = 'skill.uninstall',
   SKILL_LIBRARY_REQUEST = 'skill.library.request',
+  SKILL_CONFIG_GET = 'skill.config.get',
+  SKILL_CONFIG_SET = 'skill.config.set',
 
   // Server -> Client
   CONNECTED = 'connected',
@@ -28,6 +30,7 @@ export enum MessageType {
   PUSH_MESSAGE = 'push.message',
   SKILL_LIST_RESPONSE = 'skill.list.response',
   SKILL_LIBRARY_RESPONSE = 'skill.library.response',
+  SKILL_CONFIG_RESPONSE = 'skill.config.response',
   ERROR = 'error',
 
   // Bidirectional
@@ -226,12 +229,15 @@ export interface SkillLibraryItem {
   description: string;
   author: string;
   category: string;
+  emoji?: string;
   environments: string[];
+  permissions: string[];
   audit: string;
   auditSource?: string;
   visibility: string;
   installed: boolean;
   isDefault: boolean;
+  installCount: number;
   functions: Array<{ name: string; description: string }>;
 }
 

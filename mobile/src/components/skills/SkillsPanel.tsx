@@ -11,14 +11,18 @@
  *   3. Module-level cache for instant re-opens
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   StyleSheet,
   ActivityIndicator,
+  TextInput,
+  Alert,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { randomUUID } from 'expo-crypto';
@@ -33,6 +37,8 @@ import type {
   SkillLibraryItem,
 } from '../../types/protocol';
 import type { OpenClawDirectClient } from '../../services/openclawDirect';
+import RegisterSkillForm from './RegisterSkillForm';
+import SkillDetail from './SkillDetail';
 
 interface SkillsPanelProps {
   wsClient: {
@@ -44,9 +50,20 @@ interface SkillsPanelProps {
   mode?: ConnectionMode;
   openclawSubMode?: 'hosted' | 'selfhosted';
   openclawClient?: OpenClawDirectClient | null;
+  serverUrl?: string;
+  authToken?: string;
 }
 
 type TabKey = 'installed' | 'library';
+
+const CATEGORIES = [
+  { key: 'all', label: 'All', emoji: '📦' },
+  { key: 'tools', label: 'Tools', emoji: '🛠️' },
+  { key: 'knowledge', label: 'Knowledge', emoji: '📚' },
+  { key: 'productivity', label: 'Productivity', emoji: '⚡' },
+  { key: 'finance', label: 'Finance', emoji: '💰' },
+  { key: 'creative', label: 'Creative', emoji: '🎨' },
+] as const;
 
 const AUDIT_BADGES: Record<string, { label: string; color: string; icon: string }> = {
   platform: { label: 'Official', color: '#22c55e', icon: 'shield-checkmark' },
@@ -76,7 +93,7 @@ function canManageSkills(mode?: ConnectionMode): boolean {
   return !mode || mode === 'builtin' || mode === 'byok';
 }
 
-export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, openclawClient }: SkillsPanelProps) {
+export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, openclawClient, serverUrl, authToken }: SkillsPanelProps) {
   const cacheKey = getCacheKey(mode, openclawSubMode);
   const manageable = canManageSkills(mode);
   const [activeTab, setActiveTab] = useState<TabKey>('installed');
@@ -84,6 +101,10 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
   const [library, setLibrary] = useState<SkillLibraryItem[]>(libraryCache.get(cacheKey) || []);
   const [loading, setLoading] = useState(!skillsCache.has(cacheKey));
   const [libraryLoading, setLibraryLoading] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [detailSkill, setDetailSkill] = useState<SkillLibraryItem | null>(null);
 
   // Self-hosted OpenClaw: fetch skills directly from Gateway
   const fetchDirectSkills = useCallback(async (force = false) => {
@@ -142,8 +163,8 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
     });
   }, [wsClient, cacheKey]);
 
-  // Install a skill
-  const installSkill = useCallback((skillName: string) => {
+  // Install a skill (with permission confirmation for risky skills)
+  const doInstall = useCallback((skillName: string) => {
     if (!wsClient?.isConnected) return;
     wsClient.send({
       id: randomUUID(),
@@ -151,7 +172,6 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
       timestamp: Date.now(),
       payload: { skillName },
     });
-    // Optimistic update for library
     setLibrary((prev) => {
       const updated = prev.map((s) =>
         s.name === skillName ? { ...s, installed: true } : s
@@ -160,6 +180,24 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
       return updated;
     });
   }, [wsClient, cacheKey]);
+
+  const HIGH_RISK_PERMISSIONS = ['filesystem', 'exec', 'system', 'browser'];
+  const installSkill = useCallback((skillName: string) => {
+    const skill = library.find((s) => s.name === skillName);
+    const riskyPerms = skill?.permissions?.filter((p) => HIGH_RISK_PERMISSIONS.includes(p)) || [];
+    if (riskyPerms.length > 0) {
+      Alert.alert(
+        'Permission Required',
+        `"${skillName}" requires the following permissions:\n\n${riskyPerms.map((p) => `  • ${p}`).join('\n')}\n\nDo you want to install it?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Install', onPress: () => doInstall(skillName) },
+        ]
+      );
+    } else {
+      doInstall(skillName);
+    }
+  }, [library, doInstall]);
 
   // Uninstall a skill
   const uninstallSkill = useCallback((skillName: string) => {
@@ -239,6 +277,36 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
     }
   }, [activeTab, cacheKey, manageable, requestLibrary]);
 
+  // Filter and group library items
+  const filteredLibrary = useMemo(() => {
+    let items = library;
+    if (selectedCategory !== 'all') {
+      items = items.filter((s) => s.category === selectedCategory);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      items = items.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.description.toLowerCase().includes(q) ||
+          (s.emoji && s.emoji.includes(q))
+      );
+    }
+    return items;
+  }, [library, selectedCategory, searchQuery]);
+
+  // Group by category for display
+  const groupedLibrary = useMemo(() => {
+    if (selectedCategory !== 'all') return [{ category: selectedCategory, items: filteredLibrary }];
+    const groups = new Map<string, SkillLibraryItem[]>();
+    for (const item of filteredLibrary) {
+      const cat = item.category || 'general';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(item);
+    }
+    return Array.from(groups.entries()).map(([category, items]) => ({ category, items }));
+  }, [filteredLibrary, selectedCategory]);
+
   const renderInstalledSkill = useCallback(({ item }: { item: SkillManifestInfo }) => {
     const badge = AUDIT_BADGES[item.audit] || AUDIT_BADGES.unreviewed;
     const isPrivate = item.visibility === 'private';
@@ -316,9 +384,10 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
     const isPrivate = item.visibility === 'private';
 
     return (
-      <View style={styles.skillCard}>
+      <TouchableOpacity style={styles.skillCard} onPress={() => setDetailSkill(item)} activeOpacity={0.7}>
         <View style={styles.skillHeader}>
           <View style={styles.skillNameRow}>
+            {item.emoji ? <Text style={styles.skillEmoji}>{item.emoji}</Text> : null}
             <Text style={styles.skillName}>{item.name}</Text>
             {item.version ? <Text style={styles.skillVersion}>v{item.version}</Text> : null}
             {isPrivate && (
@@ -385,7 +454,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
             ))}
           </View>
         )}
-      </View>
+      </TouchableOpacity>
     );
   }, [installSkill]);
 
@@ -467,14 +536,127 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
             <Text style={styles.emptyText}>No skills available</Text>
           </View>
         ) : (
-          <FlatList
-            data={library}
-            keyExtractor={(item) => item.name}
-            renderItem={renderLibrarySkill}
-            contentContainerStyle={styles.listContent}
-          />
+          <View style={{ flex: 1 }}>
+            {/* Search Bar */}
+            <View style={styles.searchContainer}>
+              <Ionicons name="search-outline" size={16} color="#888" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search skills..."
+                placeholderTextColor="#666"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={16} color="#666" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Category Filter Bar */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoryBar}
+              contentContainerStyle={styles.categoryBarContent}
+            >
+              {CATEGORIES.map((cat) => (
+                <TouchableOpacity
+                  key={cat.key}
+                  style={[
+                    styles.categoryChip,
+                    selectedCategory === cat.key && styles.categoryChipActive,
+                  ]}
+                  onPress={() => setSelectedCategory(cat.key)}
+                >
+                  <Text style={styles.categoryChipEmoji}>{cat.emoji}</Text>
+                  <Text
+                    style={[
+                      styles.categoryChipText,
+                      selectedCategory === cat.key && styles.categoryChipTextActive,
+                    ]}
+                  >
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Grouped Library */}
+            <FlatList
+              data={groupedLibrary}
+              keyExtractor={(group) => group.category}
+              renderItem={({ item: group }) => (
+                <View>
+                  {selectedCategory === 'all' && (
+                    <View style={styles.groupHeader}>
+                      <Text style={styles.groupTitle}>
+                        {CATEGORIES.find((c) => c.key === group.category)?.emoji || '📦'}{' '}
+                        {(group.category.charAt(0).toUpperCase() + group.category.slice(1))}
+                      </Text>
+                      <Text style={styles.groupCount}>{group.items.length}</Text>
+                    </View>
+                  )}
+                  {group.items.map((skill) => (
+                    <View key={skill.name}>
+                      {renderLibrarySkill({ item: skill })}
+                    </View>
+                  ))}
+                </View>
+              )}
+              contentContainerStyle={styles.listContent}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="search-outline" size={36} color="#444" />
+                  <Text style={styles.emptyText}>No skills match your filter</Text>
+                </View>
+              }
+            />
+          </View>
         )
       )}
+
+      {/* Register External Skill Button */}
+      {manageable && authToken && serverUrl && (
+        <TouchableOpacity
+          style={styles.registerSkillBtn}
+          onPress={() => setShowRegisterForm(true)}
+        >
+          <Ionicons name="add-circle-outline" size={18} color="#6c63ff" />
+          <Text style={styles.registerSkillText}>Register External Skill</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Skill Detail Modal */}
+      <Modal visible={!!detailSkill} animationType="slide" presentationStyle="pageSheet">
+        {detailSkill && (
+          <SkillDetail
+            skill={detailSkill}
+            onClose={() => setDetailSkill(null)}
+            onInstall={(name) => {
+              installSkill(name);
+              setDetailSkill((prev) => prev ? { ...prev, installed: true } : null);
+            }}
+            onUninstall={(name) => {
+              uninstallSkill(name);
+              setDetailSkill((prev) => prev ? { ...prev, installed: false } : null);
+            }}
+          />
+        )}
+      </Modal>
+
+      {/* Register Skill Modal */}
+      <Modal visible={showRegisterForm} animationType="slide" presentationStyle="pageSheet">
+        <RegisterSkillForm
+          serverUrl={serverUrl || ''}
+          authToken={authToken || ''}
+          onClose={() => setShowRegisterForm(false)}
+          onRegistered={() => handleRefresh()}
+        />
+      </Modal>
     </View>
   );
 }
@@ -719,6 +901,75 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a2e',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 12,
+    marginTop: 8,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#2d2d44',
+  },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  categoryBar: {
+    maxHeight: 44,
+    marginTop: 8,
+  },
+  categoryBarContent: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#2d2d44',
+  },
+  categoryChipActive: {
+    backgroundColor: '#6c63ff22',
+    borderColor: '#6c63ff',
+  },
+  categoryChipEmoji: {
+    fontSize: 14,
+  },
+  categoryChipText: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  categoryChipTextActive: {
+    color: '#6c63ff',
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  groupTitle: {
+    color: '#ccc',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  groupCount: {
+    color: '#666',
+    fontSize: 12,
+  },
   functionsSection: {
     marginTop: 10,
     paddingTop: 10,
@@ -740,5 +991,19 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 11,
     flex: 1,
+  },
+  registerSkillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#2d2d44',
+  },
+  registerSkillText: {
+    color: '#6c63ff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

@@ -8,6 +8,7 @@ import { loadBuiltinSkills } from './skills/loader.js';
 import authRoutes from './auth/routes.js';
 import hostedRoutes from './auth/hostedRoutes.js';
 import memoryRoutes from './memory/routes.js';
+import skillRoutes from './skills/routes.js';
 
 const PORT = parseInt(process.env.PORT || '3100', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -34,6 +35,9 @@ app.use('/hosted', hostedRoutes);
 
 // Memory routes
 app.use('/memory', memoryRoutes);
+
+// External skills routes
+app.use('/skills', skillRoutes);
 
 // Health check endpoint
 app.get('/health', (_req, res) => {

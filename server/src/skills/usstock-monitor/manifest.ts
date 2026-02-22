@@ -58,6 +58,8 @@ export const manifest: SkillManifest = {
   ],
   audit: 'platform',
   auditSource: 'AgentOS',
+  category: 'finance',
+  emoji: '📈',
   visibility: 'private',
   owner: '13501161326',
 };

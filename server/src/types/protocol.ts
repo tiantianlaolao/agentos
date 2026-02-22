@@ -18,6 +18,8 @@ export enum MessageType {
   SKILL_INSTALL = 'skill.install',
   SKILL_UNINSTALL = 'skill.uninstall',
   SKILL_LIBRARY_REQUEST = 'skill.library.request',
+  SKILL_CONFIG_GET = 'skill.config.get',
+  SKILL_CONFIG_SET = 'skill.config.set',
 
   // Server -> Client
   CONNECTED = 'connected',
@@ -28,6 +30,7 @@ export enum MessageType {
   PUSH_MESSAGE = 'push.message',
   SKILL_LIST_RESPONSE = 'skill.list.response',
   SKILL_LIBRARY_RESPONSE = 'skill.library.response',
+  SKILL_CONFIG_RESPONSE = 'skill.config.response',
   ERROR = 'error',
 
   // Desktop <-> Server
@@ -228,13 +231,47 @@ export interface SkillLibraryItem {
   description: string;
   author: string;
   category: string;
+  emoji?: string;
   environments: string[];
+  permissions: string[];
   audit: string;
   auditSource?: string;
   visibility: string;
   installed: boolean;
   isDefault: boolean;
+  installCount: number;
   functions: Array<{ name: string; description: string }>;
+}
+
+export interface SkillConfigGetMessage extends BaseMessage {
+  type: MessageType.SKILL_CONFIG_GET;
+  payload: {
+    skillName: string;
+  };
+}
+
+export interface SkillConfigSetMessage extends BaseMessage {
+  type: MessageType.SKILL_CONFIG_SET;
+  payload: {
+    skillName: string;
+    config: Record<string, unknown>;
+  };
+}
+
+export interface SkillConfigResponseMessage extends BaseMessage {
+  type: MessageType.SKILL_CONFIG_RESPONSE;
+  payload: {
+    skillName: string;
+    config: Record<string, unknown>;
+    fields: Array<{
+      key: string;
+      label: string;
+      type: string;
+      required?: boolean;
+      secret?: boolean;
+      description?: string;
+    }>;
+  };
 }
 
 export interface ErrorMessage extends BaseMessage {
@@ -293,7 +330,7 @@ export interface PongMessage extends BaseMessage {
 
 // ===== Union =====
 
-export type ClientMessage = ConnectMessage | ChatSendMessage | ChatStopMessage | SkillListRequestMessage | SkillToggleMessage | SkillInstallMessage | SkillUninstallMessage | SkillLibraryRequestMessage | DesktopRegisterMessage | DesktopCommandMessage | DesktopResultMessage | PingMessage;
+export type ClientMessage = ConnectMessage | ChatSendMessage | ChatStopMessage | SkillListRequestMessage | SkillToggleMessage | SkillInstallMessage | SkillUninstallMessage | SkillLibraryRequestMessage | SkillConfigGetMessage | SkillConfigSetMessage | DesktopRegisterMessage | DesktopCommandMessage | DesktopResultMessage | PingMessage;
 
 export type ServerMessage =
   | ConnectedMessage
@@ -304,6 +341,7 @@ export type ServerMessage =
   | PushMessage
   | SkillListResponseMessage
   | SkillLibraryResponseMessage
+  | SkillConfigResponseMessage
   | DesktopCommandMessage
   | DesktopResultMessage
   | ErrorMessage

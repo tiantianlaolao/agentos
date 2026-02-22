@@ -89,6 +89,15 @@ class SkillRegistry {
     );
   }
 
+  /** Unregister a skill by name */
+  unregister(name: string): boolean {
+    const existed = this.skills.delete(name);
+    if (existed) {
+      console.log(`[SkillRegistry] Unregistered skill "${name}"`);
+    }
+    return existed;
+  }
+
   /** Get a registered skill by name */
   get(name: string): RegisteredSkill | undefined {
     return this.skills.get(name);

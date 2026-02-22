@@ -87,6 +87,23 @@ try { db.exec('ALTER TABLE hosted_accounts ADD COLUMN port INTEGER'); } catch { 
 try { db.exec('ALTER TABLE hosted_accounts ADD COLUMN instance_token TEXT'); } catch { /* already exists */ }
 try { db.exec("ALTER TABLE hosted_accounts ADD COLUMN instance_status TEXT DEFAULT 'pending'"); } catch { /* already exists */ }
 
+// Migration: add emoji and install_count to skill_catalog
+try { db.exec('ALTER TABLE skill_catalog ADD COLUMN emoji TEXT'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE skill_catalog ADD COLUMN install_count INTEGER DEFAULT 0'); } catch { /* already exists */ }
+// Migration: add featured column to skill_catalog
+try { db.exec('ALTER TABLE skill_catalog ADD COLUMN featured INTEGER DEFAULT 0'); } catch { /* already exists */ }
+
+// User skill config table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_skill_config (
+    user_id TEXT NOT NULL,
+    skill_name TEXT NOT NULL,
+    config_json TEXT DEFAULT '{}',
+    updated_at INTEGER,
+    PRIMARY KEY (user_id, skill_name)
+  );
+`);
+
 export function initDatabase(): void {
   console.log('[DB] SQLite database initialized at', DB_PATH);
 }

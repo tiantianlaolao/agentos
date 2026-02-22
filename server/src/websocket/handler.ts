@@ -30,6 +30,8 @@ import {
   uninstallSkillForUser,
   getUserInstalledSkillNames,
   listSkillCatalog,
+  getUserSkillConfig,
+  setUserSkillConfig,
 } from '../skills/userSkills.js';
 import { verifyToken } from '../auth/jwt.js';
 import { getMemory, migrateMemory } from '../memory/store.js';
@@ -170,6 +172,14 @@ export function handleConnection(ws: WebSocket): void {
 
         case MessageType.SKILL_LIBRARY_REQUEST:
           handleSkillLibraryRequest(ws, message as SkillLibraryRequestMessage, session ?? undefined);
+          break;
+
+        case MessageType.SKILL_CONFIG_GET:
+          handleSkillConfigGet(ws, message as any, session ?? undefined);
+          break;
+
+        case MessageType.SKILL_CONFIG_SET:
+          handleSkillConfigSet(ws, message as any, session ?? undefined);
           break;
 
         case MessageType.DESKTOP_REGISTER:
@@ -365,16 +375,28 @@ function handleSkillUninstall(ws: WebSocket, message: SkillUninstallMessage, ses
   }
 }
 
+/** Server-side catalog cache (60s TTL) to reduce DB queries */
+let _catalogCache: { data: import('../skills/userSkills.js').SkillCatalogEntry[]; ts: number; key: string } | null = null;
+const CATALOG_CACHE_TTL = 60_000;
+
 /** Handle SKILL_LIBRARY_REQUEST: return full catalog with installed status */
 function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMessage, session?: Session): void {
   const opts = message.payload || {};
-  const catalog = listSkillCatalog({
-    category: opts.category,
-    search: opts.search,
-    environment: opts.environment,
-    userPhone: session?.userPhone || undefined,
-    userId: session?.userId || undefined,
-  });
+  const cacheKey = JSON.stringify(opts);
+  let catalog: import('../skills/userSkills.js').SkillCatalogEntry[];
+
+  if (_catalogCache && _catalogCache.key === cacheKey && Date.now() - _catalogCache.ts < CATALOG_CACHE_TTL) {
+    catalog = _catalogCache.data;
+  } else {
+    catalog = listSkillCatalog({
+      category: opts.category,
+      search: opts.search,
+      environment: opts.environment,
+      userPhone: session?.userPhone || undefined,
+      userId: session?.userId || undefined,
+    });
+    _catalogCache = { data: catalog, ts: Date.now(), key: cacheKey };
+  }
 
   const installedNames = session?.userId
     ? getUserInstalledSkillNames(session.userId)
@@ -386,12 +408,15 @@ function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMe
     description: entry.description || '',
     author: entry.author || 'AgentOS',
     category: entry.category,
+    emoji: entry.emoji || undefined,
     environments: entry.environments as string[],
+    permissions: entry.permissions as string[],
     audit: entry.audit,
     auditSource: entry.auditSource || undefined,
     visibility: entry.visibility,
     installed: installedNames.includes(entry.name),
     isDefault: entry.isDefault,
+    installCount: entry.installCount || 0,
     functions: entry.functions as Array<{ name: string; description: string }>,
   }));
 
@@ -401,6 +426,47 @@ function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMe
     timestamp: Date.now(),
     payload: { skills },
   });
+}
+
+function handleSkillConfigGet(ws: WebSocket, message: { payload: { skillName: string } }, session?: Session): void {
+  if (!session?.userId) {
+    sendError(ws, ErrorCode.AUTH_FAILED, 'Authentication required for skill config');
+    return;
+  }
+
+  const { skillName } = message.payload;
+  const config = getUserSkillConfig(session.userId, skillName);
+
+  // Get config fields from manifest
+  const skill = skillRegistry.get(skillName);
+  const fields = (skill?.manifest.config || []).map((f) => ({
+    key: f.key,
+    label: f.label,
+    type: f.type,
+    required: f.required,
+    secret: f.secret,
+    description: f.description,
+  }));
+
+  send(ws, {
+    id: uuidv4(),
+    type: MessageType.SKILL_CONFIG_RESPONSE,
+    timestamp: Date.now(),
+    payload: { skillName, config, fields },
+  });
+}
+
+function handleSkillConfigSet(ws: WebSocket, message: { payload: { skillName: string; config: Record<string, unknown> } }, session?: Session): void {
+  if (!session?.userId) {
+    sendError(ws, ErrorCode.AUTH_FAILED, 'Authentication required for skill config');
+    return;
+  }
+
+  const { skillName, config } = message.payload;
+  setUserSkillConfig(session.userId, skillName, config);
+
+  // Return updated config
+  handleSkillConfigGet(ws, { payload: { skillName } }, session);
 }
 
 async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Session> {

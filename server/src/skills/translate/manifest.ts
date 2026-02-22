@@ -37,4 +37,6 @@ export const manifest: SkillManifest = {
   ],
   audit: 'platform',
   auditSource: 'AgentOS',
+  category: 'productivity',
+  emoji: '🌐',
 };
