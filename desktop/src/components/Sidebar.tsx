@@ -64,10 +64,6 @@ export function Sidebar({
   currentMode,
   onModeChange,
   onNewChat,
-  serverUrl,
-  onServerUrlChange,
-  onConnect,
-  onDisconnect,
   conversations,
   activeConversationId,
   onSelectConversation,
@@ -75,7 +71,6 @@ export function Sidebar({
   onOpenSettings,
   onOpenSkills,
   onOpenMemory,
-  onOpenProcess,
 }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const t = useTranslation();
@@ -150,30 +145,6 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-section">
-        <h3>{t('sidebar.server')}</h3>
-        <input
-          className="server-input"
-          value={serverUrl}
-          onChange={(e) => onServerUrlChange(e.target.value)}
-          placeholder="ws://..."
-          disabled={connected || connecting}
-        />
-        {connected ? (
-          <button className="btn-disconnect" onClick={onDisconnect}>
-            {t('sidebar.disconnect')}
-          </button>
-        ) : connecting ? (
-          <button className="btn-connect" disabled>
-            {t('status.connecting')}...
-          </button>
-        ) : (
-          <button className="btn-connect" onClick={onConnect}>
-            {t('sidebar.connect')}
-          </button>
-        )}
-      </div>
-
-      <div className="sidebar-section">
         <h3>{t('sidebar.agentMode')}</h3>
         <div className="mode-list">
           {MODES.map((m) => (
@@ -198,37 +169,43 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-footer">
-        <div className="sidebar-footer-buttons">
-          <button className="btn-settings" onClick={onOpenSkills}>
+        <div className="sidebar-footer-grid">
+          <button className="footer-btn" onClick={onOpenSkills}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
             </svg>
-            Skills
+            <span>Skills</span>
           </button>
-          <button className="btn-settings" onClick={onOpenMemory}>
-            <span style={{ fontSize: '14px' }}>&#128161;</span>
-            {t('memory.title')}
+          <button className="footer-btn" onClick={onOpenMemory}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z" />
+              <line x1="9" y1="21" x2="15" y2="21" />
+              <line x1="10" y1="24" x2="14" y2="24" />
+            </svg>
+            <span>{t('memory.title')}</span>
           </button>
-          <button className="btn-settings" onClick={onOpenProcess}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button className="footer-btn disabled" title="暂未开放">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
               <line x1="8" y1="21" x2="16" y2="21" />
               <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
-            {t('process.title')}
+            <span>{t('process.title')}</span>
           </button>
-          <button className="btn-settings" onClick={onOpenSettings}>
+          <button className="footer-btn" onClick={onOpenSettings}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            {t('sidebar.settings')}
+            <span>{t('sidebar.settings')}</span>
           </button>
         </div>
-        <span className="sidebar-user-status">
-          {auth.isLoggedIn ? maskPhone(auth.phone) : t('sidebar.notLoggedIn')}
-        </span>
-        <span className="version">v0.1.0</span>
+        <div className="sidebar-footer-info">
+          <span className="sidebar-user-status">
+            {auth.isLoggedIn ? maskPhone(auth.phone) : t('sidebar.notLoggedIn')}
+          </span>
+          <span className="version">v0.1.0</span>
+        </div>
       </div>
     </div>
   );

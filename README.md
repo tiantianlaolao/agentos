@@ -194,11 +194,13 @@ See [docs/skills-development.md](docs/skills-development.md) for the full develo
 - [x] Multi-agent support (OpenClaw, CoPaw, Built-in, BYOK)
 - [x] Skill system with SkillManifest standard
 - [x] User auth and per-user isolation
-- [x] Conversation memory
-- [x] Desktop MVP (Tauri v2)
+- [x] Conversation memory (2000-char AI-extracted memory per user)
+- [x] Desktop MVP (Tauri v2) with auto-connect and streamlined UI
 - [x] Hosted agent provisioning
 - [x] User-level Skill management (install/uninstall, Skill Library)
 - [x] Skill Catalog database with audit and environment metadata
+- [x] Mobile UX: compact context menu, auto-scroll, app reconnect, FlatList optimization
+- [x] Context window management (40-message history limit across all agents)
 - [ ] Desktop remote skill execution (file ops, browser automation)
 - [ ] Hosted mode skill management (OpenClaw/CoPaw)
 - [ ] Skill marketplace and community ecosystem

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity, Pressable, ToastAndroid, Platform, Alert, ActionSheetIOS } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity, Pressable, ToastAndroid, Platform, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import Markdown from 'react-native-markdown-display';
@@ -104,6 +104,7 @@ function MessageBubbleInner({ message, isLast, onRetry, onQuoteReply }: MessageB
   const isUser = message.role === 'user';
   // Default to plain text for very long messages to prevent JS thread freeze
   const [textMode, setTextMode] = useState(message.content.length > 5000);
+  const [showMenu, setShowMenu] = useState(false);
 
   const handleCopy = useCallback(async () => {
     if (!message.content) return;
@@ -111,35 +112,13 @@ function MessageBubbleInner({ message, isLast, onRetry, onQuoteReply }: MessageB
     if (Platform.OS === 'android') {
       ToastAndroid.show(t('chat.copy'), ToastAndroid.SHORT);
     }
+    setShowMenu(false);
   }, [message.content, t]);
 
   const handleLongPress = useCallback(() => {
     if (!message.content || message.isStreaming) return;
-    const copyLabel = t('chat.copy');
-    const quoteLabel = t('chat.quoteReply');
-    const cancelLabel = t('chat.cancel');
-
-    if (Platform.OS === 'ios') {
-      const options = [cancelLabel, copyLabel];
-      if (onQuoteReply) options.push(quoteLabel);
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex: 0 },
-        (idx) => {
-          if (idx === 1) handleCopy();
-          else if (idx === 2 && onQuoteReply) onQuoteReply(message.content);
-        },
-      );
-    } else {
-      const buttons: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }> = [
-        { text: copyLabel, onPress: handleCopy },
-      ];
-      if (onQuoteReply) {
-        buttons.push({ text: quoteLabel, onPress: () => onQuoteReply(message.content) });
-      }
-      buttons.push({ text: cancelLabel, style: 'cancel' });
-      Alert.alert('', '', buttons);
-    }
-  }, [message.content, message.isStreaming, handleCopy, onQuoteReply, t]);
+    setShowMenu(true);
+  }, [message.content, message.isStreaming]);
 
   const markdownRules = useMemo(() => ({
     fence: (node: any, _children: any, _parent: any, _styles: any) => (
@@ -257,6 +236,24 @@ function MessageBubbleInner({ message, isLast, onRetry, onQuoteReply }: MessageB
           )}
         </View>
       </Pressable>
+
+      {/* Compact context menu */}
+      <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setShowMenu(false)}>
+          <View style={[styles.menuContainer, isUser ? styles.menuRight : styles.menuLeft]}>
+            <TouchableOpacity style={styles.menuItem} onPress={handleCopy}>
+              <Ionicons name="copy-outline" size={16} color="#fff" />
+              <Text style={styles.menuText}>{t('chat.copy')}</Text>
+            </TouchableOpacity>
+            {onQuoteReply && (
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); onQuoteReply(message.content); }}>
+                <Ionicons name="return-down-forward-outline" size={16} color="#fff" />
+                <Text style={styles.menuText}>{t('chat.quoteReply')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -372,5 +369,37 @@ const styles = StyleSheet.create({
     color: '#f0a030',
     fontSize: 11,
     fontWeight: '600',
+  },
+  // Compact context menu
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+  },
+  menuContainer: {
+    backgroundColor: '#2d2d44',
+    borderRadius: 12,
+    paddingVertical: 4,
+    marginHorizontal: 40,
+    maxWidth: 200,
+  },
+  menuLeft: {
+    alignSelf: 'flex-start',
+    marginLeft: 24,
+  },
+  menuRight: {
+    alignSelf: 'flex-end',
+    marginRight: 24,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  menuText: {
+    color: '#ffffff',
+    fontSize: 15,
   },
 });

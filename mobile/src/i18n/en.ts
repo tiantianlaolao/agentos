@@ -123,7 +123,7 @@ export default {
     save: 'Save',
     cancel: 'Cancel',
     saving: 'Saving...',
-    charCount: '{{count}}/500',
+    charCount: '{{count}}/2000',
     updatedAt: 'Updated {{time}}',
     loginRequired: 'Please login to view and edit your memories.',
     externalAgent: 'This assistant manages its own memory. Switch to the built-in assistant to view and edit memories here.',

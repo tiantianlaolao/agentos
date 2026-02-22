@@ -491,6 +491,17 @@ export class OpenClawDirectClient {
     }
   }
 
+  /** Force an immediate reconnect if the connection is not open. */
+  reconnectNow(): void {
+    if (this.connected && this.ws?.readyState === WebSocket.OPEN) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.autoReconnect = true;
+    this.ensureConnected().catch(() => {});
+  }
+
   disconnect(): void {
     this.autoReconnect = false;
     if (this.reconnectTimer) {

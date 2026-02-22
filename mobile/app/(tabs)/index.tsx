@@ -14,6 +14,7 @@ import {
   Modal,
   Pressable,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -168,6 +169,22 @@ export default function ChatScreen() {
       showSub.remove();
       hideSub.remove();
     };
+  }, []);
+
+  // AppState: reconnect immediately when app returns to foreground
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        // App returned to foreground — force immediate reconnect if connection dropped
+        if (wsClient && !wsClient.isConnected) {
+          wsClient.reconnectNow();
+        }
+        if (openclawClient) {
+          openclawClient.reconnectNow();
+        }
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   // Helper: handle push message (shared by WS and OpenClaw direct)
@@ -413,6 +430,12 @@ export default function ChatScreen() {
       try {
         const msgs = await getMessages(currentConversationId);
         setMessages(msgs);
+        // Scroll to bottom after loading conversation history
+        if (msgs.length > 0) {
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }, 150);
+        }
       } catch {
         // ignore
       }
@@ -531,8 +554,9 @@ export default function ChatScreen() {
     setStreamingContent('');
     setGenerating(true);
 
-    // Build history from current messages
-    const history = messages.map((m) => ({
+    // Build history from recent messages (limit to last 20 to avoid LLM context overflow)
+    const recentMessages = messages.slice(-40);
+    const history = recentMessages.map((m) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }));
@@ -917,9 +941,9 @@ export default function ChatScreen() {
           keyExtractor={keyExtractor}
           style={styles.messageList}
           contentContainerStyle={styles.messageListContent}
-          removeClippedSubviews={Platform.OS === 'android'}
-          maxToRenderPerBatch={8}
-          windowSize={7}
+          removeClippedSubviews={false}
+          maxToRenderPerBatch={12}
+          windowSize={15}
           ListFooterComponent={
             <>
               {streamingContent !== null && (

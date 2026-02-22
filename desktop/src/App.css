@@ -199,7 +199,8 @@
 
 .sidebar-footer {
   margin-top: auto;
-  text-align: center;
+  padding-top: 8px;
+  border-top: 1px solid #2a2a4a;
 }
 
 .version {
@@ -993,18 +994,53 @@
   color: #555;
 }
 
-/* ── Sidebar Footer Buttons ── */
+/* ── Sidebar Footer Grid ── */
 
-.sidebar-footer-buttons {
-  display: flex;
+.sidebar-footer-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
+  padding: 0 4px;
 }
 
-.sidebar-footer-buttons .btn-settings {
-  flex: 1;
-  margin-bottom: 0;
-  font-size: 11px;
-  padding: 6px 8px;
+.footer-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+  color: #aaa;
+  padding: 8px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.footer-btn span {
+  white-space: nowrap;
+}
+
+.footer-btn:hover:not(.disabled) {
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border-color: #3a3a5a;
+}
+
+.footer-btn.disabled {
+  color: #444;
+  border-color: #222;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sidebar-footer-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 0 2px;
 }
 
 /* ── Sidebar User Status ── */
@@ -1012,8 +1048,6 @@
 .sidebar-user-status {
   font-size: 11px;
   color: #888;
-  text-align: center;
-  padding: 4px 0 2px;
 }
 
 /* ── Auth & Account ── */

@@ -123,7 +123,7 @@ export default {
     save: '保存',
     cancel: '取消',
     saving: '保存中...',
-    charCount: '{{count}}/500',
+    charCount: '{{count}}/2000',
     updatedAt: '更新于 {{time}}',
     loginRequired: '请先登录以查看和编辑记忆。',
     externalAgent: '当前助理由对应平台管理记忆。切换到内置助理可在此查看和编辑记忆。',

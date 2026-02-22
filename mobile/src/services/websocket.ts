@@ -27,12 +27,16 @@ export class WebSocketClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempts = 0;
+  private lastMode: ConnectionMode | null = null;
+  private lastOptions: any = undefined;
 
   constructor(url: string) {
     this.url = url;
   }
 
   connect(mode: ConnectionMode, options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean }): void {
+    this.lastMode = mode;
+    this.lastOptions = options;
     this.cleanup();
 
     this.ws = new WebSocket(this.url);
@@ -108,6 +112,20 @@ export class WebSocketClient {
 
   get isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** Force an immediate reconnect if the connection is not open. */
+  reconnectNow(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) return;
+    // Clear any pending backoff timer and reconnect immediately
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempts = 0;
+    if (this.lastMode) {
+      this.connect(this.lastMode, this.lastOptions);
+    }
   }
 
   private sendConnect(

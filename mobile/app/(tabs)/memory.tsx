@@ -157,7 +157,7 @@ export default function MemoryScreen() {
           value={editContent}
           onChangeText={setEditContent}
           multiline
-          maxLength={500}
+          maxLength={2000}
           autoFocus
           placeholder={t('memory.empty')}
           placeholderTextColor="#666"

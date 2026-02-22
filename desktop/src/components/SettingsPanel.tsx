@@ -52,7 +52,7 @@ export function SettingsPanel({ onClose }: Props) {
   const [formMode, setFormMode] = useState<AgentMode>(store.mode);
   const [formProvider, setFormProvider] = useState<LLMProvider>(store.provider);
   const [formApiKey, setFormApiKey] = useState(store.apiKey);
-  const [formServerUrl, setFormServerUrl] = useState(store.serverUrl);
+  const [formServerUrl] = useState(store.serverUrl);
   const [formSelectedModel, setFormSelectedModel] = useState(store.selectedModel);
   const [formOpenclawUrl, setFormOpenclawUrl] = useState(store.openclawUrl);
   const [formOpenclawToken, setFormOpenclawToken] = useState(store.openclawToken);
@@ -490,20 +490,6 @@ export function SettingsPanel({ onClose }: Props) {
             </div>
           </div>
         )}
-
-        {/* Server URL */}
-        <div className="settings-section">
-          <h3 className="settings-section-title">{t('settings.server')}</h3>
-          <div className="settings-field">
-            <label className="settings-label">{t('settings.websocketUrl')}</label>
-            <input
-              className="settings-input"
-              value={formServerUrl}
-              onChange={(e) => setFormServerUrl(e.target.value)}
-              placeholder="ws://..."
-            />
-          </div>
-        </div>
 
         {/* Language */}
         <div className="settings-section">
