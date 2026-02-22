@@ -27,7 +27,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: desktop
-        run: npm ci
+        run: npm install
 
       - name: Build Tauri app
         working-directory: desktop
@@ -61,7 +61,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: desktop
-        run: npm ci
+        run: npm install
 
       - name: Build Tauri app
         working-directory: desktop
