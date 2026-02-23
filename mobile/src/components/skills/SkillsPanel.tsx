@@ -39,6 +39,8 @@ import type {
 import type { OpenClawDirectClient } from '../../services/openclawDirect';
 import RegisterSkillForm from './RegisterSkillForm';
 import SkillDetail from './SkillDetail';
+import AddMcpServerForm from './AddMcpServerForm';
+import ImportSkillMdForm from './ImportSkillMdForm';
 
 interface SkillsPanelProps {
   wsClient: {
@@ -104,7 +106,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedEnvFilter, setSelectedEnvFilter] = useState<'all' | 'desktop'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [addSkillMode, setAddSkillMode] = useState<null | 'menu' | 'http' | 'mcp' | 'skillmd'>(null);
   const [detailSkill, setDetailSkill] = useState<SkillLibraryItem | null>(null);
 
   // Self-hosted OpenClaw: fetch skills directly from Gateway
@@ -678,14 +680,14 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         )
       )}
 
-      {/* Register External Skill Button */}
+      {/* Add Skill Button */}
       {manageable && authToken && serverUrl && (
         <TouchableOpacity
           style={styles.registerSkillBtn}
-          onPress={() => setShowRegisterForm(true)}
+          onPress={() => setAddSkillMode('menu')}
         >
           <Ionicons name="add-circle-outline" size={18} color="#6c63ff" />
-          <Text style={styles.registerSkillText}>Register External Skill</Text>
+          <Text style={styles.registerSkillText}>+ Add Skill</Text>
         </TouchableOpacity>
       )}
 
@@ -707,13 +709,71 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         )}
       </Modal>
 
-      {/* Register Skill Modal */}
-      <Modal visible={showRegisterForm} animationType="slide" presentationStyle="pageSheet">
+      {/* Add Skill Menu Modal */}
+      <Modal visible={addSkillMode === 'menu'} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.addSkillMenuContainer, { paddingTop: 60 }]}>
+          <View style={styles.addSkillMenuHeader}>
+            <TouchableOpacity onPress={() => setAddSkillMode(null)} style={styles.addSkillMenuClose}>
+              <Ionicons name="close" size={24} color="#888" />
+            </TouchableOpacity>
+            <Text style={styles.addSkillMenuTitle}>Add Skill</Text>
+          </View>
+          <View style={styles.addSkillMenuBody}>
+            <TouchableOpacity style={styles.addSkillOptionCard} onPress={() => setAddSkillMode('http')}>
+              <Text style={styles.addSkillOptionEmoji}>{'\u{1F310}'}</Text>
+              <View style={styles.addSkillOptionText}>
+                <Text style={styles.addSkillOptionTitle}>HTTP Skill</Text>
+                <Text style={styles.addSkillOptionDesc}>Register an external HTTP endpoint as a skill</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#666" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.addSkillOptionCard} onPress={() => setAddSkillMode('mcp')}>
+              <Text style={styles.addSkillOptionEmoji}>{'\u{1F50C}'}</Text>
+              <View style={styles.addSkillOptionText}>
+                <Text style={styles.addSkillOptionTitle}>MCP Server</Text>
+                <Text style={styles.addSkillOptionDesc}>Connect a local MCP server to expose its tools</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#666" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.addSkillOptionCard} onPress={() => setAddSkillMode('skillmd')}>
+              <Text style={styles.addSkillOptionEmoji}>{'\u{1F4DD}'}</Text>
+              <View style={styles.addSkillOptionText}>
+                <Text style={styles.addSkillOptionTitle}>SKILL.md</Text>
+                <Text style={styles.addSkillOptionDesc}>Import a markdown-defined skill</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#666" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* HTTP Skill Form Modal */}
+      <Modal visible={addSkillMode === 'http'} animationType="slide" presentationStyle="pageSheet">
         <RegisterSkillForm
           serverUrl={serverUrl || ''}
           authToken={authToken || ''}
-          onClose={() => setShowRegisterForm(false)}
-          onRegistered={() => handleRefresh()}
+          onClose={() => setAddSkillMode(null)}
+          onRegistered={() => { handleRefresh(); setAddSkillMode(null); }}
+        />
+      </Modal>
+
+      {/* MCP Server Form Modal */}
+      <Modal visible={addSkillMode === 'mcp'} animationType="slide" presentationStyle="pageSheet">
+        <AddMcpServerForm
+          serverUrl={serverUrl || ''}
+          authToken={authToken || ''}
+          onClose={() => setAddSkillMode(null)}
+          onAdded={() => handleRefresh()}
+        />
+      </Modal>
+
+      {/* SKILL.md Import Form Modal */}
+      <Modal visible={addSkillMode === 'skillmd'} animationType="slide" presentationStyle="pageSheet">
+        <ImportSkillMdForm
+          serverUrl={serverUrl || ''}
+          authToken={authToken || ''}
+          onClose={() => setAddSkillMode(null)}
+          onImported={() => { handleRefresh(); setAddSkillMode(null); }}
         />
       </Modal>
     </View>
@@ -1115,5 +1175,56 @@ const styles = StyleSheet.create({
   },
   envFilterChipTextActive: {
     color: '#6c63ff',
+  },
+  addSkillMenuContainer: {
+    flex: 1,
+    backgroundColor: '#0f0f23',
+  },
+  addSkillMenuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#2d2d44',
+  },
+  addSkillMenuClose: {
+    padding: 6,
+    marginRight: 8,
+  },
+  addSkillMenuTitle: {
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  addSkillMenuBody: {
+    padding: 16,
+    gap: 10,
+  },
+  addSkillOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2d2d44',
+    gap: 12,
+  },
+  addSkillOptionEmoji: {
+    fontSize: 24,
+  },
+  addSkillOptionText: {
+    flex: 1,
+    gap: 2,
+  },
+  addSkillOptionTitle: {
+    color: '#e0e0e0',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  addSkillOptionDesc: {
+    color: '#888',
+    fontSize: 12,
   },
 });

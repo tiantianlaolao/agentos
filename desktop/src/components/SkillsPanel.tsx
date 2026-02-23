@@ -5,6 +5,8 @@ import type { OpenClawDirectClient } from '../services/openclawDirect.ts';
 import type { useWebSocket } from '../hooks/useWebSocket.ts';
 import { SkillDetail } from './SkillDetail.tsx';
 import { RegisterSkillForm } from './RegisterSkillForm.tsx';
+import { AddMcpServerForm } from './AddMcpServerForm.tsx';
+import { ImportSkillMdForm } from './ImportSkillMdForm.tsx';
 
 type WsHandle = ReturnType<typeof useWebSocket>;
 
@@ -130,7 +132,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     if (!detailSkillName) return null;
     return library.find((s) => s.name === detailSkillName) || null;
   }, [detailSkillName, library]);
-  const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [addSkillMode, setAddSkillMode] = useState<null | 'menu' | 'http' | 'mcp' | 'skillmd'>(null);
 
   const wsCallbackRegistered = useRef(false);
 
@@ -582,22 +584,122 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
         )}
       </div>
 
-      {/* Register External Skill Button */}
+      {/* Add Skill Button */}
       {manageable && authToken && serverUrl && (
         <div className="skills-register-bar">
-          <button className="skills-register-btn" onClick={() => setShowRegisterForm(true)}>
-            + Register External Skill
+          <button className="skills-register-btn" onClick={() => setAddSkillMode('menu')}>
+            + Add Skill
           </button>
         </div>
       )}
 
-      {/* Register Skill Form Overlay */}
-      {showRegisterForm && serverUrl && authToken && (
+      {/* Add Skill Menu */}
+      {addSkillMode === 'menu' && (
+        <div className="register-skill-overlay">
+          <div className="register-skill-panel">
+            <div className="register-skill-header">
+              <button className="skills-back-btn" onClick={() => setAddSkillMode(null)}>&larr; Back</button>
+              <h2 className="skills-title">Add Skill</h2>
+            </div>
+            <div className="register-skill-form" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                className="add-skill-option-card"
+                onClick={() => setAddSkillMode('http')}
+                style={{
+                  background: '#1a1a2e',
+                  border: '1px solid #2d2d44',
+                  borderRadius: '10px',
+                  padding: '14px 16px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                }}
+              >
+                <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
+                  <span style={{ marginRight: '8px' }}>&#x1F310;</span>HTTP Skill
+                </span>
+                <span style={{ fontSize: '12px', color: '#888' }}>
+                  Register an external HTTP endpoint as a skill
+                </span>
+              </button>
+              <button
+                className="add-skill-option-card"
+                onClick={() => setAddSkillMode('mcp')}
+                style={{
+                  background: '#1a1a2e',
+                  border: '1px solid #2d2d44',
+                  borderRadius: '10px',
+                  padding: '14px 16px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                }}
+              >
+                <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
+                  <span style={{ marginRight: '8px' }}>&#x1F50C;</span>MCP Server
+                </span>
+                <span style={{ fontSize: '12px', color: '#888' }}>
+                  Connect a local MCP server to expose its tools
+                </span>
+              </button>
+              <button
+                className="add-skill-option-card"
+                onClick={() => setAddSkillMode('skillmd')}
+                style={{
+                  background: '#1a1a2e',
+                  border: '1px solid #2d2d44',
+                  borderRadius: '10px',
+                  padding: '14px 16px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                }}
+              >
+                <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
+                  <span style={{ marginRight: '8px' }}>&#x1F4DD;</span>SKILL.md
+                </span>
+                <span style={{ fontSize: '12px', color: '#888' }}>
+                  Import a markdown-defined skill
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HTTP Skill Form */}
+      {addSkillMode === 'http' && serverUrl && authToken && (
         <RegisterSkillForm
           serverUrl={serverUrl}
           authToken={authToken}
-          onClose={() => setShowRegisterForm(false)}
-          onRegistered={() => handleRefresh()}
+          onClose={() => setAddSkillMode(null)}
+          onRegistered={() => { handleRefresh(); setAddSkillMode(null); }}
+        />
+      )}
+
+      {/* MCP Server Form */}
+      {addSkillMode === 'mcp' && serverUrl && authToken && (
+        <AddMcpServerForm
+          serverUrl={serverUrl}
+          authToken={authToken}
+          onClose={() => setAddSkillMode(null)}
+          onAdded={() => handleRefresh()}
+        />
+      )}
+
+      {/* SKILL.md Import Form */}
+      {addSkillMode === 'skillmd' && serverUrl && authToken && (
+        <ImportSkillMdForm
+          serverUrl={serverUrl}
+          authToken={authToken}
+          onClose={() => setAddSkillMode(null)}
+          onImported={() => { handleRefresh(); setAddSkillMode(null); }}
         />
       )}
     </div>
