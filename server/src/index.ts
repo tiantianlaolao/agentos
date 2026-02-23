@@ -11,6 +11,7 @@ import authRoutes from './auth/routes.js';
 import hostedRoutes from './auth/hostedRoutes.js';
 import memoryRoutes from './memory/routes.js';
 import skillRoutes from './skills/routes.js';
+import skillMdRoutes from './skills/skillmd/routes.js';
 
 const PORT = parseInt(process.env.PORT || '3100', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -39,6 +40,9 @@ app.use('/hosted', hostedRoutes);
 
 // Memory routes
 app.use('/memory', memoryRoutes);
+
+// SKILL.md management routes (must be before /skills to avoid /:name catching "md")
+app.use('/skills/md', skillMdRoutes);
 
 // External skills routes
 app.use('/skills', skillRoutes);

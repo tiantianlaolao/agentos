@@ -12,6 +12,7 @@ import { syncCatalogFromRegistry, installDefaultSkillsForUser } from './userSkil
 import { setInstallDefaultSkillsFn } from '../auth/db.js';
 import { listAllExternalSkills, externalToManifest } from './externalSkills.js';
 import { createExternalHandler } from './externalHandler.js';
+import { loadSkillMdFiles } from './skillmd/loader.js';
 import type { SkillManifest } from '../adapters/base.js';
 import type { SkillHandler } from './registry.js';
 
@@ -111,6 +112,12 @@ export async function loadBuiltinSkills(): Promise<void> {
 
   // Load external (user-created) skills from DB
   loadExternalSkills();
+
+  // Load SKILL.md files from data/skills-md/
+  const mdCount = loadSkillMdFiles();
+  if (mdCount > 0) {
+    console.log(`[SkillLoader] Loaded ${mdCount} SKILL.md skills`);
+  }
 
   // Sync all registered skills to the skill_catalog DB table
   syncCatalogFromRegistry();
