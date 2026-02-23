@@ -12,8 +12,8 @@
 
 import type { SkillManifest, SkillFunction } from '../adapters/base.js';
 
-/** Handler function type: receives parsed arguments, returns a string result */
-export type SkillHandler = (args: Record<string, unknown>) => Promise<string>;
+/** Handler function type: receives parsed arguments and optional user context, returns a string result */
+export type SkillHandler = (args: Record<string, unknown>, context?: SkillUserContext) => Promise<string>;
 
 export interface RegisteredSkill {
   manifest: SkillManifest;
@@ -176,12 +176,13 @@ class SkillRegistry {
   async execute(
     functionName: string,
     args: Record<string, unknown>,
+    ctx?: SkillUserContext,
   ): Promise<{ skillName: string; result: string }> {
     const found = this.findFunction(functionName);
     if (!found) {
       throw new Error(`No handler found for function "${functionName}"`);
     }
-    const result = await found.handler(args);
+    const result = await found.handler(args, ctx);
     return { skillName: found.skill.manifest.name, result };
   }
 
@@ -243,7 +244,7 @@ class SkillRegistry {
     if (!found) {
       throw new Error(`No handler found for function "${functionName}"`);
     }
-    const result = await found.handler(args);
+    const result = await found.handler(args, ctx);
     return { skillName: found.skill.manifest.name, result };
   }
 
@@ -301,7 +302,7 @@ class SkillRegistry {
     if (!found) {
       throw new Error(`No handler found for function "${functionName}"`);
     }
-    const result = await found.handler(args);
+    const result = await found.handler(args, ctx);
     return { skillName: found.skill.manifest.name, result };
   }
 }

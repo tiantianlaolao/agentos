@@ -306,25 +306,12 @@ export default function ChatScreen() {
 
       const unsubSkillResult = client.on(MessageType.SKILL_RESULT, (msg: ServerMessage) => {
         const result = msg as SkillResultMessage;
-        setActiveSkill(null);
-        const convId = result.payload.conversationId || useChatStore.getState().currentConversationId || '';
-        const resultSummary = result.payload.success
-          ? JSON.stringify(result.payload.data ?? {}).slice(0, 200)
-          : result.payload.error || 'Unknown error';
-        addMessage({
-          id: randomUUID(),
-          conversationId: convId,
-          role: 'assistant',
-          content: resultSummary,
-          timestamp: Date.now(),
-          messageType: 'skill_result',
-          skillResult: {
-            skillName: result.payload.skillName,
-            success: result.payload.success,
-            data: result.payload.data,
-            error: result.payload.error,
-          },
-        });
+        // Show completed skill briefly, then clear — don't add to messages array
+        // to avoid flooding the FlatList during multi-round tool calling
+        const skillName = result.payload.skillName;
+        const success = result.payload.success;
+        setActiveSkill({ name: skillName, description: success ? '✓ Done' : '✗ Failed' });
+        setTimeout(() => setActiveSkill(null), 1500);
       });
 
       const unsubPush = client.on(MessageType.PUSH_MESSAGE, (msg: ServerMessage) => {

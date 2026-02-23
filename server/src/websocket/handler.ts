@@ -952,7 +952,7 @@ async function handleFunctionCallingChat(
   skillsInvoked: SkillInvocation[],
   abortController: AbortController,
 ): Promise<string> {
-  const MAX_ROUNDS = 5;
+  const MAX_ROUNDS = 8;
   let fullContent = '';
 
   // Build messages in OpenAI format (role + content + tool_calls + tool_call_id)
@@ -1082,6 +1082,28 @@ async function handleFunctionCallingChat(
         tool_call_id: toolCall.id,
         name: functionName,
       });
+    }
+  }
+
+  // If all rounds were tool calls and no text was generated, do one final round
+  // without tools to force LLM to produce a summary response
+  if (!fullContent && !abortController.signal.aborted && messages.length > initialMessages.length) {
+    console.log('[FC] Max rounds exhausted with no text reply, forcing final summary...');
+    const finalResult = await (session.provider as LLMProvider).chatWithTools!(messages, {
+      tools: [], // no tools = LLM must produce text
+      signal: abortController.signal,
+    });
+    if (finalResult.type === 'text') {
+      for await (const chunk of finalResult.stream) {
+        if (abortController.signal.aborted) break;
+        fullContent += chunk;
+        send(ws, {
+          id: uuidv4(),
+          type: MessageType.CHAT_CHUNK,
+          timestamp: Date.now(),
+          payload: { conversationId, delta: chunk },
+        });
+      }
     }
   }
 

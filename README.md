@@ -16,7 +16,7 @@ AgentOS is a universal AI Agent client that connects to multiple agent backends 
 **Skill System**
 - Extensible skill framework with `SkillManifest` standard
 - **Skill Library** — browse, install, and uninstall skills per user
-- Built-in skills: Weather, Translation, US Stock Monitor, Calculator, Currency Exchange, Web Search, URL Summary, Image Generation, Date/Time
+- Built-in skills: Weather, Translation, US Stock Monitor, Calculator, Currency Exchange, Web Search, URL Summary, Image Generation, Date/Time, Claude Code (remote)
 - Function Calling integration with all LLM providers
 - Per-user skill visibility (public/private) and install state
 - Visual skill execution cards with real-time status
@@ -24,6 +24,7 @@ AgentOS is a universal AI Agent client that connects to multiple agent backends 
 **Desktop Remote Execution**
 - **Desktop Shell** — Execute any shell command on your computer from your phone
 - **Desktop Filesystem** — Read, write, and list files remotely
+- **Claude Code** — Remotely invoke Claude Code on your desktop to analyze projects, write code, fix bugs, and perform development tasks
 - Desktop auto-registers as an execution node regardless of chat mode
 - Mobile detects desktop online status and shows a live indicator
 
@@ -140,7 +141,7 @@ cd android && ./gradlew assembleRelease
 # APK: android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Or download the latest APK from [Releases](https://github.com/skingway/agentos/releases).
+Or download the latest APK from [Releases](https://github.com/tiantianlaolao/agentos/releases).
 
 ### Desktop
 
@@ -171,12 +172,14 @@ When the desktop app is running, it automatically registers as an execution node
 **Available desktop skills:**
 - `desktop-shell` — Execute shell commands (`ls`, `open`, `osascript`, etc.)
 - `desktop-filesystem` — Read, write, and list files
+- `claude-code` — Invoke Claude Code (`claude -p`) for full-stack development tasks
 
 **Example usage from mobile:**
 - "Run `ls ~/Desktop` on my computer"
 - "Open google.com in my browser"
 - "Read the file ~/notes.txt"
-- "Create a file ~/hello.txt with content 'Hello World'"
+- "Analyze the project structure of ~/agentos"
+- "Fix the login bug in ~/my-app"
 
 The desktop skills are automatically registered and installed for the logged-in user when the desktop app connects. Mobile shows a green "Desktop Connected" banner when desktop is online.
 
@@ -232,6 +235,7 @@ See [docs/skills-development.md](docs/skills-development.md) for the full develo
 - [x] MCP integration (server-side MCP-to-Skill bridge + desktop local MCP)
 - [x] Mobile-Desktop sync (phone sends command, desktop executes, result returns)
 - [x] Desktop online detection on mobile (green banner)
+- [x] Claude Code remote skill (invoke Claude Code on desktop from mobile)
 - [ ] Hosted mode skill management (OpenClaw/CoPaw)
 - [ ] Desktop execution security (confirmation dialogs, command allowlists)
 - [ ] Skill marketplace and community ecosystem

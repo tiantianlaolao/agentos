@@ -16,7 +16,7 @@ AgentOS 是一个通用 AI Agent 客户端，通过统一界面连接多种 Agen
 **技能系统**
 - 基于 `SkillManifest` 标准的可扩展技能框架
 - **技能库** —— 按用户浏览、安装和卸载技能
-- 内置技能：天气查询、翻译、美股监控、计算器、汇率换算、网页搜索、链接摘要、图片生成、日期时间
+- 内置技能：天气查询、翻译、美股监控、计算器、汇率换算、网页搜索、链接摘要、图片生成、日期时间、Claude Code（远程开发）
 - 与所有 LLM Provider 集成的 Function Calling
 - 按用户的技能可见性（公开/私有）和安装状态
 - 可视化技能执行卡片，实时显示状态
@@ -24,6 +24,7 @@ AgentOS 是一个通用 AI Agent 客户端，通过统一界面连接多种 Agen
 **桌面远程执行**
 - **桌面 Shell** —— 从手机远程执行电脑上的任意 Shell 命令
 - **桌面文件系统** —— 远程读取、写入和列出文件
+- **Claude Code** —— 从手机远程调用桌面上的 Claude Code，分析项目、写代码、修 Bug、执行开发任务
 - 桌面端自动注册为执行节点，不受聊天模式影响
 - 手机端实时检测桌面在线状态并显示指示器
 
@@ -140,7 +141,7 @@ cd android && ./gradlew assembleRelease
 # APK 路径: android/app/build/outputs/apk/release/app-release.apk
 ```
 
-也可以从 [Releases](https://github.com/skingway/agentos/releases) 下载最新 APK。
+也可以从 [Releases](https://github.com/tiantianlaolao/agentos/releases) 下载最新 APK。
 
 ### 桌面端
 
@@ -171,12 +172,14 @@ AgentOS 支持 3 种 Agent 模式，内置助理有两个子模式：
 **可用的桌面技能：**
 - `desktop-shell` —— 执行 Shell 命令（`ls`、`open`、`osascript` 等）
 - `desktop-filesystem` —— 读取、写入和列出文件
+- `claude-code` —— 调用 Claude Code（`claude -p`），远程执行全栈开发任务
 
 **手机端使用示例：**
 - "在我电脑上执行 ls ~/Desktop"
 - "帮我打开 bilibili"
 - "读取我电脑上的 ~/notes.txt"
-- "在电脑上创建文件 ~/hello.txt，内容写 Hello World"
+- "帮我分析一下 ~/agentos 项目的结构"
+- "帮我修复 ~/my-app 里的登录 bug"
 
 桌面技能在桌面端连接时自动注册并安装给当前登录用户。手机端会在桌面在线时显示绿色横幅"桌面已连接"。
 
@@ -232,6 +235,7 @@ interface AgentAdapter {
 - [x] MCP 集成（服务端 MCP 转技能桥接 + 桌面本地 MCP）
 - [x] 手机-桌面协同（手机发指令、桌面执行、结果返回）
 - [x] 手机端桌面在线检测（绿色横幅）
+- [x] Claude Code 远程技能（从手机调用桌面 Claude Code 进行开发）
 - [ ] 托管模式技能管理（OpenClaw/CoPaw）
 - [ ] 桌面执行安全加固（确认弹窗、命令白名单）
 - [ ] 技能市场和社区生态

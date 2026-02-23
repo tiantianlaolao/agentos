@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
-  "author": "skingway",
+  "author": "tiantianlaolao",
   "license": "MIT",
   "type": "module",
   "dependencies": {

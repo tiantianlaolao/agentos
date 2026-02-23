@@ -91,6 +91,13 @@ export async function loadBuiltinSkills(): Promise<void> {
     console.error('[SkillLoader] Failed to load datetime skill:', err);
   }
 
+  try {
+    const claudeCode = await import('./claude-code/index.js');
+    skills.push(claudeCode);
+  } catch (err) {
+    console.error('[SkillLoader] Failed to load claude-code skill:', err);
+  }
+
   // Register all loaded skills
   for (const skill of skills) {
     try {
