@@ -21,7 +21,7 @@
     background: #1a1a2e;
     border-radius: 20px;
     padding: 48px 40px;
-    max-width: 480px;
+    max-width: 520px;
     width: 100%;
     text-align: center;
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
@@ -52,26 +52,76 @@
     border-radius: 20px;
     margin-bottom: 24px;
   }
+  .download-section {
+    margin-bottom: 24px;
+  }
+  .download-section h3 {
+    color: #aaa;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
   .download-btn {
     display: block;
     background: linear-gradient(135deg, #6c63ff, #5a52d5);
     color: #fff;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 700;
-    padding: 16px 32px;
+    padding: 14px 28px;
     border-radius: 14px;
     text-decoration: none;
-    margin-bottom: 16px;
+    margin-bottom: 8px;
     transition: transform 0.15s, box-shadow 0.15s;
   }
   .download-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(108,99,255,0.4);
   }
+  .download-btn.secondary {
+    background: linear-gradient(135deg, #3a3a5c, #2d2d4a);
+    font-size: 15px;
+    padding: 12px 24px;
+    border-radius: 12px;
+  }
+  .download-btn.secondary:hover {
+    box-shadow: 0 4px 16px rgba(108,99,255,0.25);
+  }
   .file-info {
     color: #666;
     font-size: 13px;
-    margin-bottom: 32px;
+    margin-bottom: 8px;
+  }
+  .desktop-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .desktop-grid a {
+    display: block;
+    background: linear-gradient(135deg, #3a3a5c, #2d2d4a);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 8px;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .desktop-grid a:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(108,99,255,0.25);
+  }
+  .desktop-grid .icon {
+    font-size: 24px;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .divider {
+    border: none;
+    border-top: 1px solid #252540;
+    margin: 24px 0;
   }
   .features {
     text-align: left;
@@ -118,6 +168,10 @@
     color: #444;
     font-size: 12px;
   }
+  @media (max-width: 480px) {
+    .card { padding: 32px 20px; }
+    .desktop-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -126,8 +180,35 @@
     <h1>AgentOS</h1>
     <p class="tagline">The browser for the Agent era.<br>Run, manage, and chat with AI agents — anywhere.</p>
     <span class="version">v0.1.0 Beta</span>
-    <a class="download-btn" href="/apk/agentos-latest.apk">Download for Android</a>
-    <p class="file-info">APK (~81 MB) &middot; Requires Android 7.0+</p>
+
+    <!-- Android -->
+    <div class="download-section">
+      <h3>Mobile</h3>
+      <a class="download-btn" href="/apk/agentos-latest.apk">Download for Android</a>
+      <p class="file-info">APK &middot; Requires Android 7.0+</p>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Desktop -->
+    <div class="download-section">
+      <h3>Desktop</h3>
+      <div class="desktop-grid">
+        <a href="https://github.com/tiantianlaolao/agentos/releases/latest">
+          <span class="icon">&#x1F34E;</span>macOS
+        </a>
+        <a href="https://github.com/tiantianlaolao/agentos/releases/latest">
+          <span class="icon">&#x1FA9F;</span>Windows
+        </a>
+        <a href="https://github.com/tiantianlaolao/agentos/releases/latest">
+          <span class="icon">&#x1F427;</span>Linux
+        </a>
+      </div>
+      <p class="file-info">Download from GitHub Releases (.dmg / .exe / .AppImage)</p>
+    </div>
+
+    <hr class="divider">
+
     <div class="features">
       <h3>What's included</h3>
       <ul>
@@ -135,16 +216,18 @@
         <li>OpenClaw agent support (hosted & self-hosted)</li>
         <li>CoPaw / AgentScope integration</li>
         <li>Bring Your Own Key (DeepSeek, OpenAI, Claude, Kimi)</li>
-        <li>Skills system (weather, translation, and more)</li>
+        <li>Skills system (weather, translation, stocks, and more)</li>
+        <li>Desktop remote execution (shell, files, Claude Code)</li>
         <li>Conversation memory</li>
         <li>Chinese / English UI</li>
       </ul>
     </div>
     <div class="links">
       <a href="https://github.com/tiantianlaolao/agentos">GitHub</a>
+      <a href="https://github.com/tiantianlaolao/agentos/releases">Releases</a>
       <a href="https://github.com/tiantianlaolao/agentos/issues">Feedback</a>
     </div>
   </div>
-  <p class="footer">&copy; 2026 AgentOS &middot; MIT License</p>
+  <p class="footer">&copy; 2026 AgentOS &middot; Apache-2.0 License</p>
 </body>
 </html>

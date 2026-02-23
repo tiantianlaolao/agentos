@@ -24,7 +24,6 @@ import {
   clearConversationMessages,
   deleteOldestMessages,
 } from './services/storage.ts';
-import type { Conversation } from './services/storage.ts';
 import type { AgentMode, ChatMessageItem } from './types/index.ts';
 import './App.css';
 
@@ -276,6 +275,13 @@ function App() {
     if (older.length < PAGE_SIZE) setHasMore(false);
   }, [hasMore, messages]);
 
+  const handleClearChat = useCallback(() => {
+    clearConversationMessages(conversationId.current);
+    setMessages([]);
+    setStreamingContent(null);
+    setHasMore(false);
+  }, []);
+
   // Keyboard shortcuts: Cmd/Ctrl+N (clear chat), Escape (close panels)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -304,13 +310,6 @@ function App() {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
-  }, []);
-
-  const handleClearChat = useCallback(() => {
-    clearConversationMessages(conversationId.current);
-    setMessages([]);
-    setStreamingContent(null);
-    setHasMore(false);
   }, []);
 
   const ensureConversation = useCallback(
