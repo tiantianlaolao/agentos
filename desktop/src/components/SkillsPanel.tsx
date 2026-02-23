@@ -125,7 +125,11 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [detailSkill, setDetailSkill] = useState<SkillLibraryItem | null>(null);
+  const [detailSkillName, setDetailSkillName] = useState<string | null>(null);
+  const detailSkill = useMemo(() => {
+    if (!detailSkillName) return null;
+    return library.find((s) => s.name === detailSkillName) || null;
+  }, [detailSkillName, library]);
   const [showRegisterForm, setShowRegisterForm] = useState(false);
 
   const wsCallbackRegistered = useRef(false);
@@ -318,7 +322,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     return (
       <SkillDetail
         skill={detailSkill}
-        onClose={() => setDetailSkill(null)}
+        onClose={() => setDetailSkillName(null)}
         onInstall={installSkill}
         onUninstall={uninstallSkill}
       />
@@ -513,7 +517,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                         const badge = AUDIT_BADGES[skill.audit] || AUDIT_BADGES.unreviewed;
 
                         return (
-                          <div key={skill.name} className="skill-card" onClick={() => setDetailSkill(skill)} style={{ cursor: 'pointer' }}>
+                          <div key={skill.name} className="skill-card" onClick={() => setDetailSkillName(skill.name)} style={{ cursor: 'pointer' }}>
                             <div className="skill-card-header">
                               <div className="skill-name-row">
                                 {skill.emoji && <span className="skill-emoji">{skill.emoji}</span>}
