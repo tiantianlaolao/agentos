@@ -194,6 +194,8 @@ export default function ChatScreen() {
   }, [addMessage]);
 
   // Auto-cleanup: when messages exceed threshold, extract memory from oldest and delete them
+  // Use a ref so the connection effect doesn't re-run when this callback changes
+  const checkAndCleanupRef = useRef<(convId: string) => Promise<void>>(null!);
   const checkAndCleanup = useCallback(async (convId: string) => {
     try {
       const total = await getMessageCount(convId);
@@ -219,6 +221,7 @@ export default function ChatScreen() {
       Alert.alert(t('chat.cleanupDone', { count: String(toDelete) }));
     } catch { /* ignore */ }
   }, [setMessages, t]);
+  checkAndCleanupRef.current = checkAndCleanup;
 
   // Connect — route by mode
   useEffect(() => {
@@ -321,7 +324,7 @@ export default function ChatScreen() {
             role: 'assistant',
             content: fullContent,
             timestamp: Date.now(),
-          }).then(() => checkAndCleanup(done.payload.conversationId)).catch(() => {});
+          }).then(() => checkAndCleanupRef.current(done.payload.conversationId)).catch(() => {});
           currentAssistantId.current = null;
         }
       });
@@ -418,7 +421,8 @@ export default function ChatScreen() {
     settingsLoaded, serverUrl, mode, builtinSubMode, provider, apiKey, openclawUrl, openclawToken,
     copawUrl, copawToken, copawSubMode, authToken, selectedModel, openclawSubMode, handlePushMessage,
     setConnected, setGenerating, addMessage,
-    setCurrentConversation, setHostedQuota, checkAndCleanup,
+    setCurrentConversation, setHostedQuota,
+    // checkAndCleanup accessed via ref to avoid re-running connection on every render
   ]);
 
   // Auto-scroll to bottom when new messages arrive (user send / streaming done)
@@ -618,7 +622,7 @@ export default function ChatScreen() {
             saveMessage({
               id: currentAssistantId.current, conversationId: convId!, role: 'assistant',
               content: fullContent, timestamp: Date.now(),
-            }).then(() => checkAndCleanup(convId!)).catch(() => {});
+            }).then(() => checkAndCleanupRef.current(convId!)).catch(() => {});
             currentAssistantId.current = null;
           }
           abortControllerRef.current = null;

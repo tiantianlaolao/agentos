@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { I18n } from 'i18n-js';
 import { getLocales } from 'expo-localization';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -29,7 +30,7 @@ export function t(key: string, options?: Record<string, string>): string {
 export function useTranslation(): (key: string, options?: Record<string, string>) => string {
   const locale = useSettingsStore((s) => s.locale);
   i18n.locale = locale;
-  return (key: string, options?: Record<string, string>) => i18n.t(key, options);
+  return useCallback((key: string, options?: Record<string, string>) => i18n.t(key, options), [locale]);
 }
 
 export default i18n;
