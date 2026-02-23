@@ -78,7 +78,7 @@ export function createProvider(mode: ConnectionMode, options: ProviderOptions): 
     }
 
     case 'copaw': {
-      const url = options.copawUrl || process.env.COPAW_URL || 'http://127.0.0.1:8088';
+      const url = options.copawUrl || process.env.COPAW_URL || 'http://127.0.0.1:8088/agent';
       const token = options.copawToken || process.env.COPAW_TOKEN || '';
       return new CoPawAdapter(url, token);
     }
