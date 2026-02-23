@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import type { AgentMode, ChatMessageItem, ActiveSkill, SkillManifestInfo } from '../types';
 
@@ -98,6 +98,7 @@ export function useWebSocket() {
             }
             case 'skill.list.response': {
               const skills = (payload as unknown as { skills?: SkillManifestInfo[] })?.skills || [];
+              flog('skill.list.response: count=' + skills.length);
               onSkillListRef.current?.(skills);
               break;
             }
@@ -237,7 +238,7 @@ export function useWebSocket() {
     await invoke('request_skill_library');
   }, []);
 
-  return {
+  return useMemo(() => ({
     connected,
     connecting,
     sessionId,
@@ -255,5 +256,8 @@ export function useWebSocket() {
     installSkill,
     uninstallSkill,
     requestSkillLibrary,
-  };
+  }), [connected, connecting, sessionId, streaming, activeSkill, error,
+       connect, disconnect, sendMessage, stopGeneration, requestSkillList,
+       toggleSkill, setOnSkillList, setOnSkillLibrary, installSkill,
+       uninstallSkill, requestSkillLibrary]);
 }

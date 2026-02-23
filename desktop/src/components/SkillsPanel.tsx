@@ -270,15 +270,18 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     }
   }, [mode, openclawSubMode, openclawClient, fetchDirectSkills, requestSkillListWS, requestLibrary, cacheKey, activeTab]);
 
-  // Cleanup WS callback on unmount
+  // Cleanup WS callback on unmount only
+  const wsRef = useRef(ws);
+  wsRef.current = ws;
   useEffect(() => {
     return () => {
-      if (ws && wsCallbackRegistered.current) {
-        ws.setOnSkillList(null);
+      if (wsRef.current && wsCallbackRegistered.current) {
+        wsRef.current.setOnSkillList(null);
         wsCallbackRegistered.current = false;
       }
     };
-  }, [ws]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawClient) {

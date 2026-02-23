@@ -94,7 +94,7 @@ function getCacheKey(mode?: ConnectionMode, openclawSubMode?: string): string {
 
 /** Whether this is a builtin/byok mode where install/uninstall works */
 function canManageSkills(mode?: ConnectionMode): boolean {
-  return !mode || mode === 'builtin' || mode === 'byok';
+  return !mode || mode === 'builtin';
 }
 
 export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, openclawClient, serverUrl, authToken }: SkillsPanelProps) {

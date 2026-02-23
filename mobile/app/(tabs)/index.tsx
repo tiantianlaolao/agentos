@@ -132,7 +132,7 @@ export default function ChatScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const { mode, provider, apiKey, openclawUrl, openclawToken, serverUrl, selectedModel, settingsLoaded, openclawSubMode, setHostedQuota, setMode, hostedActivated, copawSubMode, copawUrl, copawToken } = useSettingsStore();
+  const { mode, builtinSubMode, provider, apiKey, openclawUrl, openclawToken, serverUrl, selectedModel, settingsLoaded, openclawSubMode, setHostedQuota, setMode, hostedActivated, copawSubMode, copawUrl, copawToken } = useSettingsStore();
   const { authToken, userId, isLoggedIn } = useAuthStore();
   const currentUserId = isLoggedIn ? userId : 'anonymous';
 
@@ -192,6 +192,33 @@ export default function ChatScreen() {
     addMessage(pushMsg);
     try { await saveMessage(pushMsg); } catch { /* ignore */ }
   }, [addMessage]);
+
+  // Auto-cleanup: when messages exceed threshold, extract memory from oldest and delete them
+  const checkAndCleanup = useCallback(async (convId: string) => {
+    try {
+      const total = await getMessageCount(convId);
+      if (total <= CLEANUP_THRESHOLD) return;
+      const toDelete = total - CLEANUP_KEEP;
+      const token = useAuthStore.getState().authToken;
+      const sUrl = useSettingsStore.getState().serverUrl;
+      const deleted = await deleteOldestMessages(convId, toDelete);
+      // Send to server for memory extraction (best-effort)
+      if (token && deleted.length > 0) {
+        const httpUrl = sUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
+        fetch(`${httpUrl}/memory/extract`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ messages: deleted }),
+        }).catch(() => {});
+      }
+      // Reload paginated messages
+      const msgs = await getMessagesPaginated(convId, PAGE_SIZE);
+      setMessages(msgs);
+      const newTotal = await getMessageCount(convId);
+      setHasMore(msgs.length < newTotal);
+      Alert.alert(t('chat.cleanupDone', { count: String(toDelete) }));
+    } catch { /* ignore */ }
+  }, [setMessages, t]);
 
   // Connect — route by mode
   useEffect(() => {
@@ -355,7 +382,10 @@ export default function ChatScreen() {
 
       const isOpenclawHosted = mode === 'openclaw' && openclawSubMode === 'hosted';
       const isCopawHosted = mode === 'copaw' && copawSubMode === 'hosted';
-      client.connect(mode, { provider, apiKey, openclawUrl, openclawToken, authToken: authToken || undefined, model: selectedModel || undefined, deviceId, openclawHosted: isOpenclawHosted || undefined, copawUrl: isCopawHosted ? undefined : (copawUrl || undefined), copawToken: isCopawHosted ? undefined : (copawToken || undefined), copawHosted: isCopawHosted || undefined });
+      const isByok = mode === 'builtin' && builtinSubMode === 'byok';
+      const byokApiKey = isByok ? apiKey || undefined : undefined;
+      const byokModel = isByok ? (selectedModel || provider) : (selectedModel || undefined);
+      client.connect(mode, { provider, apiKey: byokApiKey, openclawUrl, openclawToken, authToken: authToken || undefined, model: byokModel, deviceId, openclawHosted: isOpenclawHosted || undefined, copawUrl: isCopawHosted ? undefined : (copawUrl || undefined), copawToken: isCopawHosted ? undefined : (copawToken || undefined), copawHosted: isCopawHosted || undefined });
 
       cleanupRef.current = () => {
         unsubConnected();
@@ -385,7 +415,7 @@ export default function ChatScreen() {
       setDesktopOnline(false);
     };
   }, [
-    settingsLoaded, serverUrl, mode, provider, apiKey, openclawUrl, openclawToken,
+    settingsLoaded, serverUrl, mode, builtinSubMode, provider, apiKey, openclawUrl, openclawToken,
     copawUrl, copawToken, copawSubMode, authToken, selectedModel, openclawSubMode, handlePushMessage,
     setConnected, setGenerating, addMessage,
     setCurrentConversation, setHostedQuota, checkAndCleanup,
@@ -470,33 +500,6 @@ export default function ChatScreen() {
     } catch { /* ignore */ }
     setLoadingMore(false);
   }, [currentConversationId, loadingMore, hasMore, messages, prependMessages]);
-
-  // Auto-cleanup: when messages exceed threshold, extract memory from oldest and delete them
-  const checkAndCleanup = useCallback(async (convId: string) => {
-    try {
-      const total = await getMessageCount(convId);
-      if (total <= CLEANUP_THRESHOLD) return;
-      const toDelete = total - CLEANUP_KEEP;
-      const token = useAuthStore.getState().authToken;
-      const sUrl = useSettingsStore.getState().serverUrl;
-      const deleted = await deleteOldestMessages(convId, toDelete);
-      // Send to server for memory extraction (best-effort)
-      if (token && deleted.length > 0) {
-        const httpUrl = sUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
-        fetch(`${httpUrl}/memory/extract`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ messages: deleted }),
-        }).catch(() => {});
-      }
-      // Reload paginated messages
-      const msgs = await getMessagesPaginated(convId, PAGE_SIZE);
-      setMessages(msgs);
-      const newTotal = await getMessageCount(convId);
-      setHasMore(msgs.length < newTotal);
-      Alert.alert(t('chat.cleanupDone', { count: String(toDelete) }));
-    } catch { /* ignore */ }
-  }, [setMessages, t]);
 
   const handleSelectAgent = useCallback((targetMode: ConnectionMode) => {
     // OpenClaw requires login

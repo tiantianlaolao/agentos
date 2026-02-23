@@ -23,7 +23,7 @@ export default function MemoryScreen() {
   const router = useRouter();
   const { isLoggedIn, authToken } = useAuthStore();
   const { serverUrl, mode } = useSettingsStore();
-  const isBuiltinMode = mode === 'builtin' || mode === 'byok';
+  const isBuiltinMode = mode === 'builtin';
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

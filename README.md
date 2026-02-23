@@ -236,6 +236,8 @@ See [docs/skills-development.md](docs/skills-development.md) for the full develo
 - [x] Mobile-Desktop sync (phone sends command, desktop executes, result returns)
 - [x] Desktop online detection on mobile (green banner)
 - [x] Claude Code remote skill (invoke Claude Code on desktop from mobile)
+- [x] Skill content i18n (locales in manifests — skill names, descriptions, and functions auto-switch with UI language)
+- [x] Unified BYOK sub-mode under Built-in Agent (mobile + desktop consistent)
 - [ ] Hosted mode skill management (OpenClaw/CoPaw)
 - [ ] Desktop execution security (confirmation dialogs, command allowlists)
 - [ ] Skill marketplace and community ecosystem

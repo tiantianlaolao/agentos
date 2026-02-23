@@ -24,14 +24,12 @@ const MODES: { key: ConnectionMode; titleKey: string; descKey: string }[] = [
   { key: 'builtin', titleKey: 'settings.builtin', descKey: 'settings.builtinDesc' },
   { key: 'openclaw', titleKey: 'settings.openclaw', descKey: 'settings.openclawDesc' },
   { key: 'copaw', titleKey: 'settings.copaw', descKey: 'settings.copawDesc' },
-  { key: 'byok', titleKey: 'settings.byok', descKey: 'settings.byokDesc' },
 ];
 
 const MODE_COLORS: Record<string, string> = {
   builtin: '#2d7d46',
   openclaw: '#c26a1b',
   copaw: '#1b6bc2',
-  byok: '#6c63ff',
 };
 
 const MODELS: { key: string; label: string }[] = [
@@ -103,6 +101,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   // Local form state
   const [formMode, setFormMode] = useState<ConnectionMode>(store.mode);
+  const [formBuiltinSubMode, setFormBuiltinSubMode] = useState<'free' | 'byok'>(store.builtinSubMode);
   const [formProvider, setFormProvider] = useState<LLMProvider>(store.provider);
   const [formApiKey, setFormApiKey] = useState(store.apiKey);
   const [formOpenclawUrl, setFormOpenclawUrl] = useState(store.openclawUrl);
@@ -134,8 +133,21 @@ export default function SettingsScreen() {
         const copawSubMode = await getSetting('copawSubMode');
         const copawUrl = await getSetting('copawUrl');
         const copawToken = await getSetting('copawToken');
+        const builtinSubMode = await getSetting('builtinSubMode');
 
-        if (mode) { store.setMode(mode as ConnectionMode); setFormMode(mode as ConnectionMode); }
+        // Migration: old 'byok' top-level mode → builtin + builtinSubMode='byok'
+        if (mode === 'byok') {
+          store.setMode('builtin'); setFormMode('builtin');
+          store.setBuiltinSubMode('byok'); setFormBuiltinSubMode('byok');
+          setSetting('mode', 'builtin');
+          setSetting('builtinSubMode', 'byok');
+        } else if (mode) {
+          store.setMode(mode as ConnectionMode); setFormMode(mode as ConnectionMode);
+        }
+        if (builtinSubMode) {
+          const bsm = builtinSubMode as 'free' | 'byok';
+          store.setBuiltinSubMode(bsm); setFormBuiltinSubMode(bsm);
+        }
         if (provider) { store.setProvider(provider as LLMProvider); setFormProvider(provider as LLMProvider); }
         if (apiKey) { store.setApiKey(apiKey); setFormApiKey(apiKey); }
         if (openclawUrl) { store.setOpenclawUrl(openclawUrl); setFormOpenclawUrl(openclawUrl); }
@@ -213,6 +225,7 @@ export default function SettingsScreen() {
   const handleSave = useCallback(async () => {
     // Update Zustand store
     store.setMode(formMode);
+    store.setBuiltinSubMode(formBuiltinSubMode);
     store.setProvider(formProvider);
     store.setApiKey(formApiKey);
     store.setOpenclawUrl(formOpenclawUrl);
@@ -229,6 +242,7 @@ export default function SettingsScreen() {
     try {
       await Promise.all([
         setSetting('mode', formMode),
+        setSetting('builtinSubMode', formBuiltinSubMode),
         setSetting('provider', formProvider),
         setSetting('apiKey', formApiKey),
         setSetting('openclawUrl', formOpenclawUrl),
@@ -245,7 +259,7 @@ export default function SettingsScreen() {
     }
 
     Alert.alert(t('settings.saved'));
-  }, [formMode, formProvider, formApiKey, formOpenclawUrl, formOpenclawToken, formCopawSubMode, formCopawUrl, formCopawToken, formLocale, formModel, formSubMode, store, t]);
+  }, [formMode, formBuiltinSubMode, formProvider, formApiKey, formOpenclawUrl, formOpenclawToken, formCopawSubMode, formCopawUrl, formCopawToken, formLocale, formModel, formSubMode, store, t]);
 
   const handleLogout = useCallback(() => {
     authStore.logout();
@@ -256,7 +270,7 @@ export default function SettingsScreen() {
 
   // Determine the actual active mode (from store, not form)
   const activeModeInfo = MODES.find((m) => m.key === store.mode);
-  const activeModeColor = MODE_COLORS[store.mode] || '#6c63ff';
+  const activeModeColor = MODE_COLORS[store.mode] || '#2d7d46';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -266,6 +280,7 @@ export default function SettingsScreen() {
         <Text style={styles.currentModeLabel}>{t('settings.currentMode')}</Text>
         <Text style={[styles.currentModeValue, { color: activeModeColor }]}>
           {activeModeInfo ? t(activeModeInfo.titleKey) : store.mode}
+          {store.mode === 'builtin' && store.builtinSubMode === 'byok' ? ` (${t('settings.builtinByok')})` : ''}
         </Text>
       </View>
 
@@ -300,15 +315,75 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       ))}
 
-      {/* Model selection - shown when mode is builtin */}
+      {/* Builtin sub-mode: Free / BYOK */}
       {formMode === 'builtin' && (
-        <View style={{ marginTop: 8 }}>
-          <Dropdown
-            label={t('settings.model')}
-            options={MODELS}
-            value={formModel}
-            onChange={setFormModel}
-          />
+        <View style={styles.subModeContainer}>
+          <TouchableOpacity
+            style={[styles.subModeCard, formBuiltinSubMode === 'free' && styles.subModeCardSelected]}
+            onPress={() => setFormBuiltinSubMode('free')}
+          >
+            <View style={styles.cardRow}>
+              <View style={[styles.subRadio, formBuiltinSubMode === 'free' && styles.radioSelected]}>
+                {formBuiltinSubMode === 'free' && <View style={styles.subRadioDot} />}
+              </View>
+              <View style={styles.cardTextContainer}>
+                <Text style={styles.subModeTitle}>{t('settings.builtinFree')}</Text>
+                <Text style={styles.cardDesc}>{t('settings.builtinDesc')}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {/* Free mode: model selection */}
+          {formBuiltinSubMode === 'free' && (
+            <View style={{ marginLeft: 26, marginBottom: 8 }}>
+              <Dropdown
+                label={t('settings.model')}
+                options={MODELS}
+                value={formModel}
+                onChange={setFormModel}
+              />
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[styles.subModeCard, formBuiltinSubMode === 'byok' && styles.subModeCardSelected]}
+            onPress={() => setFormBuiltinSubMode('byok')}
+          >
+            <View style={styles.cardRow}>
+              <View style={[styles.subRadio, formBuiltinSubMode === 'byok' && styles.radioSelected]}>
+                {formBuiltinSubMode === 'byok' && <View style={styles.subRadioDot} />}
+              </View>
+              <View style={styles.cardTextContainer}>
+                <Text style={styles.subModeTitle}>{t('settings.builtinByok')}</Text>
+                <Text style={styles.cardDesc}>{t('settings.byokDesc')}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {/* BYOK mode: provider + API key */}
+          {formBuiltinSubMode === 'byok' && (
+            <View style={{ marginLeft: 26, marginBottom: 8 }}>
+              <Dropdown
+                label={t('settings.provider')}
+                options={PROVIDERS}
+                value={formProvider}
+                onChange={setFormProvider}
+              />
+              <View style={styles.fieldContainer}>
+                <Text style={styles.fieldLabel}>{t('settings.apiKey')}</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={formApiKey}
+                  onChangeText={setFormApiKey}
+                  placeholder={t('settings.apiKeyPlaceholder')}
+                  placeholderTextColor="#888888"
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+          )}
         </View>
       )}
 
@@ -521,31 +596,7 @@ export default function SettingsScreen() {
         </View>
       )}
 
-      {/* BYOK fields - shown when mode is byok */}
-      {formMode === 'byok' && (
-        <>
-          <Dropdown
-            label={t('settings.provider')}
-            options={PROVIDERS}
-            value={formProvider}
-            onChange={setFormProvider}
-          />
-
-          <View style={styles.fieldContainer}>
-            <Text style={styles.fieldLabel}>{t('settings.apiKey')}</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formApiKey}
-              onChangeText={setFormApiKey}
-              placeholder={t('settings.apiKeyPlaceholder')}
-              placeholderTextColor="#888888"
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-        </>
-      )}
+      {/* (BYOK fields now nested under Builtin sub-mode above) */}
 
       {/* Language */}
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>{t('settings.language')}</Text>

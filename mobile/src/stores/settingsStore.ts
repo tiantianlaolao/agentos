@@ -1,9 +1,12 @@
 import { create } from 'zustand';
 import type { ConnectionMode, LLMProvider } from '../types/protocol';
 
+type BuiltinSubMode = 'free' | 'byok';
+
 interface SettingsState {
   // Connection
   mode: ConnectionMode;
+  builtinSubMode: BuiltinSubMode;
   provider: LLMProvider;
   apiKey: string;
   openclawUrl: string;
@@ -31,6 +34,7 @@ interface SettingsState {
 
   // Actions
   setMode: (mode: ConnectionMode) => void;
+  setBuiltinSubMode: (mode: BuiltinSubMode) => void;
   setProvider: (provider: LLMProvider) => void;
   setApiKey: (apiKey: string) => void;
   setOpenclawUrl: (url: string) => void;
@@ -50,6 +54,7 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   mode: 'builtin',
+  builtinSubMode: 'free',
   provider: 'deepseek',
   apiKey: '',
   openclawUrl: '',
@@ -68,6 +73,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   settingsLoaded: false,
 
   setMode: (mode) => set({ mode }),
+  setBuiltinSubMode: (mode) => set({ builtinSubMode: mode }),
   setProvider: (provider) => set({ provider }),
   setApiKey: (apiKey) => set({ apiKey }),
   setOpenclawUrl: (url) => set({ openclawUrl: url }),
