@@ -371,6 +371,35 @@ impl WsClient {
                                 }
                             }
                         ]
+                    },
+                    {
+                        "name": "claude-code",
+                        "description": "Use Claude Code on the user's desktop to analyze projects, write code, fix bugs, and perform development tasks remotely.",
+                        "functions": [
+                            {
+                                "name": "run_claude_code",
+                                "description": "Run Claude Code (claude -p) on the desktop. Use this when the user wants to analyze a project, write code, fix bugs, add features, or perform any programming task on their computer. Claude Code can read files, write code, run tests, and execute commands.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "prompt": {
+                                            "type": "string",
+                                            "description": "The development instruction to send to Claude Code"
+                                        },
+                                        "project_path": {
+                                            "type": "string",
+                                            "description": "Path to the project directory (e.g., ~/agentos, ~/my-app). Defaults to home directory."
+                                        },
+                                        "max_turns": {
+                                            "type": "integer",
+                                            "description": "Maximum tool-use turns for Claude Code (default: 25)"
+                                        }
+                                    },
+                                    "required": ["prompt"]
+                                },
+                                "timeout": 300000
+                            }
+                        ]
                     }
                 ]
             }

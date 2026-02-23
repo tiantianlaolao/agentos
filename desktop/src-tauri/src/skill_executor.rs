@@ -34,6 +34,7 @@ pub async fn execute_local_command(
         "write_file" => write_file(args),
         "list_directory" => list_directory(args),
         "call_mcp_tool" => call_mcp_tool(args).await,
+        "run_claude_code" => run_claude_code(args).await,
         _ => Err(format!("Unknown function: {}", function_name)),
     }
 }
@@ -42,7 +43,8 @@ pub async fn execute_local_command(
 async fn run_shell(args: &Value) -> Result<Value, String> {
     let command = args["command"]
         .as_str()
-        .ok_or("Missing 'command' argument")?;
+        .ok_or("Missing 'command' argument")?
+        .trim();
 
     let timeout_secs = args["timeout"].as_u64().unwrap_or(30);
 
@@ -141,6 +143,53 @@ fn list_directory(args: &Value) -> Result<Value, String> {
         "path": path,
         "entries": entries,
         "count": entries.len(),
+    }))
+}
+
+/// Run Claude Code (`claude -p`) on the desktop.
+async fn run_claude_code(args: &Value) -> Result<Value, String> {
+    let prompt = args["prompt"].as_str().ok_or("Missing 'prompt'")?;
+    let project_path = args["project_path"].as_str().unwrap_or("~");
+    let max_turns = args["max_turns"].as_u64().unwrap_or(25);
+    let timeout_secs = args["timeout"].as_u64().unwrap_or(300); // 5 minutes
+
+    println!("[SkillExecutor] run_claude_code: project={}, max_turns={}, timeout={}s", project_path, max_turns, timeout_secs);
+
+    // Use env var for prompt to avoid shell escaping issues; shell expands ~
+    let cmd = format!(
+        "cd {} && claude -p \"$CLAUDE_PROMPT\" --output-format text --max-turns {}",
+        project_path, max_turns
+    );
+
+    let child = tokio::process::Command::new("sh")
+        .arg("-l") // login shell to ensure PATH includes claude
+        .arg("-c")
+        .arg(&cmd)
+        .env("CLAUDE_PROMPT", prompt)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn claude: {}", e))?;
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        child.wait_with_output(),
+    )
+    .await
+    .map_err(|_| format!("Claude Code timed out after {}s", timeout_secs))?
+    .map_err(|e| format!("Claude Code failed: {}", e))?;
+
+    let output = String::from_utf8_lossy(&result.stdout).to_string();
+    let truncated = if output.len() > 8000 {
+        format!("{}...\n\n[Output truncated, total {} chars]", &output[..8000], output.len())
+    } else {
+        output
+    };
+
+    Ok(json!({
+        "exitCode": result.status.code().unwrap_or(-1),
+        "output": truncated,
+        "stderr": String::from_utf8_lossy(&result.stderr).to_string(),
     }))
 }
 

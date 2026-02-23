@@ -303,10 +303,13 @@ export interface DesktopRegisterMessage extends BaseMessage {
 export interface DesktopSkillManifest {
   name: string;
   description: string;
+  visibility?: string;
+  owner?: string;
   functions: Array<{
     name: string;
     description: string;
     parameters: Record<string, unknown>;
+    timeout?: number;
   }>;
 }
 

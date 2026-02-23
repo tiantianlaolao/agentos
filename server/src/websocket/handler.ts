@@ -1126,7 +1126,7 @@ function handleDesktopRegister(ws: WebSocket, session: Session, message: Desktop
   const registeredNames: string[] = [];
 
   for (const sm of manifests) {
-    const skillName = `desktop-${sm.name}`;
+    const skillName = `desktop-${userId.slice(0, 8)}-${sm.name}`;
 
     const manifest = {
       name: skillName,
@@ -1146,6 +1146,8 @@ function handleDesktopRegister(ws: WebSocket, session: Session, message: Desktop
       category: 'tools' as const,
       emoji: '🖥️',
       isDefault: false,
+      visibility: (sm.visibility === 'private' ? 'private' : 'public') as 'public' | 'private',
+      owner: sm.owner || undefined,
     };
 
     // Create proxy handlers that route to desktop execution
@@ -1153,8 +1155,9 @@ function handleDesktopRegister(ws: WebSocket, session: Session, message: Desktop
     for (const fn of sm.functions) {
       const fnName = fn.name;
       const capturedUserId = userId;
+      const fnTimeout = fn.timeout || 30000;
       handlers[fnName] = async (args: Record<string, unknown>) => {
-        return executeOnDesktop(capturedUserId, fnName, args);
+        return executeOnDesktop(capturedUserId, fnName, args, fnTimeout);
       };
     }
 
