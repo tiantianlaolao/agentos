@@ -44,6 +44,10 @@ export default {
     quoteReply: 'Quote Reply',
     today: 'Today',
     yesterday: 'Yesterday',
+    clearConfirm: 'Clear all messages in this conversation?',
+    clear: 'Clear',
+    cleanupDone: 'Archived {{count}} old messages to memory',
+    loadMore: 'Scroll up to load more',
   },
   login: {
     title: 'Welcome to AgentOS',

@@ -44,6 +44,10 @@ export default {
     quoteReply: '引用回复',
     today: '今天',
     yesterday: '昨天',
+    clearConfirm: '确定清空所有对话消息吗？',
+    clear: '清空',
+    cleanupDone: '已自动归档 {{count}} 条旧消息到记忆中',
+    loadMore: '上滑加载更多',
   },
   login: {
     title: '欢迎使用 AgentOS',

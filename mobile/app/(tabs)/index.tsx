@@ -11,8 +11,6 @@ import {
   Keyboard,
   Platform,
   Alert,
-  Modal,
-  Pressable,
   ActivityIndicator,
   AppState,
 } from 'react-native';
@@ -25,11 +23,13 @@ import { useTranslation } from '../../src/i18n';
 import { WebSocketClient } from '../../src/services/websocket';
 import { OpenClawDirectClient } from '../../src/services/openclawDirect';
 import {
-  getConversations,
-  getMessages,
+  getOrCreateSingleConversation,
+  getMessagesPaginated,
+  getMessageCount,
   saveConversation,
   saveMessage,
-  deleteConversation,
+  clearConversationMessages,
+  deleteOldestMessages,
   getSetting,
   setSetting,
 } from '../../src/services/storage';
@@ -100,7 +100,6 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const [inputText, setInputText] = useState('');
   const [activeSkill, setActiveSkill] = useState<SkillInfo | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
   const [showHub, setShowHub] = useState(true);
   const [showSkills, setShowSkills] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -122,41 +121,33 @@ export default function ChatScreen() {
     setConnected,
     setGenerating,
     addMessage,
+    prependMessages,
     setMessages,
-    setConversations,
     setCurrentConversation,
-    addConversation,
-    conversations,
   } = useChatStore();
+
+  const PAGE_SIZE = 50;
+  const CLEANUP_THRESHOLD = 500;
+  const CLEANUP_KEEP = 200;
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const { mode, provider, apiKey, openclawUrl, openclawToken, serverUrl, selectedModel, settingsLoaded, openclawSubMode, setHostedQuota, setMode, hostedActivated, copawSubMode, copawUrl, copawToken } = useSettingsStore();
   const { authToken, userId, isLoggedIn } = useAuthStore();
   const currentUserId = isLoggedIn ? userId : 'anonymous';
 
-  // Load conversations filtered by current mode + userId; re-run when mode or user changes
+  // Load the single conversation for current mode + userId
   useEffect(() => {
     if (!settingsLoaded) return;
     (async () => {
       try {
-        const convs = await getConversations(conversationMode(mode), currentUserId);
-        setConversations(convs);
-
-        const curId = useChatStore.getState().currentConversationId;
-        const currentBelongs = convs.some((c) => c.id === curId);
-        if (!currentBelongs) {
-          // Switch to the most recent conversation in this mode, or start fresh
-          if (convs.length > 0) {
-            setCurrentConversation(convs[0].id);
-          } else {
-            setCurrentConversation(null);
-            setMessages([]);
-          }
-        }
+        const conv = await getOrCreateSingleConversation(conversationMode(mode), currentUserId);
+        setCurrentConversation(conv.id);
       } catch {
         // DB error
       }
     })();
-  }, [settingsLoaded, mode, currentUserId, setConversations, setCurrentConversation, setMessages]);
+  }, [settingsLoaded, mode, currentUserId, setCurrentConversation]);
 
   // Android keyboard height tracking (adjustNothing in manifest, we handle it manually)
   useEffect(() => {
@@ -192,23 +183,15 @@ export default function ChatScreen() {
   // Helper: handle push message (shared by WS and OpenClaw direct)
   const handlePushMessage = useCallback(async (pushContent: string, pushSource?: string) => {
     if (!pushContent) return;
-    let convId = useChatStore.getState().currentConversationId;
-    if (!convId) {
-      convId = randomUUID();
-      const currentMode = useSettingsStore.getState().mode;
-      const { isLoggedIn: loggedIn, userId: uid } = useAuthStore.getState();
-      const conv = { id: convId, title: 'Agent Push', createdAt: Date.now(), updatedAt: Date.now(), mode: conversationMode(currentMode), userId: loggedIn ? uid : 'anonymous' };
-      addConversation(conv);
-      setCurrentConversation(convId);
-      try { await saveConversation(conv); } catch { /* ignore */ }
-    }
+    const convId = useChatStore.getState().currentConversationId;
+    if (!convId) return; // No conversation yet, skip
     const pushMsg: ChatMessage = {
       id: randomUUID(), conversationId: convId, role: 'assistant', content: pushContent, timestamp: Date.now(),
       messageType: 'push', isPush: true, source: pushSource,
     };
     addMessage(pushMsg);
     try { await saveMessage(pushMsg); } catch { /* ignore */ }
-  }, [addConversation, setCurrentConversation, addMessage]);
+  }, [addMessage]);
 
   // Connect — route by mode
   useEffect(() => {
@@ -311,7 +294,7 @@ export default function ChatScreen() {
             role: 'assistant',
             content: fullContent,
             timestamp: Date.now(),
-          }).catch(() => {});
+          }).then(() => checkAndCleanup(done.payload.conversationId)).catch(() => {});
           currentAssistantId.current = null;
         }
       });
@@ -418,7 +401,7 @@ export default function ChatScreen() {
     settingsLoaded, serverUrl, mode, provider, apiKey, openclawUrl, openclawToken,
     copawUrl, copawToken, copawSubMode, authToken, selectedModel, openclawSubMode, handlePushMessage,
     setConnected, setGenerating, addMessage,
-    addConversation, setCurrentConversation, setHostedQuota,
+    setCurrentConversation, setHostedQuota, checkAndCleanup,
   ]);
 
   // Auto-scroll to bottom when new messages arrive (user send / streaming done)
@@ -437,17 +420,19 @@ export default function ChatScreen() {
     }
   }, [streamingContent]);
 
-  // Load messages when switching conversations
+  // Load messages (paginated) when switching conversations
   useEffect(() => {
     if (!currentConversationId) {
       setMessages([]);
+      setHasMore(true);
       return;
     }
     (async () => {
       try {
-        const msgs = await getMessages(currentConversationId);
+        const msgs = await getMessagesPaginated(currentConversationId, PAGE_SIZE);
         setMessages(msgs);
-        // Scroll to bottom after loading conversation history
+        const total = await getMessageCount(currentConversationId);
+        setHasMore(msgs.length < total);
         if (msgs.length > 0) {
           setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: false });
@@ -459,45 +444,72 @@ export default function ChatScreen() {
     })();
   }, [currentConversationId, setMessages]);
 
-  const handleNewConversation = useCallback(() => {
-    setCurrentConversation(null);
-    setMessages([]);
-    currentAssistantId.current = null;
-    setActiveSkill(null);
-    setGenerating(false);
-    setStreamingContent(null);
-    streamBufferRef.current = '';
-    setShowHistory(false);
-  }, [setCurrentConversation, setMessages, setGenerating]);
-
-  const handleSelectConversation = useCallback((convId: string) => {
-    setCurrentConversation(convId);
-    setShowHistory(false);
-    currentAssistantId.current = null;
-    setActiveSkill(null);
-    setGenerating(false);
-    setStreamingContent(null);
-    streamBufferRef.current = '';
-  }, [setCurrentConversation, setGenerating]);
-
-  const handleDeleteConversation = useCallback((convId: string) => {
-    Alert.alert(t('chat.deleteConfirm'), '', [
+  const handleClearConversation = useCallback(() => {
+    Alert.alert(t('chat.clearConfirm'), '', [
       { text: t('chat.cancel'), style: 'cancel' },
       {
-        text: t('chat.delete'),
+        text: t('chat.clear'),
         style: 'destructive',
         onPress: async () => {
-          try { await deleteConversation(convId); } catch { /* ignore */ }
-          const updated = conversations.filter((c) => c.id !== convId);
-          setConversations(updated);
-          if (currentConversationId === convId) {
-            setCurrentConversation(null);
-            setMessages([]);
+          const convId = currentConversationId;
+          if (convId) {
+            try { await clearConversationMessages(convId); } catch { /* ignore */ }
           }
+          setMessages([]);
+          setHasMore(false);
+          currentAssistantId.current = null;
+          setActiveSkill(null);
+          setGenerating(false);
+          setStreamingContent(null);
+          streamBufferRef.current = '';
         },
       },
     ]);
-  }, [conversations, currentConversationId, setConversations, setCurrentConversation, setMessages, t]);
+  }, [currentConversationId, setMessages, setGenerating, t]);
+
+  const handleLoadMore = useCallback(async () => {
+    if (!currentConversationId || loadingMore || !hasMore) return;
+    const oldest = messages[0];
+    if (!oldest) return;
+    setLoadingMore(true);
+    try {
+      const older = await getMessagesPaginated(currentConversationId, PAGE_SIZE, oldest.timestamp);
+      if (older.length === 0) {
+        setHasMore(false);
+      } else {
+        prependMessages(older);
+        if (older.length < PAGE_SIZE) setHasMore(false);
+      }
+    } catch { /* ignore */ }
+    setLoadingMore(false);
+  }, [currentConversationId, loadingMore, hasMore, messages, prependMessages]);
+
+  // Auto-cleanup: when messages exceed threshold, extract memory from oldest and delete them
+  const checkAndCleanup = useCallback(async (convId: string) => {
+    try {
+      const total = await getMessageCount(convId);
+      if (total <= CLEANUP_THRESHOLD) return;
+      const toDelete = total - CLEANUP_KEEP;
+      const token = useAuthStore.getState().authToken;
+      const sUrl = useSettingsStore.getState().serverUrl;
+      const deleted = await deleteOldestMessages(convId, toDelete);
+      // Send to server for memory extraction (best-effort)
+      if (token && deleted.length > 0) {
+        const httpUrl = sUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
+        fetch(`${httpUrl}/memory/extract`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ messages: deleted }),
+        }).catch(() => {});
+      }
+      // Reload paginated messages
+      const msgs = await getMessagesPaginated(convId, PAGE_SIZE);
+      setMessages(msgs);
+      const newTotal = await getMessageCount(convId);
+      setHasMore(msgs.length < newTotal);
+      Alert.alert(t('chat.cleanupDone', { count: String(toDelete) }));
+    } catch { /* ignore */ }
+  }, [setMessages, t]);
 
   const handleSelectAgent = useCallback((targetMode: ConnectionMode) => {
     // OpenClaw requires login
@@ -534,22 +546,25 @@ export default function ChatScreen() {
     if (!text || isGenerating) return;
 
     let convId = currentConversationId;
-
-    // Create new conversation if needed
     if (!convId) {
-      convId = randomUUID();
-      const conv = {
-        id: convId,
-        title: text.slice(0, 30),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        mode: conversationMode(mode),
-        userId: currentUserId,
-      };
-      addConversation(conv);
+      // Should not happen — conversation is pre-created, but handle gracefully
+      const conv = await getOrCreateSingleConversation(conversationMode(mode), currentUserId);
+      convId = conv.id;
       setCurrentConversation(convId);
-      try { await saveConversation(conv); } catch { /* ignore */ }
     }
+
+    // Update conversation title if it's the default
+    try {
+      const conv = await getOrCreateSingleConversation(conversationMode(mode), currentUserId);
+      if (conv.title === 'Chat') {
+        conv.title = text.slice(0, 30);
+        conv.updatedAt = Date.now();
+        await saveConversation(conv);
+      } else {
+        conv.updatedAt = Date.now();
+        await saveConversation(conv);
+      }
+    } catch { /* ignore */ }
 
     // Add user message
     const userMsg: ChatMessage = {
@@ -613,7 +628,7 @@ export default function ChatScreen() {
             saveMessage({
               id: currentAssistantId.current, conversationId: convId!, role: 'assistant',
               content: fullContent, timestamp: Date.now(),
-            }).catch(() => {});
+            }).then(() => checkAndCleanup(convId!)).catch(() => {});
             currentAssistantId.current = null;
           }
           abortControllerRef.current = null;
@@ -679,8 +694,8 @@ export default function ChatScreen() {
     }
   }, [
     inputText, isGenerating, currentConversationId, messages, serverUrl,
-    mode, provider, apiKey, selectedModel, openclawUrl, openclawSubMode,
-    addMessage, addConversation, setCurrentConversation, setGenerating,
+    mode, currentUserId, provider, apiKey, selectedModel, openclawUrl, openclawSubMode,
+    addMessage, setCurrentConversation, setGenerating,
   ]);
 
   // P1: Stop generating
@@ -798,7 +813,7 @@ export default function ChatScreen() {
 
   const keyExtractor = useCallback((item: ChatMessage) => item.id, []);
 
-  const showWelcome = messages.length === 0 && !currentConversationId;
+  const showWelcome = messages.length === 0 && !isGenerating;
 
   // ── Skills panel view ──
   if (showSkills) {
@@ -888,71 +903,21 @@ export default function ChatScreen() {
         </View>
       )}
 
-      {/* Header bar with back button, history and new conversation buttons */}
+      {/* Header bar with back button and clear button */}
       <View style={styles.headerBar}>
         <TouchableOpacity onPress={() => setShowHub(true)} style={styles.menuBtn}>
           <Ionicons name="arrow-back" size={22} color={activeColor} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setShowHistory(true)} style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
           <View style={[styles.headerDot, { backgroundColor: activeColor }]} />
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {conversations.find((c) => c.id === currentConversationId)?.title || t('tabs.chat')}
+            {t('tabs.chat')}
           </Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleNewConversation} style={styles.newChatBtn}>
-          <Ionicons name="create-outline" size={22} color={activeColor} />
+        </View>
+        <TouchableOpacity onPress={handleClearConversation} style={styles.newChatBtn}>
+          <Ionicons name="trash-outline" size={20} color={activeColor} />
         </TouchableOpacity>
       </View>
-
-      {/* Conversation history modal */}
-      <Modal visible={showHistory} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('chat.history')}</Text>
-              <TouchableOpacity onPress={() => setShowHistory(false)}>
-                <Ionicons name="close" size={24} color="#ffffff" />
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity style={styles.newChatRow} onPress={handleNewConversation}>
-              <Ionicons name="add-circle-outline" size={20} color="#6c63ff" />
-              <Text style={styles.newChatRowText}>{t('tabs.chat')}</Text>
-            </TouchableOpacity>
-            {conversations.length === 0 ? (
-              <Text style={styles.emptyText}>{t('chat.noConversations')}</Text>
-            ) : (
-              <FlatList
-                data={conversations}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={[
-                      styles.convItem,
-                      item.id === currentConversationId && styles.convItemActive,
-                    ]}
-                    onPress={() => handleSelectConversation(item.id)}
-                    onLongPress={() => handleDeleteConversation(item.id)}
-                  >
-                    <Ionicons name="chatbubble-outline" size={16} color="#888" style={{ marginRight: 10 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.convTitle} numberOfLines={1}>{item.title}</Text>
-                      <Text style={styles.convDate}>
-                        {new Date(item.updatedAt).toLocaleDateString()}
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      onPress={() => handleDeleteConversation(item.id)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#666" />
-                    </TouchableOpacity>
-                  </Pressable>
-                )}
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
 
       {/* Message list or welcome */}
       {showWelcome ? (
@@ -971,6 +936,23 @@ export default function ChatScreen() {
           removeClippedSubviews={false}
           maxToRenderPerBatch={12}
           windowSize={15}
+          onScroll={(e) => {
+            if (e.nativeEvent.contentOffset.y < 50 && hasMore && !loadingMore) {
+              handleLoadMore();
+            }
+          }}
+          scrollEventThrottle={200}
+          ListHeaderComponent={
+            hasMore ? (
+              <View style={{ alignItems: 'center', paddingVertical: 12 }}>
+                {loadingMore ? (
+                  <ActivityIndicator size="small" color="#6c63ff" />
+                ) : (
+                  <Text style={{ color: '#666', fontSize: 12 }}>{t('chat.loadMore')}</Text>
+                )}
+              </View>
+            ) : null
+          }
           ListFooterComponent={
             <>
               {streamingContent !== null && (
@@ -1086,73 +1068,6 @@ const styles = StyleSheet.create({
   },
   newChatBtn: {
     padding: 6,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContent: {
-    flex: 1,
-    width: '80%',
-    backgroundColor: '#0f0f23',
-    borderRightWidth: 1,
-    borderRightColor: '#2d2d44',
-    paddingTop: 50,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2d2d44',
-  },
-  modalTitle: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  newChatRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2d2d44',
-  },
-  newChatRowText: {
-    color: '#6c63ff',
-    fontSize: 15,
-    fontWeight: '600',
-    marginLeft: 10,
-  },
-  emptyText: {
-    color: '#666',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 40,
-  },
-  convItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1a1a2e',
-  },
-  convItemActive: {
-    backgroundColor: '#1a1a2e',
-  },
-  convTitle: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  convDate: {
-    color: '#666',
-    fontSize: 12,
-    marginTop: 2,
   },
   welcomeContainer: {
     flex: 1,

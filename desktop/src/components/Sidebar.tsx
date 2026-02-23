@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import type { AgentMode } from '../types/index.ts';
-import type { Conversation } from '../services/storage.ts';
 import { useTranslation } from '../i18n/index.ts';
 import { useAuthStore } from '../stores/authStore.ts';
 
@@ -16,15 +14,11 @@ interface Props {
   connecting: boolean;
   currentMode: AgentMode;
   onModeChange: (mode: AgentMode) => void;
-  onNewChat: () => void;
+  onClearChat: () => void;
   serverUrl: string;
   onServerUrlChange: (url: string) => void;
   onConnect: () => void;
   onDisconnect: () => void;
-  conversations: Conversation[];
-  activeConversationId: string | null;
-  onSelectConversation: (id: string) => void;
-  onDeleteConversation: (id: string) => void;
   onOpenSettings: () => void;
   onOpenSkills: () => void;
   onOpenMemory: () => void;
@@ -43,34 +37,16 @@ const MODES: { value: AgentMode; label: string; description: string }[] = [
   { value: 'copaw', label: 'CoPaw', description: 'Personal AI agent' },
 ];
 
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
 export function Sidebar({
   connected,
   connecting,
   currentMode,
   onModeChange,
-  onNewChat,
-  conversations,
-  activeConversationId,
-  onSelectConversation,
-  onDeleteConversation,
+  onClearChat,
   onOpenSettings,
   onOpenSkills,
   onOpenMemory,
 }: Props) {
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const t = useTranslation();
   const auth = useAuthStore();
 
@@ -81,66 +57,9 @@ export function Sidebar({
         <span className={`status-dot ${connected ? 'connected' : connecting ? 'connecting' : 'disconnected'}`} />
       </div>
 
-      <button className="btn-new-chat" onClick={onNewChat}>
-        {t('sidebar.newChat')}
+      <button className="btn-new-chat" onClick={onClearChat}>
+        {t('sidebar.clearChat')}
       </button>
-
-      <div className="sidebar-section conversation-history">
-        <h3>{t('sidebar.conversations')}</h3>
-        <div className="conversation-list">
-          {conversations.length === 0 && (
-            <div className="conversation-empty">{t('sidebar.noConversations')}</div>
-          )}
-          {conversations.map((conv) => (
-            <div
-              key={conv.id}
-              className={`conversation-item ${activeConversationId === conv.id ? 'active' : ''}`}
-              onClick={() => onSelectConversation(conv.id)}
-            >
-              <div className="conversation-info">
-                <span className="conversation-title">
-                  {conv.title.length > 28 ? conv.title.slice(0, 28) + '...' : conv.title}
-                </span>
-                <span className="conversation-time">{formatTime(conv.updatedAt)}</span>
-              </div>
-              {deletingId === conv.id ? (
-                <div className="conversation-delete-confirm">
-                  <button
-                    className="btn-confirm-delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteConversation(conv.id);
-                      setDeletingId(null);
-                    }}
-                  >
-                    {t('sidebar.deleteConfirm')}
-                  </button>
-                  <button
-                    className="btn-cancel-delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeletingId(null);
-                    }}
-                  >
-                    {t('sidebar.deleteCancel')}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className="btn-delete-conv"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeletingId(conv.id);
-                  }}
-                  title="Delete conversation"
-                >
-                  x
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
 
       <div className="sidebar-section">
         <h3>{t('sidebar.agentMode')}</h3>

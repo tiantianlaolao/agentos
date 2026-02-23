@@ -11,6 +11,8 @@ interface Props {
   activeSkill: ActiveSkill | null;
   onRetry?: () => void;
   onQuoteReply?: (text: string) => void;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 function formatDateLabel(timestamp: number, t: (key: string) => string): string {
@@ -88,8 +90,9 @@ function MessageContent({ content }: { content: string }) {
   return <ReactMarkdown components={markdownComponents}>{content}</ReactMarkdown>;
 }
 
-export function MessageList({ messages, streamingContent, activeSkill, onRetry, onQuoteReply }: Props) {
+export function MessageList({ messages, streamingContent, activeSkill, onRetry, onQuoteReply, hasMore, onLoadMore }: Props) {
   const endRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const t = useTranslation();
 
@@ -160,8 +163,28 @@ export function MessageList({ messages, streamingContent, activeSkill, onRetry, 
     return -1;
   }, [messages]);
 
+  const handleScroll = useCallback(() => {
+    if (!listRef.current || !hasMore || !onLoadMore) return;
+    if (listRef.current.scrollTop < 100) {
+      const prevHeight = listRef.current.scrollHeight;
+      onLoadMore();
+      // Preserve scroll position after prepending
+      requestAnimationFrame(() => {
+        if (listRef.current) {
+          const newHeight = listRef.current.scrollHeight;
+          listRef.current.scrollTop += newHeight - prevHeight;
+        }
+      });
+    }
+  }, [hasMore, onLoadMore]);
+
   return (
-    <div className="message-list">
+    <div className="message-list" ref={listRef} onScroll={handleScroll}>
+      {hasMore && (
+        <div className="load-more-indicator" style={{ textAlign: 'center', padding: '12px', color: '#666', fontSize: '12px' }}>
+          {t('chat.loadMore')}
+        </div>
+      )}
       {messages.length === 0 && !streamingContent && (
         <div className="empty-state">
           <div className="empty-icon">A</div>

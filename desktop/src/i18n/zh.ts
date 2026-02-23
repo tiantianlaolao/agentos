@@ -1,15 +1,11 @@
 export default {
   sidebar: {
-    newChat: '+ 新对话',
+    clearChat: '清空对话',
     server: '服务器',
     agentMode: '智能体模式',
-    conversations: '会话记录',
-    noConversations: '暂无会话记录',
     settings: '设置',
     connect: '连接',
     disconnect: '断开',
-    deleteConfirm: '删除',
-    deleteCancel: '取消',
     notLoggedIn: '未登录',
   },
   chat: {
@@ -27,6 +23,7 @@ export default {
     yesterday: '昨天',
     copy: '复制',
     longMessageTip: '消息过长，已切换为纯文本模式',
+    loadMore: '上滑加载更多',
   },
   modes: {
     builtin: '内置助理',

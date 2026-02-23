@@ -909,9 +909,9 @@ async function handleChatSend(
       });
 
       // Async memory extraction (builtin/byok mode, non-blocking)
+      // Only send the current turn (user + assistant) — past context is already in stored memory
       if ((session.mode === 'builtin' || session.mode === 'byok') && session.provider) {
         const memoryMessages: ChatHistoryItem[] = [
-          ...(history || []),
           { role: 'user', content },
           { role: 'assistant', content: fullContent },
         ];

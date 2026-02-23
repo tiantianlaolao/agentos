@@ -36,7 +36,6 @@ export interface Conversation {
 
 interface ChatState {
   // Data
-  conversations: Conversation[];
   currentConversationId: string | null;
   messages: ChatMessage[];
   isConnected: boolean;
@@ -46,16 +45,14 @@ interface ChatState {
   setConnected: (connected: boolean) => void;
   setGenerating: (generating: boolean) => void;
   setCurrentConversation: (id: string | null) => void;
-  addConversation: (conv: Conversation) => void;
   addMessage: (msg: ChatMessage) => void;
+  prependMessages: (msgs: ChatMessage[]) => void;
   updateMessage: (id: string, updates: Partial<ChatMessage>) => void;
   appendToMessage: (id: string, delta: string) => void;
   setMessages: (messages: ChatMessage[]) => void;
-  setConversations: (conversations: Conversation[]) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
-  conversations: [],
   currentConversationId: null,
   messages: [],
   isConnected: false,
@@ -65,11 +62,11 @@ export const useChatStore = create<ChatState>((set) => ({
   setGenerating: (generating) => set({ isGenerating: generating }),
   setCurrentConversation: (id) => set({ currentConversationId: id }),
 
-  addConversation: (conv) =>
-    set((state) => ({ conversations: [conv, ...state.conversations] })),
-
   addMessage: (msg) =>
     set((state) => ({ messages: [...state.messages, msg] })),
+
+  prependMessages: (msgs) =>
+    set((state) => ({ messages: [...msgs, ...state.messages] })),
 
   updateMessage: (id, updates) =>
     set((state) => ({
@@ -84,5 +81,4 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
 
   setMessages: (messages) => set({ messages }),
-  setConversations: (conversations) => set({ conversations }),
 }));

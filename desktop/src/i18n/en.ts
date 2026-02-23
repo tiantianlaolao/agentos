@@ -1,15 +1,11 @@
 export default {
   sidebar: {
-    newChat: '+ New Chat',
+    clearChat: 'Clear Chat',
     server: 'Server',
     agentMode: 'Agent Mode',
-    conversations: 'Conversations',
-    noConversations: 'No conversations yet',
     settings: 'Settings',
     connect: 'Connect',
     disconnect: 'Disconnect',
-    deleteConfirm: 'Del',
-    deleteCancel: 'No',
     notLoggedIn: 'Not logged in',
   },
   chat: {
@@ -27,6 +23,7 @@ export default {
     yesterday: 'Yesterday',
     copy: 'Copy',
     longMessageTip: 'Message too long, switched to plain text mode',
+    loadMore: 'Scroll up to load more',
   },
   modes: {
     builtin: 'Built-in',

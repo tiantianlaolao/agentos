@@ -14,12 +14,15 @@ import { useAuthStore } from './stores/authStore.ts';
 import { OpenClawDirectClient } from './services/openclawDirect.ts';
 import { getHostedStatus } from './services/hostedApi.ts';
 import {
-  getConversations,
-  getConversationById,
+  getOrCreateSingleConversation,
+  migrateToSingleConversation,
   saveConversation,
-  getMessages,
+  getConversationById,
+  getMessagesPaginated,
+  getMessageCount,
   saveMessage,
-  deleteConversation as deleteConv,
+  clearConversationMessages,
+  deleteOldestMessages,
 } from './services/storage.ts';
 import type { Conversation } from './services/storage.ts';
 import type { AgentMode, ChatMessageItem } from './types/index.ts';
@@ -33,10 +36,11 @@ function generateId(): string {
 }
 
 function App() {
+  const PAGE_SIZE = 50;
+  const CLEANUP_THRESHOLD = 500;
+  const CLEANUP_KEEP = 200;
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showSkills, setShowSkills] = useState(false);
   const [showMemory, setShowMemory] = useState(false);
@@ -46,6 +50,7 @@ function App() {
   const [openclawError, setOpenclawError] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [quotedText, setQuotedText] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   const conversationId = useRef(generateId());
   const abortRef = useRef<AbortController | null>(null);
   const openclawClientRef = useRef<OpenClawDirectClient | null>(null);
@@ -80,7 +85,7 @@ function App() {
   const effectiveConnecting = isDirect ? false : ws.connecting;
   const effectiveError = connectError || (isDirectOpenClaw ? openclawError : ws.error);
 
-  // Handle mode changes: disconnect old connection, clean up state, isolate conversations
+  // Handle mode changes: disconnect old connection, clean up state
   const setMode = useCallback((newMode: AgentMode) => {
     const prevMode = useSettingsStore.getState().mode;
     if (prevMode === newMode) return;
@@ -94,12 +99,9 @@ function App() {
       ws.disconnect();
     }
 
-    // Reset current conversation — each mode has its own conversation space
-    setMessages([]);
+    // Messages and conversation will be reloaded via the useEffect watching [mode, userId]
     setStreamingContent(null);
     setDirectStreaming(false);
-    conversationId.current = generateId();
-    setActiveConversationId(null);
   }, [setModeStore, ws]);
 
   // Clean up OpenClaw client when mode changes away from selfhosted
@@ -123,11 +125,8 @@ function App() {
       openclawClientRef.current = null;
       setOpenclawConnected(false);
     }
-    // Clear conversation state — isolate per user
-    setMessages([]);
+    // Conversation will be reloaded via the useEffect watching [mode, userId]
     setStreamingContent(null);
-    conversationId.current = generateId();
-    setActiveConversationId(null);
     setConnectError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken]);
@@ -159,15 +158,27 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, isDirect, authToken, builtinSubMode, copawSubMode, openclawSubMode, hostedActivated, ws.connected, ws.connecting]);
 
-  // Load conversation history on mount and when mode/user changes
+  // Run migration once on mount
   useEffect(() => {
-    setConversations(getConversations(mode, userId || undefined));
-  }, [mode, userId]);
+    migrateToSingleConversation();
+  }, []);
 
-  const refreshConversations = useCallback(() => {
-    const uid = useAuthStore.getState().userId;
-    setConversations(getConversations(mode, uid || undefined));
-  }, [mode]);
+  // Load single conversation for current mode/user
+  useEffect(() => {
+    const conv = getOrCreateSingleConversation(mode, userId || undefined);
+    conversationId.current = conv.id;
+    const msgs = getMessagesPaginated(conv.id, PAGE_SIZE);
+    const items: ChatMessageItem[] = msgs.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      timestamp: m.timestamp,
+    }));
+    setMessages(items);
+    const total = getMessageCount(conv.id);
+    setHasMore(items.length < total);
+    setStreamingContent(null);
+  }, [mode, userId]);
 
   const getOrCreateOpenClawClient = useCallback(() => {
     const { openclawUrl, openclawToken } = useSettingsStore.getState();
@@ -246,20 +257,32 @@ function App() {
     ws.disconnect();
   }, [ws, isDirectOpenClaw]);
 
-  const handleNewChat = useCallback(() => {
-    setMessages([]);
-    setStreamingContent(null);
-    conversationId.current = generateId();
-    setActiveConversationId(null);
-  }, []);
+  // Load more (older) messages
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || messages.length === 0) return;
+    const oldest = messages[0];
+    const older = getMessagesPaginated(conversationId.current, PAGE_SIZE, oldest.timestamp);
+    if (older.length === 0) {
+      setHasMore(false);
+      return;
+    }
+    const olderItems: ChatMessageItem[] = older.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      timestamp: m.timestamp,
+    }));
+    setMessages((prev) => [...olderItems, ...prev]);
+    if (older.length < PAGE_SIZE) setHasMore(false);
+  }, [hasMore, messages]);
 
-  // Keyboard shortcuts: Cmd/Ctrl+N (new chat), Escape (close panels)
+  // Keyboard shortcuts: Cmd/Ctrl+N (clear chat), Escape (close panels)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key === 'n') {
         e.preventDefault();
-        handleNewChat();
+        handleClearChat();
         setShowSettings(false);
         setShowSkills(false);
         setShowMemory(false);
@@ -274,7 +297,7 @@ function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleNewChat, showSettings, showSkills, showMemory, showProcess]);
+  }, [handleClearChat, showSettings, showSkills, showMemory, showProcess]);
 
   // Request notification permission for desktop push messages
   useEffect(() => {
@@ -283,8 +306,46 @@ function App() {
     }
   }, []);
 
-  const handleSelectConversation = useCallback((id: string) => {
-    const msgs = getMessages(id);
+  const handleClearChat = useCallback(() => {
+    clearConversationMessages(conversationId.current);
+    setMessages([]);
+    setStreamingContent(null);
+    setHasMore(false);
+  }, []);
+
+  const ensureConversation = useCallback(
+    (firstMessageContent: string) => {
+      const conv = getConversationById(conversationId.current);
+      if (conv) {
+        if (conv.title === 'Chat') {
+          conv.title = firstMessageContent.slice(0, 50) || 'New Chat';
+        }
+        conv.updatedAt = Date.now();
+        saveConversation(conv);
+      }
+    },
+    []
+  );
+
+  // Auto-cleanup: when messages exceed threshold, extract memory and delete old ones
+  const checkAndCleanup = useCallback((convId: string) => {
+    const total = getMessageCount(convId);
+    if (total <= CLEANUP_THRESHOLD) return;
+    const toDelete = total - CLEANUP_KEEP;
+    const token = useAuthStore.getState().authToken;
+    const sUrl = useSettingsStore.getState().serverUrl;
+    const deleted = deleteOldestMessages(convId, toDelete);
+    // Send to server for memory extraction (best-effort)
+    if (token && deleted.length > 0) {
+      const httpUrl = sUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
+      fetch(`${httpUrl}/memory/extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: deleted }),
+      }).catch(() => {});
+    }
+    // Reload paginated messages
+    const msgs = getMessagesPaginated(convId, PAGE_SIZE);
     const items: ChatMessageItem[] = msgs.map((m) => ({
       id: m.id,
       role: m.role,
@@ -292,46 +353,9 @@ function App() {
       timestamp: m.timestamp,
     }));
     setMessages(items);
-    setStreamingContent(null);
-    conversationId.current = id;
-    setActiveConversationId(id);
+    const newTotal = getMessageCount(convId);
+    setHasMore(items.length < newTotal);
   }, []);
-
-  const handleDeleteConversation = useCallback((id: string) => {
-    deleteConv(id);
-    if (conversationId.current === id) {
-      setMessages([]);
-      setStreamingContent(null);
-      conversationId.current = generateId();
-      setActiveConversationId(null);
-    }
-    const uid = useAuthStore.getState().userId;
-    setConversations(getConversations(useSettingsStore.getState().mode, uid || undefined));
-  }, []);
-
-  const ensureConversation = useCallback(
-    (firstMessageContent: string) => {
-      const convId = conversationId.current;
-      const existing = conversations.find((c) => c.id === convId);
-      if (!existing) {
-        const title = firstMessageContent.slice(0, 50) || 'New Chat';
-        const now = Date.now();
-        const uid = useAuthStore.getState().userId;
-        const conv: Conversation = {
-          id: convId,
-          title,
-          mode,
-          userId: uid || undefined,
-          createdAt: now,
-          updatedAt: now,
-        };
-        saveConversation(conv);
-        setActiveConversationId(convId);
-        refreshConversations();
-      }
-    },
-    [conversations, mode, refreshConversations]
-  );
 
   // Helper: persist assistant message and update conversation timestamp
   const persistAssistantMessage = useCallback(
@@ -358,10 +382,11 @@ function App() {
       if (latestConv) {
         latestConv.updatedAt = Date.now();
         saveConversation(latestConv);
-        refreshConversations();
       }
+
+      checkAndCleanup(conversationId.current);
     },
-    [refreshConversations]
+    [checkAndCleanup]
   );
 
   const handleSend = useCallback(
@@ -391,7 +416,6 @@ function App() {
       if (conv) {
         conv.updatedAt = Date.now();
         saveConversation(conv);
-        refreshConversations();
       }
 
       // Limit history to last 20 messages to avoid LLM context overflow
@@ -467,7 +491,7 @@ function App() {
         },
       });
     },
-    [ws, messages, ensureConversation, refreshConversations, isDirectOpenClaw, getOrCreateOpenClawClient, persistAssistantMessage]
+    [ws, messages, ensureConversation, isDirectOpenClaw, getOrCreateOpenClawClient, persistAssistantMessage]
   );
 
   const handleRetry = useCallback(() => {
@@ -536,15 +560,11 @@ function App() {
         connecting={effectiveConnecting}
         currentMode={mode}
         onModeChange={setMode}
-        onNewChat={handleNewChat}
+        onClearChat={handleClearChat}
         serverUrl={serverUrl}
         onServerUrlChange={setServerUrl}
         onConnect={handleConnect}
         onDisconnect={handleDisconnect}
-        conversations={conversations}
-        activeConversationId={activeConversationId}
-        onSelectConversation={handleSelectConversation}
-        onDeleteConversation={handleDeleteConversation}
         onOpenSettings={() => { setShowSettings(true); setShowSkills(false); setShowMemory(false); setShowProcess(false); }}
         onOpenSkills={() => { setShowSkills(true); setShowSettings(false); setShowMemory(false); setShowProcess(false); }}
         onOpenMemory={() => { setShowMemory(true); setShowSettings(false); setShowSkills(false); setShowProcess(false); }}
@@ -573,6 +593,8 @@ function App() {
               activeSkill={ws.activeSkill}
               onRetry={handleRetry}
               onQuoteReply={handleQuoteReply}
+              hasMore={hasMore}
+              onLoadMore={handleLoadMore}
             />
             <ChatInput
               onSend={handleSend}

@@ -93,3 +93,72 @@ export function deleteConversation(id: string): void {
   storeConversations(conversations);
   localStorage.removeItem(messagesKey(id));
 }
+
+/** Run once: keep only the latest conversation per (mode, userId). */
+export function migrateToSingleConversation(): void {
+  const migrated = localStorage.getItem('agentos-single-conv-migrated');
+  if (migrated) return;
+  const all = loadConversations();
+  const groups = new Map<string, Conversation[]>();
+  for (const c of all) {
+    const key = `${c.mode}|${c.userId || ''}`;
+    const arr = groups.get(key) || [];
+    arr.push(c);
+    groups.set(key, arr);
+  }
+  for (const [, convs] of groups) {
+    convs.sort((a, b) => b.updatedAt - a.updatedAt);
+    for (let i = 1; i < convs.length; i++) {
+      localStorage.removeItem(messagesKey(convs[i].id));
+    }
+  }
+  const kept = [...groups.values()].map((g) => g[0]);
+  storeConversations(kept);
+  localStorage.setItem('agentos-single-conv-migrated', '1');
+}
+
+/** Get the single conversation for a (mode, userId) pair, creating one if it doesn't exist. */
+export function getOrCreateSingleConversation(mode: AgentMode, userId?: string): Conversation {
+  const convs = getConversations(mode, userId);
+  if (convs.length > 0) return convs[0];
+  const now = Date.now();
+  const conv: Conversation = {
+    id: now.toString(36) + Math.random().toString(36).slice(2, 8),
+    title: 'Chat',
+    mode,
+    userId,
+    createdAt: now,
+    updatedAt: now,
+  };
+  saveConversation(conv);
+  return conv;
+}
+
+/** Clear all messages for a conversation (keep conversation itself). */
+export function clearConversationMessages(conversationId: string): void {
+  localStorage.setItem(messagesKey(conversationId), JSON.stringify([]));
+}
+
+/** Get messages with pagination (returns messages in chronological order). */
+export function getMessagesPaginated(conversationId: string, limit: number, beforeTimestamp?: number): Message[] {
+  let msgs = getMessages(conversationId);
+  if (beforeTimestamp) {
+    msgs = msgs.filter((m) => m.timestamp < beforeTimestamp);
+  }
+  // Take the last `limit` messages (most recent)
+  return msgs.slice(-limit);
+}
+
+/** Get total message count for a conversation. */
+export function getMessageCount(conversationId: string): number {
+  return getMessages(conversationId).length;
+}
+
+/** Delete the oldest N messages from a conversation, returning their content. */
+export function deleteOldestMessages(conversationId: string, count: number): { role: string; content: string }[] {
+  const msgs = getMessages(conversationId);
+  const deleted = msgs.slice(0, count);
+  const remaining = msgs.slice(count);
+  localStorage.setItem(messagesKey(conversationId), JSON.stringify(remaining));
+  return deleted.map((m) => ({ role: m.role, content: m.content }));
+}
