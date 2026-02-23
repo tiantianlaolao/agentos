@@ -35,8 +35,8 @@ export default {
     openclawDesc: 'Full agent mode',
     copaw: 'CoPaw',
     copawDesc: 'Personal AI agent',
-    desktop: 'Desktop (BYOK)',
-    desktopDesc: 'Bring your own API key',
+    builtinFree: 'Free Quota',
+    builtinByok: 'Bring Your Key',
   },
   settings: {
     title: 'Settings',

@@ -5,6 +5,8 @@ import { WebSocketServer } from 'ws';
 import { handleConnection, initPushListener } from './websocket/handler.js';
 import { initDatabase } from './auth/db.js';
 import { loadBuiltinSkills } from './skills/loader.js';
+import { initMCPServers } from './mcp/mcpBridge.js';
+import mcpRoutes from './mcp/routes.js';
 import authRoutes from './auth/routes.js';
 import hostedRoutes from './auth/hostedRoutes.js';
 import memoryRoutes from './memory/routes.js';
@@ -23,9 +25,11 @@ app.use(express.json());
 initDatabase();
 
 // Load built-in skills (weather, translate, etc.)
-loadBuiltinSkills().catch((err) => {
-  console.error('[AgentOS] Failed to load skills:', err);
-});
+loadBuiltinSkills()
+  .then(() => initMCPServers())
+  .catch((err) => {
+    console.error('[AgentOS] Failed to load skills/MCP:', err);
+  });
 
 // Auth routes
 app.use('/auth', authRoutes);
@@ -38,6 +42,9 @@ app.use('/memory', memoryRoutes);
 
 // External skills routes
 app.use('/skills', skillRoutes);
+
+// MCP server management routes
+app.use('/mcp', mcpRoutes);
 
 // Health check endpoint
 app.get('/health', (_req, res) => {

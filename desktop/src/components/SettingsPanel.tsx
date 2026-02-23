@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore.ts';
 import { useAuthStore } from '../stores/authStore.ts';
 import { login as apiLogin, register as apiRegister } from '../services/authApi.ts';
@@ -6,20 +7,34 @@ import { activateHostedAccess, getHostedStatus } from '../services/hostedApi.ts'
 import { useTranslation } from '../i18n/index.ts';
 import type { AgentMode } from '../types/index.ts';
 
+interface McpServer {
+  name: string;
+  command: string;
+  args: string[];
+  enabled: boolean;
+  connected: boolean;
+  tools: string[];
+}
+
+function deriveHttpBaseUrl(serverUrl: string): string {
+  return serverUrl
+    .replace(/^ws:\/\//, 'http://')
+    .replace(/^wss:\/\//, 'https://')
+    .replace(/\/ws$/, '');
+}
+
 type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
 
 const MODE_COLORS: Record<AgentMode, string> = {
   builtin: '#2d7d46',
   openclaw: '#c26a1b',
   copaw: '#1b6bc2',
-  desktop: '#6c63ff',
 };
 
 const MODES: { value: AgentMode; label: string; description: string }[] = [
   { value: 'builtin', label: 'Built-in', description: 'Server-hosted DeepSeek' },
   { value: 'openclaw', label: 'OpenClaw', description: 'Full agent mode' },
   { value: 'copaw', label: 'CoPaw', description: 'Remote CoPaw agent' },
-  { value: 'desktop', label: 'Desktop (BYOK)', description: 'Bring your own API key' },
 ];
 
 const MODELS: { key: string; label: string }[] = [
@@ -50,6 +65,7 @@ export function SettingsPanel({ onClose }: Props) {
   const t = useTranslation();
 
   const [formMode, setFormMode] = useState<AgentMode>(store.mode);
+  const [formBuiltinSubMode, setFormBuiltinSubMode] = useState<'free' | 'byok'>(store.builtinSubMode);
   const [formProvider, setFormProvider] = useState<LLMProvider>(store.provider);
   const [formApiKey, setFormApiKey] = useState(store.apiKey);
   const [formServerUrl] = useState(store.serverUrl);
@@ -72,6 +88,17 @@ export function SettingsPanel({ onClose }: Props) {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
+  // MCP Servers state
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpLoading, setMcpLoading] = useState(false);
+  const [mcpError, setMcpError] = useState('');
+  const [showMcpAddForm, setShowMcpAddForm] = useState(false);
+  const [mcpName, setMcpName] = useState('');
+  const [mcpCommand, setMcpCommand] = useState('');
+  const [mcpArgs, setMcpArgs] = useState('');
+  const [mcpAdding, setMcpAdding] = useState(false);
+  const [mcpDeleteConfirm, setMcpDeleteConfirm] = useState<string | null>(null);
+
   // Hosted activation state
   const [inviteCode, setInviteCode] = useState('');
   const [activateLoading, setActivateLoading] = useState(false);
@@ -79,6 +106,7 @@ export function SettingsPanel({ onClose }: Props) {
 
   const handleSave = useCallback(() => {
     store.setMode(formMode);
+    store.setBuiltinSubMode(formBuiltinSubMode);
     store.setProvider(formProvider);
     store.setApiKey(formApiKey);
     store.setServerUrl(formServerUrl);
@@ -93,7 +121,7 @@ export function SettingsPanel({ onClose }: Props) {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }, [
-    store, formMode, formProvider, formApiKey, formServerUrl,
+    store, formMode, formBuiltinSubMode, formProvider, formApiKey, formServerUrl,
     formSelectedModel, formOpenclawUrl, formOpenclawToken,
     formOpenclawSubMode, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,
   ]);
@@ -172,6 +200,79 @@ export function SettingsPanel({ onClose }: Props) {
       }
     } catch { /* ignore */ }
   }, [auth.authToken, formServerUrl, store]);
+
+  // MCP Servers: fetch list
+  const fetchMcpServers = useCallback(async () => {
+    if (!auth.isLoggedIn || !auth.authToken) return;
+    setMcpLoading(true);
+    setMcpError('');
+    try {
+      const baseUrl = deriveHttpBaseUrl(store.serverUrl);
+      const raw = await invoke<string>('http_fetch', {
+        url: `${baseUrl}/mcp/servers`,
+        method: 'GET',
+        authToken: auth.authToken,
+      });
+      const json = JSON.parse(raw);
+      setMcpServers(json.servers || []);
+    } catch (e) {
+      setMcpError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMcpLoading(false);
+    }
+  }, [auth.isLoggedIn, auth.authToken, store.serverUrl]);
+
+  // MCP Servers: add
+  const handleMcpAdd = useCallback(async () => {
+    if (!mcpName.trim() || !mcpCommand.trim()) return;
+    setMcpAdding(true);
+    setMcpError('');
+    try {
+      const baseUrl = deriveHttpBaseUrl(store.serverUrl);
+      const argsArray = mcpArgs.trim()
+        ? mcpArgs.split(',').map((a) => a.trim()).filter(Boolean)
+        : [];
+      await invoke<string>('http_fetch', {
+        url: `${baseUrl}/mcp/servers`,
+        method: 'POST',
+        body: JSON.stringify({ name: mcpName.trim(), command: mcpCommand.trim(), args: argsArray }),
+        authToken: auth.authToken,
+      });
+      setMcpName('');
+      setMcpCommand('');
+      setMcpArgs('');
+      setShowMcpAddForm(false);
+      await fetchMcpServers();
+    } catch (e) {
+      setMcpError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMcpAdding(false);
+    }
+  }, [mcpName, mcpCommand, mcpArgs, auth.authToken, store.serverUrl, fetchMcpServers]);
+
+  // MCP Servers: delete
+  const handleMcpDelete = useCallback(async (name: string) => {
+    setMcpError('');
+    try {
+      const baseUrl = deriveHttpBaseUrl(store.serverUrl);
+      await invoke<string>('http_fetch', {
+        url: `${baseUrl}/mcp/servers/${encodeURIComponent(name)}`,
+        method: 'DELETE',
+        authToken: auth.authToken,
+      });
+      setMcpDeleteConfirm(null);
+      await fetchMcpServers();
+    } catch (e) {
+      setMcpError(e instanceof Error ? e.message : String(e));
+    }
+  }, [auth.authToken, store.serverUrl, fetchMcpServers]);
+
+  // Fetch MCP servers on mount (if logged in)
+  useEffect(() => {
+    if (auth.isLoggedIn && auth.authToken) {
+      fetchMcpServers();
+    }
+  }, [auth.isLoggedIn, auth.authToken, fetchMcpServers]);
 
   const activeModeColor = MODE_COLORS[store.mode];
   const activeModeLabel = t(`modes.${store.mode}`);
@@ -304,19 +405,61 @@ export function SettingsPanel({ onClose }: Props) {
           </div>
         </div>
 
-        {/* Built-in model selection */}
+        {/* Built-in settings: free / BYOK sub-mode */}
         {formMode === 'builtin' && (
           <div className="settings-section">
             <h3 className="settings-section-title">{t('settings.model')}</h3>
-            <select
-              className="settings-select"
-              value={formSelectedModel}
-              onChange={(e) => setFormSelectedModel(e.target.value)}
-            >
-              {MODELS.map((m) => (
-                <option key={m.key} value={m.key}>{m.label}</option>
-              ))}
-            </select>
+            <div className="settings-submode-row">
+              <button
+                className={`settings-submode-btn ${formBuiltinSubMode === 'free' ? 'active' : ''}`}
+                onClick={() => setFormBuiltinSubMode('free')}
+              >
+                {t('modes.builtinFree')}
+              </button>
+              <button
+                className={`settings-submode-btn ${formBuiltinSubMode === 'byok' ? 'active' : ''}`}
+                onClick={() => setFormBuiltinSubMode('byok')}
+              >
+                {t('modes.builtinByok')}
+              </button>
+            </div>
+            {formBuiltinSubMode === 'free' && (
+              <select
+                className="settings-select"
+                value={formSelectedModel}
+                onChange={(e) => setFormSelectedModel(e.target.value)}
+              >
+                {MODELS.map((m) => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+            )}
+            {formBuiltinSubMode === 'byok' && (
+              <>
+                <div className="settings-field">
+                  <label className="settings-label">{t('settings.provider')}</label>
+                  <select
+                    className="settings-select"
+                    value={formProvider}
+                    onChange={(e) => setFormProvider(e.target.value as LLMProvider)}
+                  >
+                    {PROVIDERS.map((p) => (
+                      <option key={p.key} value={p.key}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="settings-field">
+                  <label className="settings-label">{t('settings.apiKey')}</label>
+                  <input
+                    className="settings-input"
+                    type="password"
+                    value={formApiKey}
+                    onChange={(e) => setFormApiKey(e.target.value)}
+                    placeholder={t('settings.apiKeyPlaceholder')}
+                  />
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -462,35 +605,6 @@ export function SettingsPanel({ onClose }: Props) {
           </div>
         )}
 
-        {/* Desktop / BYOK settings */}
-        {formMode === 'desktop' && (
-          <div className="settings-section">
-            <h3 className="settings-section-title">{t('settings.apiConfig')}</h3>
-            <div className="settings-field">
-              <label className="settings-label">{t('settings.provider')}</label>
-              <select
-                className="settings-select"
-                value={formProvider}
-                onChange={(e) => setFormProvider(e.target.value as LLMProvider)}
-              >
-                {PROVIDERS.map((p) => (
-                  <option key={p.key} value={p.key}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="settings-field">
-              <label className="settings-label">{t('settings.apiKey')}</label>
-              <input
-                className="settings-input"
-                type="password"
-                value={formApiKey}
-                onChange={(e) => setFormApiKey(e.target.value)}
-                placeholder={t('settings.apiKeyPlaceholder')}
-              />
-            </div>
-          </div>
-        )}
-
         {/* Language */}
         <div className="settings-section">
           <h3 className="settings-section-title">{t('settings.language')}</h3>
@@ -506,6 +620,229 @@ export function SettingsPanel({ onClose }: Props) {
             ))}
           </div>
         </div>
+
+        {/* MCP Servers */}
+        {auth.isLoggedIn && (
+          <div className="settings-section">
+            <h3 className="settings-section-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>🔌</span> MCP Servers
+            </h3>
+            <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>
+              Connect local MCP servers as skills
+            </p>
+
+            {mcpError && (
+              <p className="settings-auth-error">{mcpError}</p>
+            )}
+
+            {mcpLoading ? (
+              <div style={{ textAlign: 'center', padding: '16px 0', color: '#888', fontSize: '13px' }}>
+                Loading MCP servers...
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {mcpServers.map((server) => (
+                  <div
+                    key={server.name}
+                    style={{
+                      background: '#1a1a2e',
+                      border: '1px solid #2d2d44',
+                      borderRadius: '10px',
+                      padding: '12px 14px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                        <span
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: server.connected ? '#22c55e' : '#ef4444',
+                            flexShrink: 0,
+                          }}
+                          title={server.connected ? 'Connected' : 'Disconnected'}
+                        />
+                        <span style={{ fontWeight: 600, fontSize: '14px', color: '#e0e0e0' }}>
+                          {server.name}
+                        </span>
+                        {server.tools && server.tools.length > 0 && (
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              color: '#6c63ff',
+                              background: 'rgba(108, 99, 255, 0.15)',
+                              borderRadius: '6px',
+                              padding: '1px 6px',
+                            }}
+                          >
+                            {server.tools.length} tool{server.tools.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                      {mcpDeleteConfirm === server.name ? (
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '12px', color: '#ef4444' }}>Delete?</span>
+                          <button
+                            onClick={() => handleMcpDelete(server.name)}
+                            style={{
+                              background: '#ef4444',
+                              border: 'none',
+                              borderRadius: '6px',
+                              padding: '4px 8px',
+                              color: 'white',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            onClick={() => setMcpDeleteConfirm(null)}
+                            style={{
+                              background: '#333',
+                              border: 'none',
+                              borderRadius: '6px',
+                              padding: '4px 8px',
+                              color: '#ccc',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setMcpDeleteConfirm(server.name)}
+                          title="Remove server"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            padding: '2px 4px',
+                            lineHeight: 1,
+                          }}
+                        >
+                          ❌
+                        </button>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        color: '#888',
+                        wordBreak: 'break-all',
+                      }}
+                    >
+                      {server.command} {server.args?.join(' ')}
+                    </div>
+                  </div>
+                ))}
+
+                {mcpServers.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '12px 0', color: '#666', fontSize: '13px' }}>
+                    No MCP servers configured
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Add server form */}
+            {showMcpAddForm ? (
+              <div
+                style={{
+                  background: '#1a1a2e',
+                  border: '1px solid #2d2d44',
+                  borderRadius: '10px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div className="settings-field">
+                  <label className="settings-label">Name</label>
+                  <input
+                    className="settings-input"
+                    value={mcpName}
+                    onChange={(e) => setMcpName(e.target.value)}
+                    placeholder="e.g. filesystem"
+                  />
+                </div>
+                <div className="settings-field">
+                  <label className="settings-label">Command</label>
+                  <input
+                    className="settings-input"
+                    value={mcpCommand}
+                    onChange={(e) => setMcpCommand(e.target.value)}
+                    placeholder="npx"
+                  />
+                </div>
+                <div className="settings-field">
+                  <label className="settings-label">Args</label>
+                  <input
+                    className="settings-input"
+                    value={mcpArgs}
+                    onChange={(e) => setMcpArgs(e.target.value)}
+                    placeholder="--server, filesystem  (comma-separated)"
+                  />
+                  <span className="settings-hint">Comma-separated list of arguments</span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  <button
+                    className="settings-auth-btn"
+                    onClick={handleMcpAdd}
+                    disabled={mcpAdding || !mcpName.trim() || !mcpCommand.trim()}
+                    style={{ flex: 1 }}
+                  >
+                    {mcpAdding ? 'Adding...' : 'Add Server'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMcpAddForm(false);
+                      setMcpName('');
+                      setMcpCommand('');
+                      setMcpArgs('');
+                    }}
+                    style={{
+                      background: '#333',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 16px',
+                      color: '#ccc',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowMcpAddForm(true)}
+                style={{
+                  background: '#16213e',
+                  border: '1.5px dashed #2d2d44',
+                  borderRadius: '10px',
+                  padding: '10px',
+                  color: '#888',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                }}
+              >
+                + Add MCP Server
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Save */}
         <button className={`settings-save ${saved ? 'saved' : ''}`} onClick={handleSave}>

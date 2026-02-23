@@ -35,14 +35,12 @@ const MODE_COLORS: Record<AgentMode, string> = {
   builtin: '#2d7d46',
   openclaw: '#c26a1b',
   copaw: '#1b6bc2',
-  desktop: '#6c63ff',
 };
 
 const MODES: { value: AgentMode; label: string; description: string }[] = [
   { value: 'builtin', label: 'Built-in', description: 'Server-hosted DeepSeek' },
   { value: 'openclaw', label: 'OpenClaw', description: 'Full agent mode' },
   { value: 'copaw', label: 'CoPaw', description: 'Personal AI agent' },
-  { value: 'desktop', label: 'Desktop (BYOK)', description: 'Bring your own API key' },
 ];
 
 function formatTime(ts: number): string {

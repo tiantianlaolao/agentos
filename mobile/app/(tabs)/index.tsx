@@ -44,6 +44,7 @@ import type {
   SkillResultMessage,
   PushMessage,
   ServerMessage,
+  SkillListResponseMessage,
 } from '../../src/types/protocol';
 import MessageBubble from '../../src/components/chat/MessageBubble';
 import SkillCard from '../../src/components/chat/SkillCard';
@@ -109,6 +110,7 @@ export default function ChatScreen() {
   const streamBufferRef = useRef('');
   const lastUserMsgRef = useRef<string>('');
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
+  const [desktopOnline, setDesktopOnline] = useState(false);
   const throttleRef = useRef(0);
   const THROTTLE_MS = 32; // ~30fps
 
@@ -267,6 +269,12 @@ export default function ChatScreen() {
         if (connected.payload.hostedQuota) {
           setHostedQuota(connected.payload.hostedQuota.used, connected.payload.hostedQuota.total);
         }
+        // Request skill list to detect desktop online status
+        client.send({
+          id: randomUUID(),
+          type: MessageType.SKILL_LIST_REQUEST,
+          timestamp: Date.now(),
+        });
       });
 
       const unsubChunk = client.on(MessageType.CHAT_CHUNK, (msg: ServerMessage) => {
@@ -368,6 +376,13 @@ export default function ChatScreen() {
         });
       });
 
+      // Listen for skill list responses to detect desktop online status
+      const unsubSkillList = client.on(MessageType.SKILL_LIST_RESPONSE, (msg: ServerMessage) => {
+        const response = msg as SkillListResponseMessage;
+        const hasDesktop = response.payload.skills.some((s) => s.name.startsWith('desktop-'));
+        setDesktopOnline(hasDesktop);
+      });
+
       const isOpenclawHosted = mode === 'openclaw' && openclawSubMode === 'hosted';
       const isCopawHosted = mode === 'copaw' && copawSubMode === 'hosted';
       client.connect(mode, { provider, apiKey, openclawUrl, openclawToken, authToken: authToken || undefined, model: selectedModel || undefined, deviceId, openclawHosted: isOpenclawHosted || undefined, copawUrl: isCopawHosted ? undefined : (copawUrl || undefined), copawToken: isCopawHosted ? undefined : (copawToken || undefined), copawHosted: isCopawHosted || undefined });
@@ -380,6 +395,7 @@ export default function ChatScreen() {
         unsubSkillResult();
         unsubPush();
         unsubError();
+        unsubSkillList();
       };
     };
 
@@ -396,6 +412,7 @@ export default function ChatScreen() {
         wsClient.disconnect();
         wsClient = null;
       }
+      setDesktopOnline(false);
     };
   }, [
     settingsLoaded, serverUrl, mode, provider, apiKey, openclawUrl, openclawToken,
@@ -793,6 +810,8 @@ export default function ChatScreen() {
           mode={mode}
           openclawSubMode={openclawSubMode as 'hosted' | 'selfhosted' | undefined}
           openclawClient={openclawClient}
+          serverUrl={serverUrl}
+          authToken={authToken || undefined}
         />
       </View>
     );
@@ -858,6 +877,14 @@ export default function ChatScreen() {
       {!isConnected && (
         <View style={styles.connectionBanner}>
           <Text style={styles.connectionBannerText}>{t('chat.connectionLost')}</Text>
+        </View>
+      )}
+
+      {/* Desktop online indicator */}
+      {desktopOnline && (
+        <View style={styles.desktopBanner}>
+          <View style={styles.desktopDot} />
+          <Text style={styles.desktopBannerText}>🖥️ 桌面已连接</Text>
         </View>
       )}
 
@@ -1017,6 +1044,26 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 13,
     fontWeight: '600',
+  },
+  desktopBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a2e1a',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  desktopDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4caf50',
+  },
+  desktopBannerText: {
+    color: '#8bc78b',
+    fontSize: 12,
+    fontWeight: '500',
   },
   headerBar: {
     flexDirection: 'row',

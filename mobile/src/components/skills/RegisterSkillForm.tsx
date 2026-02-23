@@ -13,6 +13,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export default function RegisterSkillForm({ serverUrl, authToken, onClose, onRegistered }: Props) {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [endpointUrl, setEndpointUrl] = useState('');
@@ -89,7 +91,7 @@ export default function RegisterSkillForm({ serverUrl, authToken, onClose, onReg
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
           <Ionicons name="close" size={24} color="#888" />

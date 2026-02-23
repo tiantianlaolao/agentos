@@ -35,8 +35,8 @@ export default {
     openclawDesc: '全功能智能体模式',
     copaw: 'CoPaw',
     copawDesc: '个人 AI 智能体',
-    desktop: '桌面版（自带 Key）',
-    desktopDesc: '使用自己的 API Key',
+    builtinFree: '免费额度',
+    builtinByok: '自带 Key',
   },
   settings: {
     title: '设置',

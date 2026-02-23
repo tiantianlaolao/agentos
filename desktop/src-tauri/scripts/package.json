@@ -1,0 +1,9 @@
+{
+  "name": "agentos-mcp-bridge",
+  "version": "0.1.0",
+  "description": "Local MCP server bridge for AgentOS Desktop",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  }
+}

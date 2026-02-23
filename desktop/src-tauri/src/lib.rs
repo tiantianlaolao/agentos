@@ -1,5 +1,6 @@
 mod ws_client;
 mod process_manager;
+mod skill_executor;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -191,6 +192,121 @@ fn frontend_log(msg: String) {
     println!("[Frontend] {}", msg);
 }
 
+// ── MCP Bridge commands ──
+
+/// Start the local MCP bridge process. Reads ~/.agentos/mcp-config.json,
+/// spawns node mcp-bridge.mjs, discovers tools, and returns them.
+#[tauri::command]
+async fn start_mcp_bridge(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<Value>, String> {
+    let mut pm = state.process_manager.lock().await;
+
+    // Kill existing bridge if running
+    let _ = pm.kill("mcp-bridge");
+
+    // Find the mcp-bridge.mjs script relative to the app binary
+    // In dev: src-tauri/scripts/mcp-bridge.mjs
+    // In prod: bundled alongside the binary
+    let script_path = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .ok_or("Cannot find exe parent dir")?
+        .join("scripts")
+        .join("mcp-bridge.mjs");
+
+    // Fallback: check in the source tree (for dev mode)
+    let script_path = if script_path.exists() {
+        script_path
+    } else {
+        let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("scripts")
+            .join("mcp-bridge.mjs");
+        if dev_path.exists() {
+            dev_path
+        } else {
+            return Err("MCP bridge script not found".to_string());
+        }
+    };
+
+    // Check if MCP config exists
+    let config_path = dirs_next::home_dir()
+        .unwrap_or_default()
+        .join(".agentos")
+        .join("mcp-config.json");
+
+    if !config_path.exists() {
+        return Ok(vec![]); // No MCP config, return empty tools
+    }
+
+    // Spawn the bridge process
+    let _pid = pm.spawn(
+        "mcp-bridge",
+        "node",
+        &[
+            script_path.to_string_lossy().to_string(),
+            config_path.to_string_lossy().to_string(),
+        ],
+    ).map_err(|e| format!("Failed to start MCP bridge: {}", e))?;
+
+    // Wait for the bridge to print its port (poll logs)
+    let mut port: u16 = 0;
+    for _ in 0..30 {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        if let Ok(logs) = pm.get_logs("mcp-bridge", 20) {
+            for line in &logs {
+                if let Some(p) = line.strip_prefix("MCP_BRIDGE_PORT=") {
+                    if let Ok(parsed) = p.trim().parse::<u16>() {
+                        port = parsed;
+                        break;
+                    }
+                }
+            }
+        }
+        if port > 0 { break; }
+    }
+
+    if port == 0 {
+        let _ = pm.kill("mcp-bridge");
+        return Err("MCP bridge failed to start (no port detected)".to_string());
+    }
+
+    // Store port for skill_executor to use
+    skill_executor::set_mcp_bridge_port(port);
+    println!("[Tauri] MCP bridge started on port {}", port);
+
+    // Discover tools via HTTP
+    let tools = discover_mcp_tools_http(port).await?;
+    Ok(tools)
+}
+
+/// Stop the MCP bridge process.
+#[tauri::command]
+async fn stop_mcp_bridge(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    skill_executor::set_mcp_bridge_port(0);
+    let mut pm = state.process_manager.lock().await;
+    let _ = pm.kill("mcp-bridge");
+    Ok(())
+}
+
+/// Fetch discovered tools from the running MCP bridge.
+async fn discover_mcp_tools_http(port: u16) -> Result<Vec<Value>, String> {
+    let url = format!("http://127.0.0.1:{}/tools", port);
+    let client = reqwest::Client::new();
+    let resp = client.get(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch MCP tools: {}", e))?;
+
+    let body: Value = resp.json().await.map_err(|e| format!("Invalid MCP tools response: {}", e))?;
+    let tools = body["tools"].as_array().cloned().unwrap_or_default();
+    println!("[Tauri] Discovered {} MCP tools", tools.len());
+    Ok(tools)
+}
+
 /// Generic HTTP proxy — bypasses webview fetch restrictions.
 #[tauri::command]
 async fn http_fetch(
@@ -307,6 +423,8 @@ pub fn run() {
             install_skill,
             uninstall_skill,
             request_skill_library,
+            start_mcp_bridge,
+            stop_mcp_bridge,
         ])
         .on_window_event(|window, event| {
             // Minimize to tray instead of closing

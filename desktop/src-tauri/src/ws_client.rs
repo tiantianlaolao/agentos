@@ -6,6 +6,7 @@ use tokio::sync::{Mutex, oneshot};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::ChatMessage;
+use crate::skill_executor;
 
 type WsSink = futures_util::stream::SplitSink<
     tokio_tungstenite::WebSocketStream<
@@ -121,6 +122,12 @@ impl WsClient {
                 self.session_id = Some(session_id.clone());
                 println!("[WsClient] Connected! sessionId={}, skills={:?}", session_id, skills);
 
+                // Always send desktop.register — desktop app is always an execution node
+                // regardless of which chat mode (builtin, openclaw, copaw) is active
+                if let Err(e) = self.send_desktop_register().await {
+                    println!("[WsClient] Failed to send desktop.register: {}", e);
+                }
+
                 Ok(ConnectResult { session_id, device_id, skills })
             }
             Ok(Ok(Err(err_msg))) => {
@@ -198,6 +205,48 @@ impl WsClient {
                             "skill.library.response" => {
                                 let _ = channel.send(json!({"type": "skill.library.response", "payload": &parsed["payload"]}));
                             }
+                            "desktop.command" => {
+                                // Server is requesting local command execution
+                                let payload = parsed["payload"].clone();
+                                let command_id = payload["commandId"].as_str().unwrap_or("").to_string();
+                                let function_name = payload["command"].as_str().unwrap_or("").to_string();
+                                let args = payload["args"].clone();
+
+                                println!("[WsClient] desktop.command: {} (id={})", function_name, command_id);
+
+                                let sink_for_result = sink.clone();
+                                // Spawn async task to execute and respond
+                                tokio::spawn(async move {
+                                    let result = skill_executor::execute_local_command(&function_name, &args).await;
+
+                                    let result_msg = match result {
+                                        Ok(data) => json!({
+                                            "id": uuid::Uuid::new_v4().to_string(),
+                                            "type": "desktop.result",
+                                            "timestamp": chrono_timestamp(),
+                                            "payload": {
+                                                "commandId": command_id,
+                                                "success": true,
+                                                "data": data,
+                                            }
+                                        }),
+                                        Err(err) => json!({
+                                            "id": uuid::Uuid::new_v4().to_string(),
+                                            "type": "desktop.result",
+                                            "timestamp": chrono_timestamp(),
+                                            "payload": {
+                                                "commandId": command_id,
+                                                "success": false,
+                                                "error": err,
+                                            }
+                                        }),
+                                    };
+
+                                    if let Ok(mut s) = sink_for_result.try_lock() {
+                                        let _ = s.send(Message::Text(result_msg.to_string())).await;
+                                    }
+                                });
+                            }
                             "ping" => {
                                 let pong = json!({
                                     "id": uuid::Uuid::new_v4().to_string(),
@@ -227,6 +276,110 @@ impl WsClient {
         }
         println!("[WsClient] Stream ended");
         let _ = channel.send(json!({"type": "disconnected", "payload": {"reason": "stream_ended"}}));
+    }
+
+    /// Send desktop.register with capabilities and skill manifests.
+    /// Called automatically after a successful connection.
+    pub async fn send_desktop_register(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let sink = self.sink.as_ref().ok_or("Not connected")?;
+
+        let host = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        let msg = json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "type": "desktop.register",
+            "timestamp": chrono_timestamp(),
+            "payload": {
+                "os": std::env::consts::OS,
+                "arch": std::env::consts::ARCH,
+                "hostname": host,
+                "skillManifests": [
+                    {
+                        "name": "shell",
+                        "description": "Execute shell commands on the user's desktop computer",
+                        "functions": [
+                            {
+                                "name": "run_shell",
+                                "description": "Execute a shell command and return stdout/stderr. Use this when the user asks to run commands on their computer.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "command": {
+                                            "type": "string",
+                                            "description": "The shell command to execute"
+                                        },
+                                        "timeout": {
+                                            "type": "integer",
+                                            "description": "Timeout in seconds (default: 30)"
+                                        }
+                                    },
+                                    "required": ["command"]
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "name": "filesystem",
+                        "description": "Read, write, and list files on the user's desktop computer",
+                        "functions": [
+                            {
+                                "name": "read_file",
+                                "description": "Read the contents of a file on the user's computer",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "path": {
+                                            "type": "string",
+                                            "description": "Absolute path to the file"
+                                        }
+                                    },
+                                    "required": ["path"]
+                                }
+                            },
+                            {
+                                "name": "write_file",
+                                "description": "Write content to a file on the user's computer",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "path": {
+                                            "type": "string",
+                                            "description": "Absolute path to the file"
+                                        },
+                                        "content": {
+                                            "type": "string",
+                                            "description": "Content to write"
+                                        }
+                                    },
+                                    "required": ["path", "content"]
+                                }
+                            },
+                            {
+                                "name": "list_directory",
+                                "description": "List files and directories in a path on the user's computer",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "path": {
+                                            "type": "string",
+                                            "description": "Absolute path to the directory"
+                                        }
+                                    },
+                                    "required": ["path"]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let mut s = sink.lock().await;
+        s.send(Message::Text(msg.to_string())).await?;
+        println!("[WsClient] desktop.register sent (os={}, arch={}, host={})", std::env::consts::OS, std::env::consts::ARCH, host);
+        Ok(())
     }
 
     pub async fn send_chat(

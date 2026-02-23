@@ -15,7 +15,7 @@ export function MemoryPanel({ onClose }: Props) {
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const mode = useSettingsStore((s) => s.mode);
 
-  const isBuiltinOrBYOK = mode === 'builtin' || mode === 'desktop';
+  const isBuiltinOrBYOK = mode === 'builtin';
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

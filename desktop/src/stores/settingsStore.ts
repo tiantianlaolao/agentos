@@ -4,9 +4,12 @@ import type { AgentMode } from '../types/index.ts';
 
 type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
 
+type BuiltinSubMode = 'free' | 'byok';
+
 interface SettingsState {
   // Connection
   mode: AgentMode;
+  builtinSubMode: BuiltinSubMode;
   provider: LLMProvider;
   apiKey: string;
   serverUrl: string;
@@ -34,6 +37,7 @@ interface SettingsState {
 
   // Actions
   setMode: (mode: AgentMode) => void;
+  setBuiltinSubMode: (subMode: BuiltinSubMode) => void;
   setProvider: (provider: LLMProvider) => void;
   setApiKey: (apiKey: string) => void;
   setServerUrl: (url: string) => void;
@@ -56,6 +60,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
       mode: 'builtin',
+      builtinSubMode: 'free',
       provider: 'deepseek',
       apiKey: '',
       serverUrl: 'ws://150.109.157.27:3100/ws',
@@ -74,6 +79,7 @@ export const useSettingsStore = create<SettingsState>()(
       settingsLoaded: false,
 
       setMode: (mode) => set({ mode }),
+      setBuiltinSubMode: (subMode) => set({ builtinSubMode: subMode }),
       setProvider: (provider) => set({ provider }),
       setApiKey: (apiKey) => set({ apiKey }),
       setServerUrl: (url) => set({ serverUrl: url }),
@@ -103,6 +109,7 @@ export const useSettingsStore = create<SettingsState>()(
       name: 'agentos-settings',
       partialize: (state) => ({
         mode: state.mode,
+        builtinSubMode: state.builtinSubMode,
         provider: state.provider,
         apiKey: state.apiKey,
         serverUrl: state.serverUrl,
@@ -119,12 +126,20 @@ export const useSettingsStore = create<SettingsState>()(
         copawSubMode: state.copawSubMode,
         locale: state.locale,
       }),
-      version: 3,
+      version: 4,
       migrate: (persisted: unknown) => {
         const state = (persisted || {}) as Record<string, unknown>;
         // v1→v3: if selfhosted was set but no URL configured, reset to hosted
         if (!state.openclawUrl && state.openclawSubMode === 'selfhosted') {
           state.openclawSubMode = 'hosted';
+        }
+        // v3→v4: migrate 'desktop' mode to 'builtin' + builtinSubMode='byok'
+        if (state.mode === 'desktop') {
+          state.mode = 'builtin';
+          state.builtinSubMode = 'byok';
+        }
+        if (!state.builtinSubMode) {
+          state.builtinSubMode = 'free';
         }
         return state;
       },

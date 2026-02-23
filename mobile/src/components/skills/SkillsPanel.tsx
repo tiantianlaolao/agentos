@@ -102,6 +102,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
   const [loading, setLoading] = useState(!skillsCache.has(cacheKey));
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedEnvFilter, setSelectedEnvFilter] = useState<'all' | 'desktop'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [detailSkill, setDetailSkill] = useState<SkillLibraryItem | null>(null);
@@ -283,6 +284,14 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
     if (selectedCategory !== 'all') {
       items = items.filter((s) => s.category === selectedCategory);
     }
+    if (selectedEnvFilter === 'desktop') {
+      items = items.filter(
+        (s) =>
+          s.name.startsWith('desktop-') ||
+          s.name.startsWith('mcp-') ||
+          (s.environments && s.environments.includes('desktop'))
+      );
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       items = items.filter(
@@ -293,7 +302,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
       );
     }
     return items;
-  }, [library, selectedCategory, searchQuery]);
+  }, [library, selectedCategory, selectedEnvFilter, searchQuery]);
 
   // Group by category for display
   const groupedLibrary = useMemo(() => {
@@ -307,9 +316,17 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
     return Array.from(groups.entries()).map(([category, items]) => ({ category, items }));
   }, [filteredLibrary, selectedCategory]);
 
+  /** Returns a badge config if the skill is a Desktop or MCP skill, or null otherwise. */
+  const getSkillTypeBadge = useCallback((name: string): { emoji: string; label: string; bg: string } | null => {
+    if (name.startsWith('desktop-')) return { emoji: '\u{1F5A5}\uFE0F', label: 'Desktop', bg: '#6c63ff' };
+    if (name.startsWith('mcp-')) return { emoji: '\u{1F50C}', label: 'MCP', bg: '#2d7d46' };
+    return null;
+  }, []);
+
   const renderInstalledSkill = useCallback(({ item }: { item: SkillManifestInfo }) => {
     const badge = AUDIT_BADGES[item.audit] || AUDIT_BADGES.unreviewed;
     const isPrivate = item.visibility === 'private';
+    const typeBadge = getSkillTypeBadge(item.name);
 
     return (
       <View style={styles.skillCard}>
@@ -322,6 +339,12 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               <View style={styles.privateBadge}>
                 <Ionicons name="lock-closed" size={10} color="#f59e0b" />
                 <Text style={styles.privateText}>Private</Text>
+              </View>
+            )}
+            {typeBadge && (
+              <View style={[styles.typeBadge, { backgroundColor: typeBadge.bg }]}>
+                <Text style={styles.typeBadgeEmoji}>{typeBadge.emoji}</Text>
+                <Text style={styles.typeBadgeText}>{typeBadge.label}</Text>
               </View>
             )}
           </View>
@@ -377,11 +400,12 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         )}
       </View>
     );
-  }, [manageable, uninstallSkill]);
+  }, [manageable, uninstallSkill, getSkillTypeBadge]);
 
   const renderLibrarySkill = useCallback(({ item }: { item: SkillLibraryItem }) => {
     const badge = AUDIT_BADGES[item.audit] || AUDIT_BADGES.unreviewed;
     const isPrivate = item.visibility === 'private';
+    const typeBadge = getSkillTypeBadge(item.name);
 
     return (
       <TouchableOpacity style={styles.skillCard} onPress={() => setDetailSkill(item)} activeOpacity={0.7}>
@@ -394,6 +418,12 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               <View style={styles.privateBadge}>
                 <Ionicons name="lock-closed" size={10} color="#f59e0b" />
                 <Text style={styles.privateText}>Private</Text>
+              </View>
+            )}
+            {typeBadge && (
+              <View style={[styles.typeBadge, { backgroundColor: typeBadge.bg }]}>
+                <Text style={styles.typeBadgeEmoji}>{typeBadge.emoji}</Text>
+                <Text style={styles.typeBadgeText}>{typeBadge.label}</Text>
               </View>
             )}
           </View>
@@ -456,7 +486,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         )}
       </TouchableOpacity>
     );
-  }, [installSkill]);
+  }, [installSkill, getSkillTypeBadge]);
 
   // For agent adapter modes (openclaw, copaw), only show installed tab
   const showTabs = manageable;
@@ -584,6 +614,35 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
                 </TouchableOpacity>
               ))}
             </ScrollView>
+
+            {/* Environment Filter */}
+            <View style={styles.envFilterRow}>
+              <TouchableOpacity
+                style={[
+                  styles.envFilterChip,
+                  selectedEnvFilter === 'all' && styles.envFilterChipActive,
+                ]}
+                onPress={() => setSelectedEnvFilter('all')}
+              >
+                <Text style={[
+                  styles.envFilterChipText,
+                  selectedEnvFilter === 'all' && styles.envFilterChipTextActive,
+                ]}>All</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.envFilterChip,
+                  selectedEnvFilter === 'desktop' && styles.envFilterChipActive,
+                ]}
+                onPress={() => setSelectedEnvFilter('desktop')}
+              >
+                <Text style={styles.envFilterChipEmoji}>{'\u{1F5A5}\uFE0F'}</Text>
+                <Text style={[
+                  styles.envFilterChipText,
+                  selectedEnvFilter === 'desktop' && styles.envFilterChipTextActive,
+                ]}>Desktop</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Grouped Library */}
             <FlatList
@@ -1005,5 +1064,56 @@ const styles = StyleSheet.create({
     color: '#6c63ff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  typeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  typeBadgeEmoji: {
+    fontSize: 10,
+  },
+  typeBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  envFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  envFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#2d2d44',
+  },
+  envFilterChipActive: {
+    backgroundColor: '#6c63ff22',
+    borderColor: '#6c63ff',
+  },
+  envFilterChipEmoji: {
+    fontSize: 12,
+  },
+  envFilterChipText: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  envFilterChipTextActive: {
+    color: '#6c63ff',
   },
 });

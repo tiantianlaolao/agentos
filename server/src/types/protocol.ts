@@ -294,7 +294,20 @@ export interface DesktopRegisterMessage extends BaseMessage {
     hostname?: string;
     localAgents?: string[];
     localSkills?: string[];
+    /** Skill manifests provided by the desktop client for server-side registration */
+    skillManifests?: DesktopSkillManifest[];
   };
+}
+
+/** Simplified skill manifest reported by desktop */
+export interface DesktopSkillManifest {
+  name: string;
+  description: string;
+  functions: Array<{
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  }>;
 }
 
 /** Mobile sends command to desktop (routed through server) */
@@ -304,6 +317,8 @@ export interface DesktopCommandMessage extends BaseMessage {
     command: string;
     args?: Record<string, unknown>;
     targetDeviceId?: string;
+    /** Unique ID for correlating command with result */
+    commandId?: string;
   };
 }
 

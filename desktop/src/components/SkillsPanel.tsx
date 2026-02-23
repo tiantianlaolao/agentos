@@ -4,6 +4,7 @@ import type { AgentMode, SkillManifestInfo } from '../types/index.ts';
 import type { OpenClawDirectClient } from '../services/openclawDirect.ts';
 import type { useWebSocket } from '../hooks/useWebSocket.ts';
 import { SkillDetail } from './SkillDetail.tsx';
+import { RegisterSkillForm } from './RegisterSkillForm.tsx';
 
 type WsHandle = ReturnType<typeof useWebSocket>;
 
@@ -11,6 +12,8 @@ interface Props {
   onClose: () => void;
   openclawClient?: OpenClawDirectClient | null;
   ws?: WsHandle | null;
+  serverUrl?: string;
+  authToken?: string;
 }
 
 interface SkillLibraryItem {
@@ -54,6 +57,46 @@ const ENV_LABELS: Record<string, string> = {
   mobile: 'Mobile',
 };
 
+function SkillTypeBadge({ name }: { name: string }) {
+  if (name.startsWith('desktop-')) {
+    return (
+      <span
+        style={{
+          fontSize: '10px',
+          fontWeight: 600,
+          color: '#fff',
+          background: '#6c63ff',
+          borderRadius: '6px',
+          padding: '1px 6px',
+          marginLeft: '4px',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        🖥️ Desktop
+      </span>
+    );
+  }
+  if (name.startsWith('mcp-')) {
+    return (
+      <span
+        style={{
+          fontSize: '10px',
+          fontWeight: 600,
+          color: '#fff',
+          background: '#2d7d46',
+          borderRadius: '6px',
+          padding: '1px 6px',
+          marginLeft: '4px',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        🔌 MCP
+      </span>
+    );
+  }
+  return null;
+}
+
 // Module-level caches
 const skillsCache = new Map<string, SkillManifestInfo[]>();
 const libraryCache = new Map<string, SkillLibraryItem[]>();
@@ -66,10 +109,10 @@ function getCacheKey(mode: AgentMode, openclawSubMode?: string): string {
 }
 
 function canManageSkills(mode: AgentMode): boolean {
-  return mode === 'builtin' || mode === 'desktop';
+  return mode === 'builtin';
 }
 
-export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
+export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken }: Props) {
   const mode = useSettingsStore((s) => s.mode);
   const openclawSubMode = useSettingsStore((s) => s.openclawSubMode);
   const cacheKey = getCacheKey(mode, openclawSubMode);
@@ -83,6 +126,7 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [detailSkill, setDetailSkill] = useState<SkillLibraryItem | null>(null);
+  const [showRegisterForm, setShowRegisterForm] = useState(false);
 
   const wsCallbackRegistered = useRef(false);
 
@@ -343,6 +387,7 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
                         {(skill as any).visibility === 'private' && (
                           <span className="skill-private-badge">Private</span>
                         )}
+                        <SkillTypeBadge name={skill.name} />
                       </div>
                       {manageable ? (
                         <button
@@ -477,6 +522,7 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
                                 {skill.visibility === 'private' && (
                                   <span className="skill-private-badge">Private</span>
                                 )}
+                                <SkillTypeBadge name={skill.name} />
                               </div>
                               {skill.installed ? (
                                 <span className="skill-installed-badge">Installed</span>
@@ -531,6 +577,25 @@ export function SkillsPanel({ onClose, openclawClient, ws }: Props) {
           )
         )}
       </div>
+
+      {/* Register External Skill Button */}
+      {manageable && authToken && serverUrl && (
+        <div className="skills-register-bar">
+          <button className="skills-register-btn" onClick={() => setShowRegisterForm(true)}>
+            + Register External Skill
+          </button>
+        </div>
+      )}
+
+      {/* Register Skill Form Overlay */}
+      {showRegisterForm && serverUrl && authToken && (
+        <RegisterSkillForm
+          serverUrl={serverUrl}
+          authToken={authToken}
+          onClose={() => setShowRegisterForm(false)}
+          onRegistered={() => handleRefresh()}
+        />
+      )}
     </div>
   );
 }

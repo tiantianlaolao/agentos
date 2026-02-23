@@ -11,7 +11,6 @@ import { ProcessPanel } from './components/ProcessPanel.tsx';
 import { useWebSocket } from './hooks/useWebSocket.ts';
 import { useSettingsStore } from './stores/settingsStore.ts';
 import { useAuthStore } from './stores/authStore.ts';
-import { sendChat as directSendChat, type Provider } from './services/directLLM.ts';
 import { OpenClawDirectClient } from './services/openclawDirect.ts';
 import { getHostedStatus } from './services/hostedApi.ts';
 import {
@@ -52,6 +51,7 @@ function App() {
   const openclawClientRef = useRef<OpenClawDirectClient | null>(null);
 
   const mode = useSettingsStore((s) => s.mode);
+  const builtinSubMode = useSettingsStore((s) => s.builtinSubMode);
   const setModeStore = useSettingsStore((s) => s.setMode);
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const setServerUrl = useSettingsStore((s) => s.setServerUrl);
@@ -70,18 +70,15 @@ function App() {
 
   // Determine if we're in a direct (non-WS) mode
   // Admin users always go through WS — server routes to built-in OpenClaw
-  const isDirectBYOK = mode === 'desktop';
+  // Note: BYOK now goes through WS (server-side), no more direct mode
   const isDirectOpenClaw = mode === 'openclaw' && openclawSubMode === 'selfhosted' && !isAdmin;
-  const isDirect = isDirectBYOK || isDirectOpenClaw;
+  const isDirect = isDirectOpenClaw;
 
-  // BYOK is always "connected" (no server needed)
-  // OpenClaw selfhosted tracks its own connection state
-  const effectiveConnected = isDirect
-    ? (isDirectBYOK || openclawConnected)
-    : ws.connected;
+  // OpenClaw selfhosted tracks its own connection state; all others use WS
+  const effectiveConnected = isDirect ? openclawConnected : ws.connected;
   const effectiveStreaming = isDirect ? directStreaming : ws.streaming;
   const effectiveConnecting = isDirect ? false : ws.connecting;
-  const effectiveError = connectError || (isDirectOpenClaw ? openclawError : (isDirect ? null : ws.error));
+  const effectiveError = connectError || (isDirectOpenClaw ? openclawError : ws.error);
 
   // Handle mode changes: disconnect old connection, clean up state, isolate conversations
   const setMode = useCallback((newMode: AgentMode) => {
@@ -160,7 +157,7 @@ function App() {
     }, 500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, isDirect, authToken, copawSubMode, openclawSubMode, hostedActivated, ws.connected, ws.connecting]);
+  }, [mode, isDirect, authToken, builtinSubMode, copawSubMode, openclawSubMode, hostedActivated, ws.connected, ws.connecting]);
 
   // Load conversation history on mount and when mode/user changes
   useEffect(() => {
@@ -202,8 +199,6 @@ function App() {
       }
       return;
     }
-    // BYOK doesn't need connect -- it's always ready
-    if (isDirectBYOK) return;
 
     setConnectError(null);
 
@@ -218,22 +213,28 @@ function App() {
     const useHosted = mode === 'openclaw' && !isAdmin && openclawSubMode === 'hosted' && hostedActivated;
     const useCopawHosted = mode === 'copaw' && copawSubMode === 'hosted';
 
+    // BYOK: pass apiKey and provider/model to server (server already supports this from mobile Sprint 3.5)
+    const isByok = mode === 'builtin' && builtinSubMode === 'byok';
+    const { provider, apiKey, selectedModel } = useSettingsStore.getState();
+    const byokApiKey = isByok ? apiKey || undefined : undefined;
+    const byokModel = isByok ? (selectedModel || provider) : undefined;
+
     invoke('frontend_log', {
-      msg: `handleConnect: mode=${mode}, subMode=${openclawSubMode}, copawSubMode=${copawSubMode}, hostedActivated=${hostedActivated}, useHosted=${useHosted}, useCopawHosted=${useCopawHosted}, hasToken=${!!authToken}`,
+      msg: `handleConnect: mode=${mode}, builtinSubMode=${builtinSubMode}, subMode=${openclawSubMode}, copawSubMode=${copawSubMode}, hostedActivated=${hostedActivated}, useHosted=${useHosted}, useCopawHosted=${useCopawHosted}, isByok=${isByok}, hasToken=${!!authToken}`,
     }).catch(() => {});
 
     ws.connect(
       serverUrl,
       mode,
       authToken || undefined,
-      undefined,
-      undefined,
+      byokApiKey,
+      byokModel,
       mode === 'copaw' && copawSubMode === 'selfhosted' ? copawUrl || undefined : undefined,
       mode === 'copaw' && copawSubMode === 'selfhosted' ? copawToken || undefined : undefined,
       useHosted ? true : undefined,
       useCopawHosted ? true : undefined,
     );
-  }, [ws, serverUrl, mode, copawUrl, copawToken, copawSubMode, isDirectOpenClaw, isDirectBYOK, getOrCreateOpenClawClient, authToken, isLoggedIn, openclawSubMode, hostedActivated, isAdmin]);
+  }, [ws, serverUrl, mode, builtinSubMode, copawUrl, copawToken, copawSubMode, isDirectOpenClaw, getOrCreateOpenClawClient, authToken, isLoggedIn, openclawSubMode, hostedActivated, isAdmin]);
 
   const handleDisconnect = useCallback(() => {
     if (isDirectOpenClaw && openclawClientRef.current) {
@@ -242,9 +243,8 @@ function App() {
       setOpenclawConnected(false);
       return;
     }
-    if (isDirectBYOK) return;
     ws.disconnect();
-  }, [ws, isDirectOpenClaw, isDirectBYOK]);
+  }, [ws, isDirectOpenClaw]);
 
   const handleNewChat = useCallback(() => {
     setMessages([]);
@@ -401,58 +401,6 @@ function App() {
         content: m.content,
       }));
 
-      // --- BYOK direct mode ---
-      if (isDirectBYOK) {
-        const { provider, apiKey, selectedModel } = useSettingsStore.getState();
-        if (!apiKey) {
-          const errorMsg: ChatMessageItem = {
-            id: generateId(),
-            role: 'assistant',
-            content: 'Error: API key not configured. Please set it in Settings.',
-            timestamp: Date.now(),
-          };
-          setMessages((prev) => [...prev, errorMsg]);
-          setStreamingContent(null);
-          return;
-        }
-        const abort = new AbortController();
-        abortRef.current = abort;
-        setDirectStreaming(true);
-        let accumulated = '';
-        directSendChat(
-          provider as Provider,
-          apiKey,
-          selectedModel || undefined,
-          content,
-          history,
-          {
-            onChunk: (delta) => {
-              accumulated += delta;
-              setStreamingContent(accumulated);
-            },
-            onDone: (fullContent) => {
-              setDirectStreaming(false);
-              abortRef.current = null;
-              persistAssistantMessage(fullContent);
-            },
-            onError: (error) => {
-              setDirectStreaming(false);
-              abortRef.current = null;
-              const errorMsg: ChatMessageItem = {
-                id: generateId(),
-                role: 'assistant',
-                content: `Error: ${error}`,
-                timestamp: Date.now(),
-              };
-              setMessages((prev) => [...prev, errorMsg]);
-              setStreamingContent(null);
-            },
-          },
-          abort.signal,
-        );
-        return;
-      }
-
       // --- OpenClaw selfhosted direct mode ---
       if (isDirectOpenClaw) {
         const client = getOrCreateOpenClawClient();
@@ -519,7 +467,7 @@ function App() {
         },
       });
     },
-    [ws, messages, ensureConversation, refreshConversations, isDirectBYOK, isDirectOpenClaw, getOrCreateOpenClawClient, persistAssistantMessage]
+    [ws, messages, ensureConversation, refreshConversations, isDirectOpenClaw, getOrCreateOpenClawClient, persistAssistantMessage]
   );
 
   const handleRetry = useCallback(() => {
@@ -610,6 +558,8 @@ function App() {
             onClose={() => setShowSkills(false)}
             openclawClient={openclawClientRef.current}
             ws={ws}
+            serverUrl={serverUrl}
+            authToken={authToken}
           />
         ) : showMemory ? (
           <MemoryPanel onClose={() => setShowMemory(false)} />

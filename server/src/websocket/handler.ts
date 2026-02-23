@@ -22,7 +22,7 @@ import { createProvider } from '../providers/factory.js';
 import type { LLMProvider, ToolCall } from '../providers/base.js';
 import { OpenClawAdapter } from '../adapters/openclaw.js';
 import { isAgentAdapter, type AgentAdapter } from '../adapters/base.js';
-import { DesktopAdapter, registerDesktopSession, unregisterDesktopSession, getDesktopSession } from '../adapters/desktop.js';
+import { DesktopAdapter, registerDesktopSession, unregisterDesktopSession, getDesktopSession, hasDesktopOnline } from '../adapters/desktop.js';
 import { skillRegistry } from '../skills/registry.js';
 import { checkRateLimit, incrementCount } from '../middleware/rateLimit.js';
 import {
@@ -47,6 +47,78 @@ interface Session {
   provider: LLMProvider | AgentAdapter | null;
   abortController: AbortController | null;
   isHosted: boolean;
+}
+
+// ── Desktop WebSocket mapping: userId → ws (for relaying commands to desktop) ──
+const desktopWebSockets = new Map<string, WebSocket>();
+
+export function getDesktopWebSocket(userId: string): WebSocket | undefined {
+  return desktopWebSockets.get(userId);
+}
+
+// ── Desktop pending commands: commandId → { resolve, reject, timer } ──
+interface PendingDesktopCommand {
+  resolve: (value: { success: boolean; data?: Record<string, unknown>; error?: string }) => void;
+  reject: (reason: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+const pendingDesktopCommands = new Map<string, PendingDesktopCommand>();
+
+/**
+ * Execute a function on the user's desktop client.
+ * Sends DESKTOP_COMMAND via WebSocket and waits for DESKTOP_RESULT.
+ */
+export async function executeOnDesktop(
+  userId: string,
+  functionName: string,
+  args: Record<string, unknown>,
+  timeout = 30000,
+): Promise<string> {
+  const desktopWs = desktopWebSockets.get(userId);
+  if (!desktopWs || desktopWs.readyState !== WebSocket.OPEN) {
+    throw new Error('Desktop client not connected');
+  }
+
+  const commandId = uuidv4();
+
+  return new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingDesktopCommands.delete(commandId);
+      reject(new Error(`Desktop command timed out after ${timeout / 1000}s`));
+    }, timeout);
+
+    pendingDesktopCommands.set(commandId, {
+      resolve: (result) => {
+        clearTimeout(timer);
+        pendingDesktopCommands.delete(commandId);
+        if (result.success) {
+          resolve(JSON.stringify(result.data || {}));
+        } else {
+          reject(new Error(result.error || 'Desktop command failed'));
+        }
+      },
+      reject: (err) => {
+        clearTimeout(timer);
+        pendingDesktopCommands.delete(commandId);
+        reject(err);
+      },
+      timer,
+    });
+
+    // Send command to desktop
+    send(desktopWs, {
+      id: uuidv4(),
+      type: MessageType.DESKTOP_COMMAND,
+      timestamp: Date.now(),
+      payload: {
+        command: functionName,
+        args,
+        commandId,
+      },
+    });
+
+    console.log(`[Desktop] Sent command "${functionName}" (id=${commandId}) to desktop for user ${userId}`);
+  });
 }
 
 // ── Push message infrastructure ──
@@ -183,8 +255,9 @@ export function handleConnection(ws: WebSocket): void {
           break;
 
         case MessageType.DESKTOP_REGISTER:
+          console.log(`[WS] Received desktop.register from session ${session?.id}, userId=${session?.userId}`);
           if (session) {
-            handleDesktopRegister(session, message as DesktopRegisterMessage);
+            handleDesktopRegister(ws, session, message as DesktopRegisterMessage);
           }
           break;
 
@@ -194,11 +267,21 @@ export function handleConnection(ws: WebSocket): void {
           }
           break;
 
-        case MessageType.DESKTOP_RESULT:
-          // Desktop sends back result for a command — forward to requesting client
-          // For now, log it. Mobile relay will be added in sync phase.
-          console.log('[Desktop] Result received:', (message as DesktopResultMessage).payload.commandId);
+        case MessageType.DESKTOP_RESULT: {
+          // Desktop sends back result for a command — resolve pending promise
+          const resultPayload = (message as DesktopResultMessage).payload;
+          const pending = pendingDesktopCommands.get(resultPayload.commandId);
+          if (pending) {
+            pending.resolve({
+              success: resultPayload.success,
+              data: resultPayload.data,
+              error: resultPayload.error,
+            });
+          } else {
+            console.log('[Desktop] Result received for unknown commandId:', resultPayload.commandId);
+          }
           break;
+        }
 
         case MessageType.PING:
           send(ws, { id: uuidv4(), type: MessageType.PONG, timestamp: Date.now() });
@@ -231,12 +314,15 @@ export function handleConnection(ws: WebSocket): void {
       if (activePushWs === ws) {
         activePushWs = null;
       }
-      // Clean up desktop session
-      if (session.mode === 'desktop' && session.userId) {
+      // Clean up desktop session (registered via desktop.register, not tied to mode)
+      if ((session as unknown as Record<string, boolean>)._desktopRegistered && session.userId) {
+        desktopWebSockets.delete(session.userId);
+        unregisterDesktopSkills(session.userId);
         unregisterDesktopSession(session.userId);
-        if (session.provider && isAgentAdapter(session.provider)) {
-          session.provider.cleanup();
-        }
+      }
+      // Clean up agent adapter
+      if (session.provider && isAgentAdapter(session.provider)) {
+        session.provider.cleanup();
       }
       console.log(`[WS] Session ${session.id} disconnected`);
     }
@@ -558,11 +644,10 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
   } else if (isCopawHosted) {
     // CoPaw hosted: use server's default CoPaw URL (shared instance, no user URL)
     llmProvider = createProvider('copaw', { model });
-  } else if (mode === 'desktop') {
-    // Desktop mode: use builtin LLM for chat, register DesktopAdapter separately
-    llmProvider = createProvider('builtin', { model });
   } else {
-    llmProvider = createProvider(mode, { provider: providerName, apiKey, model, openclawUrl, openclawToken, copawUrl, copawToken });
+    // If client sends mode='builtin' with an apiKey, treat as BYOK (user's own key)
+    const effectiveMode = (mode === 'builtin' && apiKey) ? 'byok' : mode;
+    llmProvider = createProvider(effectiveMode, { provider: providerName, apiKey, model, openclawUrl, openclawToken, copawUrl, copawToken });
   }
 
   const resolvedDeviceId = deviceId || 'anonymous';
@@ -604,18 +689,11 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
     });
   }
 
-  // Desktop mode: create and register a DesktopAdapter for command routing
-  if (mode === 'desktop' && userId) {
-    const desktopAdapter = new DesktopAdapter();
-    desktopAdapter.connect({ deviceId: resolvedDeviceId, userId });
-    registerDesktopSession(userId, desktopAdapter);
-  }
-
   // Send skill names: use registry for builtin/byok, or generic tag for agent modes
   const userCtx = { userId, userPhone };
-  const skillNames = (mode !== 'openclaw' && mode !== 'copaw' && mode !== 'desktop' && !isHosted)
+  const skillNames = (mode !== 'openclaw' && mode !== 'copaw' && !isHosted)
     ? skillRegistry.listEnabledForUser(userCtx).map((s) => s.manifest.name)
-    : mode === 'desktop' ? ['desktop-agent'] : ['agent'];
+    : ['agent'];
 
   send(ws, {
     id: uuidv4(),
@@ -1012,11 +1090,28 @@ async function handleFunctionCallingChat(
 
 // ── Desktop handlers ──
 
-function handleDesktopRegister(session: Session, message: DesktopRegisterMessage): void {
-  if (session.mode !== 'desktop') return;
-  const adapter = session.provider;
-  if (adapter && adapter instanceof DesktopAdapter) {
-    adapter.registerCapabilities({
+/** Track which desktop skills are registered per userId, for cleanup on disconnect */
+const desktopSkillNames = new Map<string, string[]>();
+
+function handleDesktopRegister(ws: WebSocket, session: Session, message: DesktopRegisterMessage): void {
+  const userId = session.userId;
+  if (!userId) return;
+
+  // Register DesktopAdapter and store WS for command relay
+  // (moved from handleConnect — now triggered by register message, works for all modes)
+  if (!desktopWebSockets.has(userId)) {
+    const desktopAdapter = new DesktopAdapter();
+    desktopAdapter.connect({ deviceId: session.deviceId, userId });
+    registerDesktopSession(userId, desktopAdapter);
+  }
+  desktopWebSockets.set(userId, ws);
+  // Mark session so cleanup on close knows to unregister desktop
+  (session as unknown as Record<string, boolean>)._desktopRegistered = true;
+
+  // Register capabilities if the adapter exists
+  const existingAdapter = getDesktopSession(userId);
+  if (existingAdapter) {
+    existingAdapter.registerCapabilities({
       os: message.payload.os,
       arch: message.payload.arch,
       hostname: message.payload.hostname,
@@ -1024,6 +1119,71 @@ function handleDesktopRegister(session: Session, message: DesktopRegisterMessage
       localSkills: message.payload.localSkills,
     });
   }
+
+  const manifests = message.payload.skillManifests;
+  if (!manifests || manifests.length === 0) return;
+
+  const registeredNames: string[] = [];
+
+  for (const sm of manifests) {
+    const skillName = `desktop-${sm.name}`;
+
+    const manifest = {
+      name: skillName,
+      version: '1.0.0',
+      description: sm.description,
+      author: 'Desktop',
+      agents: '*' as const,
+      environments: ['desktop' as const],
+      permissions: ['exec' as const],
+      functions: sm.functions.map((f) => ({
+        name: f.name,
+        description: f.description,
+        parameters: f.parameters,
+      })),
+      audit: 'unreviewed' as const,
+      auditSource: 'Desktop',
+      category: 'tools' as const,
+      emoji: '🖥️',
+      isDefault: false,
+    };
+
+    // Create proxy handlers that route to desktop execution
+    const handlers: Record<string, (args: Record<string, unknown>) => Promise<string>> = {};
+    for (const fn of sm.functions) {
+      const fnName = fn.name;
+      const capturedUserId = userId;
+      handlers[fnName] = async (args: Record<string, unknown>) => {
+        return executeOnDesktop(capturedUserId, fnName, args);
+      };
+    }
+
+    skillRegistry.register(manifest, handlers);
+    registeredNames.push(skillName);
+
+    // Auto-install desktop skills for this user
+    try {
+      installSkillForUser(userId, skillName);
+    } catch {
+      // Already installed, ignore
+    }
+  }
+
+  desktopSkillNames.set(userId, registeredNames);
+  console.log(`[Desktop] Registered ${registeredNames.length} desktop skills for user ${userId}: ${registeredNames.join(', ')}`);
+}
+
+/** Unregister all desktop skills for a user (called on disconnect) */
+function unregisterDesktopSkills(userId: string): void {
+  const names = desktopSkillNames.get(userId);
+  if (!names) return;
+
+  for (const name of names) {
+    skillRegistry.unregister(name);
+  }
+
+  desktopSkillNames.delete(userId);
+  console.log(`[Desktop] Unregistered ${names.length} desktop skills for user ${userId}`);
 }
 
 function handleDesktopCommand(ws: WebSocket, session: Session, message: DesktopCommandMessage): void {
@@ -1034,15 +1194,25 @@ function handleDesktopCommand(ws: WebSocket, session: Session, message: DesktopC
     return;
   }
 
-  const desktopAdapter = getDesktopSession(userId);
-  if (!desktopAdapter || !desktopAdapter.isConnected()) {
+  const desktopWs = desktopWebSockets.get(userId);
+  if (!desktopWs || desktopWs.readyState !== WebSocket.OPEN) {
     sendError(ws, ErrorCode.INTERNAL_ERROR, 'No desktop client connected');
     return;
   }
 
-  // Forward command — in the full implementation, this would send to the desktop WS
-  // For now, log the routing intent
-  console.log(`[Desktop] Routing command "${message.payload.command}" to desktop for user ${userId}`);
+  // Forward command to desktop WebSocket
+  send(desktopWs, {
+    id: uuidv4(),
+    type: MessageType.DESKTOP_COMMAND,
+    timestamp: Date.now(),
+    payload: {
+      command: message.payload.command,
+      args: message.payload.args,
+      commandId: message.payload.commandId || uuidv4(),
+    },
+  });
+
+  console.log(`[Desktop] Forwarded command "${message.payload.command}" to desktop for user ${userId}`);
 }
 
 function send(ws: WebSocket, message: ServerMessage): void {
