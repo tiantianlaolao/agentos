@@ -389,6 +389,7 @@ async function handleSkillListRequest(ws: WebSocket, session?: Session): Promise
     installed: installedNames ? installedNames.includes(s.manifest.name) : true,
     environments: s.manifest.environments,
     visibility: s.manifest.visibility || 'public',
+    locales: s.manifest.locales || undefined,
     functions: s.manifest.functions.map((f) => ({
       name: f.name,
       description: f.description,
@@ -504,6 +505,7 @@ function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMe
     isDefault: entry.isDefault,
     installCount: entry.installCount || 0,
     functions: entry.functions as Array<{ name: string; description: string }>,
+    locales: entry.locales || undefined,
   }));
 
   send(ws, {

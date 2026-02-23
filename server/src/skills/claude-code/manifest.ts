@@ -40,4 +40,13 @@ export const manifest: SkillManifest = {
   auditSource: 'AgentOS',
   category: 'tools',
   emoji: '💻',
+  locales: {
+    zh: {
+      displayName: 'Claude 编程',
+      description: '在桌面端远程调用 Claude Code 进行项目分析、代码编写、Bug 修复等开发任务。',
+      functions: {
+        run_claude_code: '在桌面端运行 Claude Code (claude -p)。适用于分析项目、编写代码、修复 Bug、添加功能等编程任务。Claude Code 可以读取文件、编写代码、运行测试和执行命令。',
+      },
+    },
+  },
 };

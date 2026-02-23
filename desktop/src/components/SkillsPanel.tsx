@@ -7,6 +7,7 @@ import { SkillDetail } from './SkillDetail.tsx';
 import { RegisterSkillForm } from './RegisterSkillForm.tsx';
 import { AddMcpServerForm } from './AddMcpServerForm.tsx';
 import { ImportSkillMdForm } from './ImportSkillMdForm.tsx';
+import { useTranslation } from '../i18n/index.ts';
 
 type WsHandle = ReturnType<typeof useWebSocket>;
 
@@ -34,6 +35,7 @@ interface SkillLibraryItem {
   isDefault: boolean;
   installCount: number;
   functions: Array<{ name: string; description: string }>;
+  locales?: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }>;
 }
 
 type TabKey = 'installed' | 'library';
@@ -115,6 +117,13 @@ function canManageSkills(mode: AgentMode): boolean {
 }
 
 export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken }: Props) {
+  const t = useTranslation();
+  const locale = useSettingsStore((s) => s.locale);
+  const loc = useCallback((skill: { name: string; description: string; locales?: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }> }) => ({
+    name: skill.locales?.[locale]?.displayName ?? skill.name,
+    desc: skill.locales?.[locale]?.description ?? skill.description,
+    fnDesc: (fnName: string, fallback: string) => skill.locales?.[locale]?.functions?.[fnName] ?? fallback,
+  }), [locale]);
   const mode = useSettingsStore((s) => s.mode);
   const openclawSubMode = useSettingsStore((s) => s.openclawSubMode);
   const cacheKey = getCacheKey(mode, openclawSubMode);
@@ -296,11 +305,17 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      items = items.filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          s.description.toLowerCase().includes(q)
-      );
+      items = items.filter((s) => {
+        if (s.name.toLowerCase().includes(q)) return true;
+        if (s.description.toLowerCase().includes(q)) return true;
+        if (s.locales) {
+          for (const loc of Object.values(s.locales)) {
+            if ((loc.displayName || '').toLowerCase().includes(q)) return true;
+            if ((loc.description || '').toLowerCase().includes(q)) return true;
+          }
+        }
+        return false;
+      });
     }
     return items;
   }, [library, selectedCategory, searchQuery]);
@@ -335,11 +350,11 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     <div className="skills-panel">
       <div className="skills-header">
         <button className="skills-back-btn" onClick={onClose}>
-          &larr; Back
+          {'\u2190 ' + t('skills.back')}
         </button>
-        <h2 className="skills-title">Skills</h2>
-        <button className="skills-refresh-btn" onClick={handleRefresh} title="Refresh">
-          Refresh
+        <h2 className="skills-title">{t('skills.title')}</h2>
+        <button className="skills-refresh-btn" onClick={handleRefresh} title={t('skills.refresh')}>
+          {t('skills.refresh')}
         </button>
       </div>
 
@@ -349,13 +364,13 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
             className={`skills-tab ${activeTab === 'installed' ? 'skills-tab-active' : ''}`}
             onClick={() => setActiveTab('installed')}
           >
-            Installed ({installedSkills.length})
+            {t('skills.installed')} ({installedSkills.length})
           </button>
           <button
             className={`skills-tab ${activeTab === 'library' ? 'skills-tab-active' : ''}`}
             onClick={() => setActiveTab('library')}
           >
-            Library
+            {t('skills.library')}
           </button>
         </div>
       )}
@@ -365,15 +380,15 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
           loading ? (
             <div className="skills-loading">
               <div className="spinner" />
-              <span>Loading skills...</span>
+              <span>{t('skills.loadingSkills')}</span>
             </div>
           ) : installedSkills.length === 0 ? (
             <div className="skills-empty">
               <span className="skills-empty-icon">?</span>
-              <span>No skills installed</span>
+              <span>{t('skills.noSkillsInstalled')}</span>
               {manageable && (
                 <button className="skills-browse-btn" onClick={() => setActiveTab('library')}>
-                  Browse Library
+                  {t('skills.browseLibrary')}
                 </button>
               )}
             </div>
@@ -388,10 +403,10 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                     <div className="skill-card-header">
                       <div className="skill-name-row">
                         {skill.emoji && <span className="skill-emoji">{skill.emoji}</span>}
-                        <span className="skill-name">{skill.name}</span>
+                        <span className="skill-name">{loc(skill).name}</span>
                         {skill.version && <span className="skill-version">v{skill.version}</span>}
                         {(skill as any).visibility === 'private' && (
-                          <span className="skill-private-badge">Private</span>
+                          <span className="skill-private-badge">{t('skills.private')}</span>
                         )}
                         <SkillTypeBadge name={skill.name} />
                       </div>
@@ -400,7 +415,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                           className="skill-uninstall-btn"
                           onClick={() => uninstallSkill(skill.name)}
                         >
-                          Uninstall
+                          {t('skills.uninstall')}
                         </button>
                       ) : (
                         <span
@@ -411,7 +426,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                       )}
                     </div>
 
-                    <div className="skill-desc">{skill.description}</div>
+                    <div className="skill-desc">{loc(skill).desc}</div>
 
                     <div className="skill-meta">
                       <span className="skill-audit-badge" style={{ borderColor: badge.color, color: badge.color }}>
@@ -427,7 +442,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                           ))}
                         </span>
                       )}
-                      <span className="skill-author">by {skill.author}</span>
+                      <span className="skill-author">{t('skills.by')} {skill.author}</span>
                     </div>
 
                     {skill.functions.length > 0 && (
@@ -436,14 +451,14 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                           className="skill-functions-toggle"
                           onClick={() => setExpandedSkill(isExpanded ? null : skill.name)}
                         >
-                          {isExpanded ? 'Hide' : 'Show'} {skill.functions.length} function{skill.functions.length > 1 ? 's' : ''}
+                          {isExpanded ? t('skills.hide') : t('skills.show')} {skill.functions.length} {t('skills.functions')}
                         </button>
                         {isExpanded && (
                           <div className="skill-functions-list">
                             {skill.functions.map((fn) => (
                               <div key={fn.name} className="skill-function-row">
                                 <span className="skill-function-name">{fn.name}</span>
-                                <span className="skill-function-desc"> - {fn.description}</span>
+                                <span className="skill-function-desc"> - {loc(skill).fnDesc(fn.name, fn.description)}</span>
                               </div>
                             ))}
                           </div>
@@ -459,12 +474,12 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
           libraryLoading ? (
             <div className="skills-loading">
               <div className="spinner" />
-              <span>Loading library...</span>
+              <span>{t('skills.loadingLibrary')}</span>
             </div>
           ) : library.length === 0 ? (
             <div className="skills-empty">
               <span className="skills-empty-icon">?</span>
-              <span>No skills available in library</span>
+              <span>{t('skills.noSkillsAvailable')}</span>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -473,7 +488,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                 <input
                   type="text"
                   className="skills-search-input"
-                  placeholder="Search skills..."
+                  placeholder={t('skills.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -501,7 +516,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
               <div className="skills-list" style={{ flex: 1, overflowY: 'auto' }}>
                 {groupedLibrary.length === 0 ? (
                   <div className="skills-empty">
-                    <span>No skills match your filter</span>
+                    <span>{t('skills.noMatch')}</span>
                   </div>
                 ) : (
                   groupedLibrary.map((group) => (
@@ -523,26 +538,26 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                             <div className="skill-card-header">
                               <div className="skill-name-row">
                                 {skill.emoji && <span className="skill-emoji">{skill.emoji}</span>}
-                                <span className="skill-name">{skill.name}</span>
+                                <span className="skill-name">{loc(skill).name}</span>
                                 {skill.version && <span className="skill-version">v{skill.version}</span>}
                                 {skill.visibility === 'private' && (
-                                  <span className="skill-private-badge">Private</span>
+                                  <span className="skill-private-badge">{t('skills.private')}</span>
                                 )}
                                 <SkillTypeBadge name={skill.name} />
                               </div>
                               {skill.installed ? (
-                                <span className="skill-installed-badge">Installed</span>
+                                <span className="skill-installed-badge">{t('skills.installedBadge')}</span>
                               ) : (
                                 <button
                                   className="skill-install-btn"
                                   onClick={(e) => { e.stopPropagation(); installSkill(skill.name); }}
                                 >
-                                  Install
+                                  {t('skills.install')}
                                 </button>
                               )}
                             </div>
 
-                            <div className="skill-desc">{skill.description}</div>
+                            <div className="skill-desc">{loc(skill).desc}</div>
 
                             <div className="skill-meta">
                               <span className="skill-audit-badge" style={{ borderColor: badge.color, color: badge.color }}>
@@ -557,7 +572,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                                   ))}
                                 </span>
                               )}
-                              <span className="skill-author">by {skill.author}</span>
+                              <span className="skill-author">{t('skills.by')} {skill.author}</span>
                             </div>
 
                             {skill.functions.length > 0 && (
@@ -566,7 +581,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                                   {skill.functions.map((fn) => (
                                     <div key={fn.name} className="skill-function-row">
                                       <span className="skill-function-name">{fn.name}</span>
-                                      <span className="skill-function-desc"> - {fn.description}</span>
+                                      <span className="skill-function-desc"> - {loc(skill).fnDesc(fn.name, fn.description)}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -588,7 +603,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
       {manageable && authToken && serverUrl && (
         <div className="skills-register-bar">
           <button className="skills-register-btn" onClick={() => setAddSkillMode('menu')}>
-            + Add Skill
+            {t('skills.addSkill')}
           </button>
         </div>
       )}
@@ -598,8 +613,8 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
         <div className="register-skill-overlay">
           <div className="register-skill-panel">
             <div className="register-skill-header">
-              <button className="skills-back-btn" onClick={() => setAddSkillMode(null)}>&larr; Back</button>
-              <h2 className="skills-title">Add Skill</h2>
+              <button className="skills-back-btn" onClick={() => setAddSkillMode(null)}>{'\u2190 ' + t('skills.back')}</button>
+              <h2 className="skills-title">{t('skills.addSkillTitle')}</h2>
             </div>
             <div className="register-skill-form" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
@@ -618,10 +633,10 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                 }}
               >
                 <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
-                  <span style={{ marginRight: '8px' }}>&#x1F310;</span>HTTP Skill
+                  <span style={{ marginRight: '8px' }}>&#x1F310;</span>{t('skills.httpSkill')}
                 </span>
                 <span style={{ fontSize: '12px', color: '#888' }}>
-                  Register an external HTTP endpoint as a skill
+                  {t('skills.httpSkillDesc')}
                 </span>
               </button>
               <button
@@ -640,10 +655,10 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                 }}
               >
                 <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
-                  <span style={{ marginRight: '8px' }}>&#x1F50C;</span>MCP Server
+                  <span style={{ marginRight: '8px' }}>&#x1F50C;</span>{t('skills.mcpServer')}
                 </span>
                 <span style={{ fontSize: '12px', color: '#888' }}>
-                  Connect a local MCP server to expose its tools
+                  {t('skills.mcpServerDesc')}
                 </span>
               </button>
               <button
@@ -662,10 +677,10 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                 }}
               >
                 <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
-                  <span style={{ marginRight: '8px' }}>&#x1F4DD;</span>SKILL.md
+                  <span style={{ marginRight: '8px' }}>&#x1F4DD;</span>{t('skills.skillMd')}
                 </span>
                 <span style={{ fontSize: '12px', color: '#888' }}>
-                  Import a markdown-defined skill
+                  {t('skills.skillMdDesc')}
                 </span>
               </button>
             </div>

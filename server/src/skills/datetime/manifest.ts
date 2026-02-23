@@ -67,4 +67,15 @@ export const manifest: SkillManifest = {
   auditSource: 'AgentOS',
   category: 'tools',
   emoji: '📅',
+  locales: {
+    zh: {
+      displayName: '日期时间',
+      description: '获取任意时区的当前日期/时间，计算日期差，设置提醒。',
+      functions: {
+        get_current_time: '获取当前日期和时间，可指定时区。',
+        date_diff: '计算两个日期之间的差值（天、小时、分钟）。',
+        set_reminder: '设置一个定时提醒，在指定分钟后触发。注意：提醒仅在当前会话有效。',
+      },
+    },
+  },
 };

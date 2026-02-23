@@ -31,4 +31,13 @@ export const manifest: SkillManifest = {
   auditSource: 'AgentOS',
   category: 'knowledge',
   emoji: '🔍',
+  locales: {
+    zh: {
+      displayName: '网页搜索',
+      description: '搜索网络获取实时信息、新闻和答案，返回包含标题、摘要和链接的搜索结果。',
+      functions: {
+        search_web: '使用 DuckDuckGo 搜索网络，返回包含标题、摘要和链接的热门结果。适用于查询时事、最新信息或在线搜索。',
+      },
+    },
+  },
 };

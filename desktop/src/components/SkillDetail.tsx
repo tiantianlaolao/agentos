@@ -18,7 +18,11 @@ interface SkillLibraryItem {
   isDefault: boolean;
   installCount: number;
   functions: Array<{ name: string; description: string }>;
+  locales?: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }>;
 }
+
+import { useTranslation } from '../i18n/index.ts';
+import { useSettingsStore } from '../stores/settingsStore.ts';
 
 interface Props {
   skill: SkillLibraryItem;
@@ -27,62 +31,73 @@ interface Props {
   onUninstall: (name: string) => void;
 }
 
-const AUDIT_INFO: Record<string, { label: string; color: string; desc: string }> = {
-  platform: { label: 'Official', color: '#22c55e', desc: 'Developed and maintained by AgentOS team' },
-  ecosystem: { label: 'Reviewed', color: '#eab308', desc: 'Reviewed by agent ecosystem community' },
-  unreviewed: { label: 'Unreviewed', color: '#9ca3af', desc: 'User assumes risk when using this skill' },
-};
+function getAuditInfo(t: (key: string) => string): Record<string, { label: string; color: string; desc: string }> {
+  return {
+    platform: { label: t('skillDetail.auditOfficial'), color: '#22c55e', desc: t('skillDetail.auditOfficialDesc') },
+    ecosystem: { label: t('skillDetail.auditReviewed'), color: '#eab308', desc: t('skillDetail.auditReviewedDesc') },
+    unreviewed: { label: t('skillDetail.auditUnreviewed'), color: '#9ca3af', desc: t('skillDetail.auditUnreviewedDesc') },
+  };
+}
 
-const PERM_INFO: Record<string, { label: string; desc: string }> = {
-  network: { label: 'Network', desc: 'Make HTTP/WS requests' },
-  filesystem: { label: 'File System', desc: 'Read/write files' },
-  browser: { label: 'Browser', desc: 'Browser automation' },
-  exec: { label: 'Execute', desc: 'Run system commands' },
-  system: { label: 'System', desc: 'OS-level operations' },
-  contacts: { label: 'Contacts', desc: 'Address book access' },
-  location: { label: 'Location', desc: 'GPS access' },
-  camera: { label: 'Camera', desc: 'Camera/photo access' },
-};
+function getPermInfo(t: (key: string) => string): Record<string, { label: string; desc: string }> {
+  return {
+    network: { label: t('skillDetail.permNetwork'), desc: t('skillDetail.permNetworkDesc') },
+    filesystem: { label: t('skillDetail.permFilesystem'), desc: t('skillDetail.permFilesystemDesc') },
+    browser: { label: t('skillDetail.permBrowser'), desc: t('skillDetail.permBrowserDesc') },
+    exec: { label: t('skillDetail.permExec'), desc: t('skillDetail.permExecDesc') },
+    system: { label: t('skillDetail.permSystem'), desc: t('skillDetail.permSystemDesc') },
+    contacts: { label: t('skillDetail.permContacts'), desc: t('skillDetail.permContactsDesc') },
+    location: { label: t('skillDetail.permLocation'), desc: t('skillDetail.permLocationDesc') },
+    camera: { label: t('skillDetail.permCamera'), desc: t('skillDetail.permCameraDesc') },
+  };
+}
 
 export function SkillDetail({ skill, onClose, onInstall, onUninstall }: Props) {
+  const t = useTranslation();
+  const locale = useSettingsStore((s) => s.locale);
+  const AUDIT_INFO = getAuditInfo(t);
+  const PERM_INFO = getPermInfo(t);
+  const displayName = skill.locales?.[locale]?.displayName ?? skill.name;
+  const displayDesc = skill.locales?.[locale]?.description ?? skill.description;
+  const fnDesc = (fnName: string, fallback: string) => skill.locales?.[locale]?.functions?.[fnName] ?? fallback;
   const badge = AUDIT_INFO[skill.audit] || AUDIT_INFO.unreviewed;
 
   return (
     <div className="skill-detail-panel">
       <div className="skill-detail-header">
         <button className="skills-back-btn" onClick={onClose}>
-          &larr; Back
+          {'\u2190 ' + t('skillDetail.back')}
         </button>
-        <h2 className="skills-title">Skill Details</h2>
+        <h2 className="skills-title">{t('skillDetail.title')}</h2>
       </div>
 
       <div className="skill-detail-content">
         {/* Hero */}
         <div className="skill-detail-hero">
           <span className="skill-detail-emoji">{skill.emoji || '🔧'}</span>
-          <h3 className="skill-detail-name">{skill.name}</h3>
+          <h3 className="skill-detail-name">{displayName}</h3>
           <span className="skill-detail-version">v{skill.version}</span>
           <span className="skill-detail-author">by {skill.author}</span>
         </div>
 
-        <p className="skill-detail-desc">{skill.description}</p>
+        <p className="skill-detail-desc">{displayDesc}</p>
 
         {/* Action */}
         <div className="skill-detail-action">
           {skill.installed ? (
             <button className="skill-uninstall-btn" onClick={() => onUninstall(skill.name)}>
-              Uninstall
+              {t('skillDetail.uninstall')}
             </button>
           ) : (
             <button className="skill-install-btn-lg" onClick={() => onInstall(skill.name)}>
-              Install
+              {t('skillDetail.install')}
             </button>
           )}
         </div>
 
         {/* Audit */}
         <div className="skill-detail-section">
-          <h4>Trust & Safety</h4>
+          <h4>{t('skillDetail.trustSafety')}</h4>
           <div className="skill-detail-audit" style={{ borderColor: badge.color }}>
             <span style={{ color: badge.color, fontWeight: 700 }}>{badge.label}</span>
             <span className="skill-detail-audit-desc">{badge.desc}</span>
@@ -92,7 +107,7 @@ export function SkillDetail({ skill, onClose, onInstall, onUninstall }: Props) {
         {/* Permissions */}
         {skill.permissions && skill.permissions.length > 0 && (
           <div className="skill-detail-section">
-            <h4>Required Permissions</h4>
+            <h4>{t('skillDetail.permissions')}</h4>
             {skill.permissions.map((perm) => {
               const info = PERM_INFO[perm] || { label: perm, desc: '' };
               return (
@@ -108,11 +123,11 @@ export function SkillDetail({ skill, onClose, onInstall, onUninstall }: Props) {
         {/* Functions */}
         {skill.functions.length > 0 && (
           <div className="skill-detail-section">
-            <h4>Functions ({skill.functions.length})</h4>
+            <h4>{t('skillDetail.functions')} ({skill.functions.length})</h4>
             {skill.functions.map((fn) => (
               <div key={fn.name} className="skill-detail-fn">
                 <code className="skill-detail-fn-name">{fn.name}</code>
-                <span className="skill-detail-fn-desc">{fn.description}</span>
+                <span className="skill-detail-fn-desc">{fnDesc(fn.name, fn.description)}</span>
               </div>
             ))}
           </div>
@@ -120,18 +135,18 @@ export function SkillDetail({ skill, onClose, onInstall, onUninstall }: Props) {
 
         {/* Meta */}
         <div className="skill-detail-section">
-          <h4>Info</h4>
+          <h4>{t('skillDetail.info')}</h4>
           <div className="skill-detail-meta-row">
-            <span>Category</span>
+            <span>{t('skillDetail.category')}</span>
             <span>{skill.category || 'general'}</span>
           </div>
           <div className="skill-detail-meta-row">
-            <span>Environments</span>
+            <span>{t('skillDetail.environments')}</span>
             <span>{skill.environments.join(', ')}</span>
           </div>
           {skill.installCount > 0 && (
             <div className="skill-detail-meta-row">
-              <span>Installs</span>
+              <span>{t('skillDetail.installs')}</span>
               <span>{skill.installCount}</span>
             </div>
           )}

@@ -40,4 +40,13 @@ export const manifest: SkillManifest = {
   category: 'finance',
   emoji: '💱',
   isDefault: false,
+  locales: {
+    zh: {
+      displayName: '汇率换算',
+      description: '获取实时货币汇率并在不同货币间换算，支持全球主要货币。',
+      functions: {
+        get_exchange_rate: '获取两种货币之间的实时汇率，可选择换算金额。使用 ISO 4217 货币代码（如 USD, EUR, CNY, JPY, GBP）。',
+      },
+    },
+  },
 };

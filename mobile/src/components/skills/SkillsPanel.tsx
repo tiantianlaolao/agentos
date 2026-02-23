@@ -41,6 +41,8 @@ import RegisterSkillForm from './RegisterSkillForm';
 import SkillDetail from './SkillDetail';
 import AddMcpServerForm from './AddMcpServerForm';
 import ImportSkillMdForm from './ImportSkillMdForm';
+import { useTranslation } from '../../i18n';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface SkillsPanelProps {
   wsClient: {
@@ -96,6 +98,8 @@ function canManageSkills(mode?: ConnectionMode): boolean {
 }
 
 export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, openclawClient, serverUrl, authToken }: SkillsPanelProps) {
+  const t = useTranslation();
+  const locale = useSettingsStore((s) => s.locale);
   const cacheKey = getCacheKey(mode, openclawSubMode);
   const manageable = canManageSkills(mode);
   const [activeTab, setActiveTab] = useState<TabKey>('installed');
@@ -296,12 +300,18 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      items = items.filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          s.description.toLowerCase().includes(q) ||
-          (s.emoji && s.emoji.includes(q))
-      );
+      items = items.filter((s) => {
+        if (s.name.toLowerCase().includes(q)) return true;
+        if (s.description.toLowerCase().includes(q)) return true;
+        if (s.emoji && s.emoji.includes(q)) return true;
+        if (s.locales) {
+          for (const loc of Object.values(s.locales)) {
+            if ((loc.displayName || '').toLowerCase().includes(q)) return true;
+            if ((loc.description || '').toLowerCase().includes(q)) return true;
+          }
+        }
+        return false;
+      });
     }
     return items;
   }, [library, selectedCategory, selectedEnvFilter, searchQuery]);
@@ -329,18 +339,20 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
     const badge = AUDIT_BADGES[item.audit] || AUDIT_BADGES.unreviewed;
     const isPrivate = item.visibility === 'private';
     const typeBadge = getSkillTypeBadge(item.name);
+    const displayName = item.locales?.[locale]?.displayName ?? item.name;
+    const displayDesc = item.locales?.[locale]?.description ?? item.description;
 
     return (
       <View style={styles.skillCard}>
         <View style={styles.skillHeader}>
           <View style={styles.skillNameRow}>
             {item.emoji ? <Text style={styles.skillEmoji}>{item.emoji}</Text> : null}
-            <Text style={styles.skillName}>{item.name}</Text>
+            <Text style={styles.skillName}>{displayName}</Text>
             {item.version ? <Text style={styles.skillVersion}>v{item.version}</Text> : null}
             {isPrivate && (
               <View style={styles.privateBadge}>
                 <Ionicons name="lock-closed" size={10} color="#f59e0b" />
-                <Text style={styles.privateText}>Private</Text>
+                <Text style={styles.privateText}>{t('skills.private')}</Text>
               </View>
             )}
             {typeBadge && (
@@ -356,14 +368,14 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               onPress={() => uninstallSkill(item.name)}
             >
               <Ionicons name="trash-outline" size={16} color="#ef4444" />
-              <Text style={styles.uninstallText}>Uninstall</Text>
+              <Text style={styles.uninstallText}>{t('skills.uninstall')}</Text>
             </TouchableOpacity>
           ) : (
             <View style={[styles.statusDot, { backgroundColor: item.enabled ? '#22c55e' : '#666' }]} />
           )}
         </View>
 
-        <Text style={styles.skillDesc} numberOfLines={2}>{item.description}</Text>
+        <Text style={styles.skillDesc} numberOfLines={2}>{displayDesc}</Text>
 
         <View style={styles.skillMeta}>
           <View style={[styles.auditBadge, { borderColor: badge.color }]}>
@@ -386,7 +398,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               })}
             </View>
           )}
-          <Text style={styles.authorText}>by {item.author}</Text>
+          <Text style={styles.authorText}>{t('skills.by')} {item.author}</Text>
         </View>
 
         {item.functions.length > 0 && (
@@ -395,31 +407,33 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               <View key={fn.name} style={styles.functionRow}>
                 <Ionicons name="code-slash-outline" size={12} color="#888" />
                 <Text style={styles.functionName}>{fn.name}</Text>
-                <Text style={styles.functionDesc} numberOfLines={1}> - {fn.description}</Text>
+                <Text style={styles.functionDesc} numberOfLines={1}> - {item.locales?.[locale]?.functions?.[fn.name] ?? fn.description}</Text>
               </View>
             ))}
           </View>
         )}
       </View>
     );
-  }, [manageable, uninstallSkill, getSkillTypeBadge]);
+  }, [manageable, uninstallSkill, getSkillTypeBadge, t, locale]);
 
   const renderLibrarySkill = useCallback(({ item }: { item: SkillLibraryItem }) => {
     const badge = AUDIT_BADGES[item.audit] || AUDIT_BADGES.unreviewed;
     const isPrivate = item.visibility === 'private';
     const typeBadge = getSkillTypeBadge(item.name);
+    const displayName = item.locales?.[locale]?.displayName ?? item.name;
+    const displayDesc = item.locales?.[locale]?.description ?? item.description;
 
     return (
       <TouchableOpacity style={styles.skillCard} onPress={() => setDetailSkill(item)} activeOpacity={0.7}>
         <View style={styles.skillHeader}>
           <View style={styles.skillNameRow}>
             {item.emoji ? <Text style={styles.skillEmoji}>{item.emoji}</Text> : null}
-            <Text style={styles.skillName}>{item.name}</Text>
+            <Text style={styles.skillName}>{displayName}</Text>
             {item.version ? <Text style={styles.skillVersion}>v{item.version}</Text> : null}
             {isPrivate && (
               <View style={styles.privateBadge}>
                 <Ionicons name="lock-closed" size={10} color="#f59e0b" />
-                <Text style={styles.privateText}>Private</Text>
+                <Text style={styles.privateText}>{t('skills.private')}</Text>
               </View>
             )}
             {typeBadge && (
@@ -432,7 +446,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
           {item.installed ? (
             <View style={styles.installedBadge}>
               <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
-              <Text style={styles.installedText}>Installed</Text>
+              <Text style={styles.installedText}>{t('skills.installedBadge')}</Text>
             </View>
           ) : (
             <TouchableOpacity
@@ -440,12 +454,12 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               onPress={() => installSkill(item.name)}
             >
               <Ionicons name="add-circle-outline" size={16} color="#6c63ff" />
-              <Text style={styles.installText}>Install</Text>
+              <Text style={styles.installText}>{t('skills.install')}</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        <Text style={styles.skillDesc} numberOfLines={2}>{item.description}</Text>
+        <Text style={styles.skillDesc} numberOfLines={2}>{displayDesc}</Text>
 
         <View style={styles.skillMeta}>
           <View style={[styles.auditBadge, { borderColor: badge.color }]}>
@@ -472,7 +486,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               <Text style={styles.categoryText}>{item.category}</Text>
             </View>
           )}
-          <Text style={styles.authorText}>by {item.author}</Text>
+          <Text style={styles.authorText}>{t('skills.by')} {item.author}</Text>
         </View>
 
         {item.functions.length > 0 && (
@@ -481,14 +495,14 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               <View key={fn.name} style={styles.functionRow}>
                 <Ionicons name="code-slash-outline" size={12} color="#888" />
                 <Text style={styles.functionName}>{fn.name}</Text>
-                <Text style={styles.functionDesc} numberOfLines={1}> - {fn.description}</Text>
+                <Text style={styles.functionDesc} numberOfLines={1}> - {item.locales?.[locale]?.functions?.[fn.name] ?? fn.description}</Text>
               </View>
             ))}
           </View>
         )}
       </TouchableOpacity>
     );
-  }, [installSkill, getSkillTypeBadge]);
+  }, [installSkill, getSkillTypeBadge, t, locale]);
 
   // For agent adapter modes (openclaw, copaw), only show installed tab
   const showTabs = manageable;
@@ -503,7 +517,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         <TouchableOpacity onPress={onClose} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color="#6c63ff" />
         </TouchableOpacity>
-        <Text style={styles.title}>Skills</Text>
+        <Text style={styles.title}>{t('skills.title')}</Text>
         <TouchableOpacity onPress={handleRefresh} style={styles.refreshBtn}>
           <Ionicons name="refresh-outline" size={20} color="#888" />
         </TouchableOpacity>
@@ -517,7 +531,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
           >
             <Ionicons name="checkmark-circle-outline" size={16} color={activeTab === 'installed' ? '#6c63ff' : '#888'} />
             <Text style={[styles.tabText, activeTab === 'installed' && styles.activeTabText]}>
-              Installed ({installedSkills.length})
+              {t('skills.installed')} ({installedSkills.length})
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -526,7 +540,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
           >
             <Ionicons name="grid-outline" size={16} color={activeTab === 'library' ? '#6c63ff' : '#888'} />
             <Text style={[styles.tabText, activeTab === 'library' && styles.activeTabText]}>
-              Library
+              {t('skills.library')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -536,15 +550,15 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#6c63ff" />
-            <Text style={styles.loadingText}>Loading skills...</Text>
+            <Text style={styles.loadingText}>{t('skills.loadingSkills')}</Text>
           </View>
         ) : installedSkills.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="extension-puzzle-outline" size={48} color="#444" />
-            <Text style={styles.emptyText}>No skills installed</Text>
+            <Text style={styles.emptyText}>{t('skills.noSkillsInstalled')}</Text>
             {manageable && (
               <TouchableOpacity onPress={() => setActiveTab('library')} style={styles.browseBtn}>
-                <Text style={styles.browseText}>Browse Library</Text>
+                <Text style={styles.browseText}>{t('skills.browseLibrary')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -560,12 +574,12 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         libraryLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#6c63ff" />
-            <Text style={styles.loadingText}>Loading library...</Text>
+            <Text style={styles.loadingText}>{t('skills.loadingLibrary')}</Text>
           </View>
         ) : library.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="storefront-outline" size={48} color="#444" />
-            <Text style={styles.emptyText}>No skills available</Text>
+            <Text style={styles.emptyText}>{t('skills.noSkillsAvailable')}</Text>
           </View>
         ) : (
           <View style={{ flex: 1 }}>
@@ -574,7 +588,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               <Ionicons name="search-outline" size={16} color="#888" />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search skills..."
+                placeholder={t('skills.searchPlaceholder')}
                 placeholderTextColor="#666"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
@@ -629,7 +643,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
                 <Text style={[
                   styles.envFilterChipText,
                   selectedEnvFilter === 'all' && styles.envFilterChipTextActive,
-                ]}>All</Text>
+                ]}>{t('skills.all')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -642,7 +656,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
                 <Text style={[
                   styles.envFilterChipText,
                   selectedEnvFilter === 'desktop' && styles.envFilterChipTextActive,
-                ]}>Desktop</Text>
+                ]}>{t('skills.desktopFilter')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -672,7 +686,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Ionicons name="search-outline" size={36} color="#444" />
-                  <Text style={styles.emptyText}>No skills match your filter</Text>
+                  <Text style={styles.emptyText}>{t('skills.noMatch')}</Text>
                 </View>
               }
             />
@@ -687,7 +701,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
           onPress={() => setAddSkillMode('menu')}
         >
           <Ionicons name="add-circle-outline" size={18} color="#6c63ff" />
-          <Text style={styles.registerSkillText}>+ Add Skill</Text>
+          <Text style={styles.registerSkillText}>{t('skills.addSkill')}</Text>
         </TouchableOpacity>
       )}
 
@@ -716,30 +730,30 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
             <TouchableOpacity onPress={() => setAddSkillMode(null)} style={styles.addSkillMenuClose}>
               <Ionicons name="close" size={24} color="#888" />
             </TouchableOpacity>
-            <Text style={styles.addSkillMenuTitle}>Add Skill</Text>
+            <Text style={styles.addSkillMenuTitle}>{t('skills.addSkillTitle')}</Text>
           </View>
           <View style={styles.addSkillMenuBody}>
             <TouchableOpacity style={styles.addSkillOptionCard} onPress={() => setAddSkillMode('http')}>
               <Text style={styles.addSkillOptionEmoji}>{'\u{1F310}'}</Text>
               <View style={styles.addSkillOptionText}>
-                <Text style={styles.addSkillOptionTitle}>HTTP Skill</Text>
-                <Text style={styles.addSkillOptionDesc}>Register an external HTTP endpoint as a skill</Text>
+                <Text style={styles.addSkillOptionTitle}>{t('skills.httpSkill')}</Text>
+                <Text style={styles.addSkillOptionDesc}>{t('skills.httpSkillDesc')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#666" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.addSkillOptionCard} onPress={() => setAddSkillMode('mcp')}>
               <Text style={styles.addSkillOptionEmoji}>{'\u{1F50C}'}</Text>
               <View style={styles.addSkillOptionText}>
-                <Text style={styles.addSkillOptionTitle}>MCP Server</Text>
-                <Text style={styles.addSkillOptionDesc}>Connect a local MCP server to expose its tools</Text>
+                <Text style={styles.addSkillOptionTitle}>{t('skills.mcpServer')}</Text>
+                <Text style={styles.addSkillOptionDesc}>{t('skills.mcpServerDesc')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#666" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.addSkillOptionCard} onPress={() => setAddSkillMode('skillmd')}>
               <Text style={styles.addSkillOptionEmoji}>{'\u{1F4DD}'}</Text>
               <View style={styles.addSkillOptionText}>
-                <Text style={styles.addSkillOptionTitle}>SKILL.md</Text>
-                <Text style={styles.addSkillOptionDesc}>Import a markdown-defined skill</Text>
+                <Text style={styles.addSkillOptionTitle}>{t('skills.skillMd')}</Text>
+                <Text style={styles.addSkillOptionDesc}>{t('skills.skillMdDesc')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#666" />
             </TouchableOpacity>

@@ -214,6 +214,7 @@ export interface SkillManifestInfo {
   emoji?: string;
   eligible?: boolean;
   functions: Array<{ name: string; description: string }>;
+  locales?: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }>;
 }
 
 export interface SkillLibraryResponseMessage extends BaseMessage {
@@ -239,6 +240,7 @@ export interface SkillLibraryItem {
   isDefault: boolean;
   installCount: number;
   functions: Array<{ name: string; description: string }>;
+  locales?: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }>;
 }
 
 export interface ErrorMessage extends BaseMessage {

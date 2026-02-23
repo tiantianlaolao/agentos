@@ -53,6 +53,14 @@ export interface SkillManifest {
   visibility?: 'public' | 'private';
   /** Owner identifier (phone number) — required when visibility='private' */
   owner?: string;
+  /** Localized content for multi-language support */
+  locales?: {
+    [lang: string]: {
+      displayName?: string;
+      description?: string;
+      functions?: Record<string, string>;
+    };
+  };
 }
 
 export interface SkillConfigField {

@@ -36,4 +36,13 @@ export const manifest: SkillManifest = {
   category: 'knowledge',
   emoji: '📄',
   isDefault: false,
+  locales: {
+    zh: {
+      displayName: '网页摘要',
+      description: '抓取并总结网页内容，使用 AI 分析提取关键信息。',
+      functions: {
+        summarize_url: '抓取网页并生成 AI 内容摘要，可针对页面内容回答特定问题。',
+      },
+    },
+  },
 };

@@ -27,6 +27,7 @@ export interface SkillCatalogEntry {
   isDefault: boolean;
   installCount: number;
   featured: boolean;
+  locales: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }> | null;
 }
 
 export interface CatalogListOptions {
@@ -60,8 +61,8 @@ const stmts = {
     'DELETE FROM skill_catalog WHERE name NOT IN (SELECT value FROM json_each(?))'
   ),
   upsertCatalog: db.prepare(`
-    INSERT INTO skill_catalog (name, version, description, author, category, emoji, environments, permissions, functions, audit, audit_source, visibility, owner, is_default, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO skill_catalog (name, version, description, author, category, emoji, environments, permissions, functions, audit, audit_source, visibility, owner, is_default, locales, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET
       version = excluded.version,
       description = excluded.description,
@@ -75,6 +76,7 @@ const stmts = {
       audit_source = excluded.audit_source,
       visibility = excluded.visibility,
       owner = excluded.owner,
+      locales = excluded.locales,
       updated_at = excluded.updated_at
   `),
   listCatalog: db.prepare('SELECT * FROM skill_catalog'),
@@ -154,6 +156,7 @@ export function syncCatalogFromRegistry(): void {
         m.visibility || 'public',
         m.owner || null,
         m.isDefault !== false ? 1 : 0,
+        JSON.stringify(m.locales || null),
         now,
         now,
       );
@@ -196,11 +199,17 @@ export function listSkillCatalog(opts?: CatalogListOptions): SkillCatalogEntry[]
 
   if (opts?.search) {
     const q = opts.search.toLowerCase();
-    entries = entries.filter(
-      (e) =>
-        e.name.toLowerCase().includes(q) ||
-        (e.description || '').toLowerCase().includes(q)
-    );
+    entries = entries.filter((e) => {
+      if (e.name.toLowerCase().includes(q)) return true;
+      if ((e.description || '').toLowerCase().includes(q)) return true;
+      if (e.locales) {
+        for (const loc of Object.values(e.locales)) {
+          if ((loc.displayName || '').toLowerCase().includes(q)) return true;
+          if ((loc.description || '').toLowerCase().includes(q)) return true;
+        }
+      }
+      return false;
+    });
   }
 
   if (opts?.environment) {
@@ -228,6 +237,7 @@ function rowToCatalogEntry(row: Record<string, unknown>): SkillCatalogEntry {
     isDefault: (row.is_default as number) === 1,
     installCount: (row.install_count as number) || 0,
     featured: (row.featured as number) === 1,
+    locales: safeJsonObject(row.locales as string) as SkillCatalogEntry['locales'],
   };
 }
 
@@ -238,6 +248,16 @@ function safeJsonArray(val: string | null | undefined): unknown[] {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+function safeJsonObject(val: string | null | undefined): Record<string, unknown> | null {
+  if (!val) return null;
+  try {
+    const parsed = JSON.parse(val);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
   }
 }
 

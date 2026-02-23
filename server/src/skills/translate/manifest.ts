@@ -39,4 +39,13 @@ export const manifest: SkillManifest = {
   auditSource: 'AgentOS',
   category: 'productivity',
   emoji: '🌐',
+  locales: {
+    zh: {
+      displayName: '翻译',
+      description: '使用 AI 进行多语言文本翻译，支持所有主流语言。',
+      functions: {
+        translate_text: '将文本从一种语言翻译为另一种语言。未指定源语言时将自动检测。',
+      },
+    },
+  },
 };

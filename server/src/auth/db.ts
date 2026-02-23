@@ -92,6 +92,8 @@ try { db.exec('ALTER TABLE skill_catalog ADD COLUMN emoji TEXT'); } catch { /* a
 try { db.exec('ALTER TABLE skill_catalog ADD COLUMN install_count INTEGER DEFAULT 0'); } catch { /* already exists */ }
 // Migration: add featured column to skill_catalog
 try { db.exec('ALTER TABLE skill_catalog ADD COLUMN featured INTEGER DEFAULT 0'); } catch { /* already exists */ }
+// Migration: add locales column to skill_catalog
+try { db.exec('ALTER TABLE skill_catalog ADD COLUMN locales TEXT'); } catch { /* already exists */ }
 
 // User skill config table
 db.exec(`

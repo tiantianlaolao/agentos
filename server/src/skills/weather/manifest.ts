@@ -31,4 +31,13 @@ export const manifest: SkillManifest = {
   auditSource: 'AgentOS',
   category: 'tools',
   emoji: '🌤️',
+  locales: {
+    zh: {
+      displayName: '天气查询',
+      description: '查询全球任意城市的当前天气信息，支持中英文城市名称。',
+      functions: {
+        get_weather: '获取指定城市的当前天气状况，返回温度、湿度、风速和天气条件。',
+      },
+    },
+  },
 };

@@ -62,4 +62,16 @@ export const manifest: SkillManifest = {
   emoji: '📈',
   visibility: 'private',
   owner: '13501161326',
+  locales: {
+    zh: {
+      displayName: '美股监控',
+      description: '监控远程服务器上的美股量化交易系统，查看程序状态、交易日志、当前持仓、市场态势和告警。',
+      functions: {
+        check_trading_status: '获取美股交易系统的完整状态概览：3 个程序是否在运行、当前持仓、近期交易事件和告警信息。',
+        get_trading_log: '获取交易守护程序(usstock_guard.py)的近期日志，显示买卖执行、市场态势变化、持仓检查和错误。',
+        get_positions: '获取当前持仓详情：持有股票、盈亏百分比、锁定的止盈/止损参数和市场态势。',
+        get_stock_picks: '获取今日股票筛选结果（金牌/银牌信号）。',
+      },
+    },
+  },
 };

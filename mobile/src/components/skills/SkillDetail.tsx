@@ -13,6 +13,8 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from '../../i18n';
+import { useSettingsStore } from '../../stores/settingsStore';
 import type { SkillLibraryItem } from '../../types/protocol';
 
 interface Props {
@@ -22,25 +24,36 @@ interface Props {
   onUninstall: (name: string) => void;
 }
 
-const AUDIT_BADGES: Record<string, { label: string; color: string; desc: string }> = {
-  platform: { label: 'Official', color: '#22c55e', desc: 'Developed and maintained by AgentOS team' },
-  ecosystem: { label: 'Reviewed', color: '#eab308', desc: 'Reviewed by agent ecosystem community' },
-  unreviewed: { label: 'Unreviewed', color: '#9ca3af', desc: 'User assumes risk when using this skill' },
-};
+function getAuditBadges(t: (key: string) => string): Record<string, { label: string; color: string; desc: string }> {
+  return {
+    platform: { label: t('skillDetail.auditOfficial'), color: '#22c55e', desc: t('skillDetail.auditOfficialDesc') },
+    ecosystem: { label: t('skillDetail.auditReviewed'), color: '#eab308', desc: t('skillDetail.auditReviewedDesc') },
+    unreviewed: { label: t('skillDetail.auditUnreviewed'), color: '#9ca3af', desc: t('skillDetail.auditUnreviewedDesc') },
+  };
+}
 
-const PERMISSION_LABELS: Record<string, { icon: string; label: string; desc: string }> = {
-  network: { icon: 'globe-outline', label: 'Network', desc: 'Make HTTP/WS requests' },
-  filesystem: { icon: 'folder-outline', label: 'File System', desc: 'Read/write files' },
-  browser: { icon: 'browsers-outline', label: 'Browser', desc: 'Browser automation' },
-  exec: { icon: 'terminal-outline', label: 'Execute', desc: 'Run system commands' },
-  system: { icon: 'settings-outline', label: 'System', desc: 'OS-level operations' },
-  contacts: { icon: 'people-outline', label: 'Contacts', desc: 'Address book access' },
-  location: { icon: 'location-outline', label: 'Location', desc: 'GPS access' },
-  camera: { icon: 'camera-outline', label: 'Camera', desc: 'Camera/photo access' },
-};
+function getPermissionLabels(t: (key: string) => string): Record<string, { icon: string; label: string; desc: string }> {
+  return {
+    network: { icon: 'globe-outline', label: t('skillDetail.permNetwork'), desc: t('skillDetail.permNetworkDesc') },
+    filesystem: { icon: 'folder-outline', label: t('skillDetail.permFilesystem'), desc: t('skillDetail.permFilesystemDesc') },
+    browser: { icon: 'browsers-outline', label: t('skillDetail.permBrowser'), desc: t('skillDetail.permBrowserDesc') },
+    exec: { icon: 'terminal-outline', label: t('skillDetail.permExec'), desc: t('skillDetail.permExecDesc') },
+    system: { icon: 'settings-outline', label: t('skillDetail.permSystem'), desc: t('skillDetail.permSystemDesc') },
+    contacts: { icon: 'people-outline', label: t('skillDetail.permContacts'), desc: t('skillDetail.permContactsDesc') },
+    location: { icon: 'location-outline', label: t('skillDetail.permLocation'), desc: t('skillDetail.permLocationDesc') },
+    camera: { icon: 'camera-outline', label: t('skillDetail.permCamera'), desc: t('skillDetail.permCameraDesc') },
+  };
+}
 
 export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: Props) {
+  const t = useTranslation();
+  const locale = useSettingsStore((s) => s.locale);
+  const AUDIT_BADGES = getAuditBadges(t);
+  const PERMISSION_LABELS = getPermissionLabels(t);
   const badge = AUDIT_BADGES[skill.audit] || AUDIT_BADGES.unreviewed;
+  const displayName = skill.locales?.[locale]?.displayName ?? skill.name;
+  const displayDesc = skill.locales?.[locale]?.description ?? skill.description;
+  const fnDesc = (fnName: string, fallback: string) => skill.locales?.[locale]?.functions?.[fnName] ?? fallback;
 
   return (
     <View style={styles.container}>
@@ -48,20 +61,20 @@ export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: 
         <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
           <Ionicons name="arrow-back" size={22} color="#6c63ff" />
         </TouchableOpacity>
-        <Text style={styles.title}>Skill Details</Text>
+        <Text style={styles.title}>{t('skillDetail.title')}</Text>
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
         {/* Hero */}
         <View style={styles.hero}>
           <Text style={styles.heroEmoji}>{skill.emoji || '🔧'}</Text>
-          <Text style={styles.heroName}>{skill.name}</Text>
+          <Text style={styles.heroName}>{displayName}</Text>
           <Text style={styles.heroVersion}>v{skill.version}</Text>
           <Text style={styles.heroAuthor}>by {skill.author}</Text>
         </View>
 
         {/* Description */}
-        <Text style={styles.description}>{skill.description}</Text>
+        <Text style={styles.description}>{displayDesc}</Text>
 
         {/* Action Button */}
         <View style={styles.actionRow}>
@@ -71,7 +84,7 @@ export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: 
               onPress={() => onUninstall(skill.name)}
             >
               <Ionicons name="trash-outline" size={18} color="#ef4444" />
-              <Text style={styles.uninstallText}>Uninstall</Text>
+              <Text style={styles.uninstallText}>{t('skillDetail.uninstall')}</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -79,19 +92,19 @@ export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: 
               onPress={() => onInstall(skill.name)}
             >
               <Ionicons name="add-circle-outline" size={18} color="#fff" />
-              <Text style={styles.installText}>Install</Text>
+              <Text style={styles.installText}>{t('skillDetail.install')}</Text>
             </TouchableOpacity>
           )}
         </View>
 
         {/* Audit Status */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Trust & Safety</Text>
+          <Text style={styles.sectionTitle}>{t('skillDetail.trustSafety')}</Text>
           <View style={[styles.auditCard, { borderColor: badge.color }]}>
             <Text style={[styles.auditLabel, { color: badge.color }]}>{badge.label}</Text>
             <Text style={styles.auditDesc}>{badge.desc}</Text>
             {skill.auditSource && (
-              <Text style={styles.auditSource}>Source: {skill.auditSource}</Text>
+              <Text style={styles.auditSource}>{t('skillDetail.source')}: {skill.auditSource}</Text>
             )}
           </View>
         </View>
@@ -99,7 +112,7 @@ export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: 
         {/* Permissions */}
         {skill.permissions && skill.permissions.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Required Permissions</Text>
+            <Text style={styles.sectionTitle}>{t('skillDetail.permissions')}</Text>
             {skill.permissions.map((perm) => {
               const info = PERMISSION_LABELS[perm] || { icon: 'help-circle-outline', label: perm, desc: '' };
               return (
@@ -118,11 +131,11 @@ export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: 
         {/* Functions */}
         {skill.functions.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Functions ({skill.functions.length})</Text>
+            <Text style={styles.sectionTitle}>{t('skillDetail.functions')} ({skill.functions.length})</Text>
             {skill.functions.map((fn) => (
               <View key={fn.name} style={styles.fnCard}>
                 <Text style={styles.fnName}>{fn.name}</Text>
-                <Text style={styles.fnDesc}>{fn.description}</Text>
+                <Text style={styles.fnDesc}>{fnDesc(fn.name, fn.description)}</Text>
               </View>
             ))}
           </View>
@@ -130,25 +143,25 @@ export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: 
 
         {/* Meta */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Info</Text>
+          <Text style={styles.sectionTitle}>{t('skillDetail.info')}</Text>
           <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>Category</Text>
+            <Text style={styles.metaLabel}>{t('skillDetail.category')}</Text>
             <Text style={styles.metaValue}>{skill.category || 'general'}</Text>
           </View>
           <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>Environments</Text>
+            <Text style={styles.metaLabel}>{t('skillDetail.environments')}</Text>
             <Text style={styles.metaValue}>{skill.environments.join(', ')}</Text>
           </View>
           {skill.installCount > 0 && (
             <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Installs</Text>
+              <Text style={styles.metaLabel}>{t('skillDetail.installs')}</Text>
               <Text style={styles.metaValue}>{skill.installCount}</Text>
             </View>
           )}
           {skill.isDefault && (
             <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Default</Text>
-              <Text style={styles.metaValue}>Auto-installed for new users</Text>
+              <Text style={styles.metaLabel}>{t('skillDetail.defaultSkill')}</Text>
+              <Text style={styles.metaValue}>{t('skillDetail.defaultDesc')}</Text>
             </View>
           )}
         </View>

@@ -51,4 +51,5 @@ export interface SkillManifestInfo {
   emoji?: string;
   eligible?: boolean;
   functions: Array<{ name: string; description: string }>;
+  locales?: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }>;
 }

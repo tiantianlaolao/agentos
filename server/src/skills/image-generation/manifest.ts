@@ -36,4 +36,13 @@ export const manifest: SkillManifest = {
   category: 'creative',
   emoji: '🎨',
   isDefault: false,
+  locales: {
+    zh: {
+      displayName: 'AI 绘图',
+      description: '根据文字描述使用 AI 生成图片，可创建插图、插画和艺术作品。',
+      functions: {
+        generate_image: '根据文字提示生成图片，返回生成图片的 URL。',
+      },
+    },
+  },
 };
