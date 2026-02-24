@@ -38,5 +38,4 @@ desktop/src-tauri/gen/schemas/
 # Server data
 server/data/
 
-# Package locks (keep only root if needed)
-package-lock.json
+# Package locks — mobile & desktop lock files are committed for reproducible CI builds
