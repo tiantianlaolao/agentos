@@ -188,6 +188,31 @@ async fn request_skill_library(state: tauri::State<'_, AppState>) -> Result<(), 
 }
 
 #[tauri::command]
+async fn request_skill_config(
+    state: tauri::State<'_, AppState>,
+    skill_name: String,
+) -> Result<(), String> {
+    let client = state.ws_client.lock().await;
+    client
+        .send_skill_config_get(&skill_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_skill_config(
+    state: tauri::State<'_, AppState>,
+    skill_name: String,
+    config: Value,
+) -> Result<(), String> {
+    let client = state.ws_client.lock().await;
+    client
+        .send_skill_config_set(&skill_name, &config)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn frontend_log(msg: String) {
     println!("[Frontend] {}", msg);
 }
@@ -423,6 +448,8 @@ pub fn run() {
             install_skill,
             uninstall_skill,
             request_skill_library,
+            request_skill_config,
+            set_skill_config,
             start_mcp_bridge,
             stop_mcp_bridge,
         ])

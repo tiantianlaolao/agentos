@@ -7,6 +7,7 @@ import { SkillDetail } from './SkillDetail.tsx';
 import { RegisterSkillForm } from './RegisterSkillForm.tsx';
 import { AddMcpServerForm } from './AddMcpServerForm.tsx';
 import { ImportSkillMdForm } from './ImportSkillMdForm.tsx';
+import { GenerateSkillForm } from './GenerateSkillForm.tsx';
 import { useTranslation } from '../i18n/index.ts';
 
 type WsHandle = ReturnType<typeof useWebSocket>;
@@ -34,6 +35,7 @@ interface SkillLibraryItem {
   installed: boolean;
   isDefault: boolean;
   installCount: number;
+  featured: boolean;
   functions: Array<{ name: string; description: string }>;
   locales?: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }>;
 }
@@ -141,7 +143,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     if (!detailSkillName) return null;
     return library.find((s) => s.name === detailSkillName) || null;
   }, [detailSkillName, library]);
-  const [addSkillMode, setAddSkillMode] = useState<null | 'menu' | 'http' | 'mcp' | 'skillmd'>(null);
+  const [addSkillMode, setAddSkillMode] = useState<null | 'menu' | 'http' | 'mcp' | 'skillmd' | 'generate'>(null);
 
   const wsCallbackRegistered = useRef(false);
 
@@ -323,6 +325,11 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     return items;
   }, [library, selectedCategory, searchQuery]);
 
+  // Featured skills
+  const featuredSkills = useMemo(() => {
+    return library.filter((s) => s.featured);
+  }, [library]);
+
   const groupedLibrary = useMemo(() => {
     if (selectedCategory !== 'all') return [{ category: selectedCategory, items: filteredLibrary }];
     const groups = new Map<string, SkillLibraryItem[]>();
@@ -345,6 +352,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
         onClose={() => setDetailSkillName(null)}
         onInstall={installSkill}
         onUninstall={uninstallSkill}
+        ws={ws}
       />
     );
   }
@@ -486,6 +494,31 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              {/* Featured Section */}
+              {featuredSkills.length > 0 && !searchQuery.trim() && selectedCategory === 'all' && (
+                <div className="skills-featured-section">
+                  <div className="skills-featured-title">{t('skills.featured')}</div>
+                  <div className="skills-featured-scroll">
+                    {featuredSkills.map((skill) => (
+                      <div
+                        key={skill.name}
+                        className="skills-featured-card"
+                        onClick={() => setDetailSkillName(skill.name)}
+                      >
+                        <span className="skills-featured-emoji">{skill.emoji || '📦'}</span>
+                        <span className="skills-featured-name">{loc(skill).name}</span>
+                        <span className="skills-featured-desc">{loc(skill).desc}</span>
+                        {skill.installCount > 0 && (
+                          <span className="skill-install-count" style={{ marginTop: '4px' }}>
+                            {'↓ ' + skill.installCount}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Search Bar */}
               <div className="skills-search-bar">
                 <input
@@ -573,6 +606,11 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                                       {ENV_LABELS[env] || env}
                                     </span>
                                   ))}
+                                </span>
+                              )}
+                              {skill.installCount > 0 && (
+                                <span className="skill-install-count">
+                                  {'↓ ' + skill.installCount}
                                 </span>
                               )}
                               <span className="skill-author">{t('skills.by')} {skill.author}</span>
@@ -686,6 +724,28 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                   {t('skills.skillMdDesc')}
                 </span>
               </button>
+              <button
+                className="add-skill-option-card"
+                onClick={() => setAddSkillMode('generate')}
+                style={{
+                  background: '#1a1a2e',
+                  border: '1px solid #2d2d44',
+                  borderRadius: '10px',
+                  padding: '14px 16px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                }}
+              >
+                <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
+                  <span style={{ marginRight: '8px' }}>&#x1F916;</span>{t('skills.aiGenerate')}
+                </span>
+                <span style={{ fontSize: '12px', color: '#888' }}>
+                  {t('skills.aiGenerateDesc')}
+                </span>
+              </button>
             </div>
           </div>
         </div>
@@ -718,6 +778,16 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
           authToken={authToken}
           onClose={() => setAddSkillMode(null)}
           onImported={() => { handleRefresh(); setAddSkillMode(null); }}
+        />
+      )}
+
+      {/* AI Generate Skill Form */}
+      {addSkillMode === 'generate' && serverUrl && authToken && (
+        <GenerateSkillForm
+          serverUrl={serverUrl}
+          authToken={authToken}
+          onClose={() => setAddSkillMode(null)}
+          onGenerated={() => { handleRefresh(); setAddSkillMode(null); }}
         />
       )}
     </div>

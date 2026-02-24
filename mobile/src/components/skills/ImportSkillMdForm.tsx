@@ -1,5 +1,6 @@
 /**
  * ImportSkillMdForm — Modal form for importing a SKILL.md definition (mobile).
+ * Supports both file picker and paste input.
  */
 
 import React, { useState } from 'react';
@@ -15,6 +16,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import { useTranslation } from '../../i18n';
 
 interface Props {
   serverUrl: string;
@@ -25,12 +29,32 @@ interface Props {
 
 export default function ImportSkillMdForm({ serverUrl, authToken, onClose, onImported }: Props) {
   const insets = useSafeAreaInsets();
+  const t = useTranslation();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
+  const [fileName, setFileName] = useState('');
+
+  const pickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/markdown', 'text/plain', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const uri = asset.uri;
+        const text = await FileSystem.readAsStringAsync(uri);
+        setContent(text);
+        setFileName(asset.name || '');
+      }
+    } catch (err) {
+      Alert.alert('Error', `Failed to read file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!content.trim()) {
-      Alert.alert('Missing Content', 'Please paste the SKILL.md content.');
+      Alert.alert('Missing Content', t('skills.contentRequired'));
       return;
     }
 
@@ -67,29 +91,42 @@ export default function ImportSkillMdForm({ serverUrl, authToken, onClose, onImp
         <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
           <Ionicons name="close" size={24} color="#888" />
         </TouchableOpacity>
-        <Text style={styles.title}>Import SKILL.md</Text>
+        <Text style={styles.title}>{t('skills.skillMdTitle')}</Text>
       </View>
 
       <ScrollView style={styles.form} contentContainerStyle={styles.formContent}>
         <Text style={styles.hint}>
-          Paste the contents of a SKILL.md file to register it as a skill.
+          {t('skills.skillMdIntro')}
         </Text>
 
-        <Text style={styles.label}>SKILL.md Content *</Text>
+        <TouchableOpacity style={styles.filePickerBtn} onPress={pickFile}>
+          <Ionicons name="document-text-outline" size={18} color="#6c63ff" />
+          <Text style={styles.filePickerText}>{t('skills.chooseFile')}</Text>
+        </TouchableOpacity>
+
+        {fileName ? (
+          <Text style={styles.fileNameText}>
+            {t('skills.fileSelected', { name: fileName })}
+          </Text>
+        ) : null}
+
+        <Text style={styles.label}>{t('skills.skillMdLabel')}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
           placeholder={'# skill-name\n\nDescription...\n\n## functions\n\n### my_function\n\nWhat it does...'}
           placeholderTextColor="#666"
           value={content}
-          onChangeText={setContent}
+          onChangeText={(text) => {
+            setContent(text);
+            if (fileName) setFileName('');
+          }}
           multiline
           numberOfLines={12}
           textAlignVertical="top"
         />
 
         <Text style={styles.infoText}>
-          SKILL.md uses a markdown format to define skills. The heading defines the skill name,
-          and ## functions sections define callable functions.
+          {t('skills.skillMdHint')}
         </Text>
 
         <TouchableOpacity
@@ -100,7 +137,7 @@ export default function ImportSkillMdForm({ serverUrl, authToken, onClose, onImp
           {loading ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Text style={styles.submitText}>Import Skill</Text>
+            <Text style={styles.submitText}>{t('skills.importBtn')}</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -140,6 +177,29 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 12,
     marginBottom: 16,
+  },
+  filePickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#6c63ff',
+    borderStyle: 'dashed',
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  filePickerText: {
+    color: '#6c63ff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  fileNameText: {
+    color: '#8f8',
+    fontSize: 12,
+    marginBottom: 8,
   },
   label: {
     color: '#aaa',

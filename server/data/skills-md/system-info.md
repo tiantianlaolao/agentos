@@ -2,6 +2,8 @@
 name: system-info
 description: Query system information including OS version, disk usage, memory, CPU, network, and processes.
 emoji: 🖥️
+name_zh: 系统信息
+description_zh: 系统信息查询与环境诊断
 ---
 
 # System Information

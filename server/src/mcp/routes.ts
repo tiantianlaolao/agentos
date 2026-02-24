@@ -1,24 +1,32 @@
 /**
  * MCP Server Management REST API.
  *
- * All endpoints require admin authentication.
+ * Open to all authenticated users with per-user isolation.
+ * System-wide preset servers (from mcp-servers.json) are listed as read-only.
+ * Users can add/remove their own MCP servers stored in the database.
+ *
  * Routes:
- *   GET    /mcp/servers          — List configured MCP servers
- *   POST   /mcp/servers          — Add and connect a new MCP server
- *   DELETE /mcp/servers/:name    — Remove and disconnect an MCP server
+ *   GET    /mcp/servers          — List system + user's MCP servers
+ *   POST   /mcp/servers          — Add a user-specific MCP server
+ *   DELETE /mcp/servers/:name    — Remove a user-specific MCP server
  */
 
 import { Router, type Request, type Response } from 'express';
 import { mcpManager } from './mcpManager.js';
-import { loadMCPConfig, addMCPServer, removeMCPServer } from './mcpBridge.js';
+import { loadMCPConfig, registerMCPServerAsSkill } from './mcpBridge.js';
 import { verifyToken } from '../auth/jwt.js';
+import {
+  listUserMcpServers,
+  addUserMcpServer,
+  removeUserMcpServer,
+  isUserMcpServer,
+} from './userMcpServers.js';
+import { syncCatalogFromRegistry } from '../skills/userSkills.js';
 
 const router = Router();
 
-const ADMIN_PHONES = ['13501161326'];
-
-/** Simple admin check middleware */
-function requireAdmin(req: Request, res: Response, next: () => void): void {
+/** Auth middleware: any logged-in user */
+function requireAuth(req: Request, res: Response, next: () => void): void {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Authentication required' });
@@ -27,34 +35,64 @@ function requireAdmin(req: Request, res: Response, next: () => void): void {
 
   const token = authHeader.slice(7);
   const decoded = verifyToken(token);
-  if (!decoded || !ADMIN_PHONES.includes(decoded.phone)) {
-    res.status(403).json({ error: 'Admin access required' });
+  if (!decoded) {
+    res.status(401).json({ error: 'Invalid or expired token' });
     return;
   }
 
+  // Attach user info to request for downstream use
+  (req as any)._user = { userId: decoded.userId, phone: decoded.phone };
   next();
 }
 
-/** GET /mcp/servers — List all configured MCP servers with status */
-router.get('/servers', requireAdmin, (_req: Request, res: Response) => {
-  const configs = loadMCPConfig();
-  const servers = configs.map((c) => ({
+/**
+ * GET /mcp/servers
+ * List system-wide preset servers + user's own servers.
+ * System servers are marked with `system: true` (read-only).
+ */
+router.get('/servers', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any)._user as { userId: string; phone: string };
+
+  // System servers from mcp-servers.json
+  const systemConfigs = loadMCPConfig();
+  const systemServers = systemConfigs.map((c) => ({
     name: c.name,
     command: c.command,
     args: c.args,
     enabled: c.enabled !== false,
     connected: mcpManager.isConnected(c.name),
+    system: true,
     tools: mcpManager.getTools(c.name).map((t) => ({
       name: t.name,
       description: t.description,
     })),
   }));
 
-  res.json({ servers });
+  // User's own servers from DB
+  const userConfigs = listUserMcpServers(user.userId);
+  const userServers = userConfigs.map((c) => ({
+    name: c.name,
+    command: c.command,
+    args: c.args,
+    enabled: c.enabled !== false,
+    connected: mcpManager.isConnected(c.name),
+    system: false,
+    tools: mcpManager.getTools(c.name).map((t) => ({
+      name: t.name,
+      description: t.description,
+    })),
+  }));
+
+  res.json({ servers: [...systemServers, ...userServers] });
 });
 
-/** POST /mcp/servers — Add a new MCP server */
-router.post('/servers', requireAdmin, async (req: Request, res: Response) => {
+/**
+ * POST /mcp/servers
+ * Add a new user-specific MCP server.
+ * Saves to DB, connects via mcpManager, registers as skill.
+ */
+router.post('/servers', requireAuth, async (req: Request, res: Response) => {
+  const user = (req as any)._user as { userId: string; phone: string };
   const { name, command, args, env, enabled } = req.body;
 
   if (!name || !command) {
@@ -62,17 +100,28 @@ router.post('/servers', requireAdmin, async (req: Request, res: Response) => {
     return;
   }
 
+  // Prefix user MCP server names to avoid collisions with system servers
+  const serverName = `user-${user.userId.slice(0, 8)}-${name}`;
+
   try {
-    const tools = await addMCPServer({
-      name,
+    const config = {
+      name: serverName,
       command,
       args: args || [],
       env,
       enabled: enabled !== false,
-    });
+    };
+
+    // Save to DB
+    addUserMcpServer(user.userId, config);
+
+    // Connect and register as skill
+    const tools = await mcpManager.addServer(config);
+    registerMCPServerAsSkill(serverName, tools);
+    syncCatalogFromRegistry();
 
     res.json({
-      name,
+      name: serverName,
       connected: true,
       tools: tools.map((t) => ({ name: t.name, description: t.description })),
     });
@@ -83,15 +132,26 @@ router.post('/servers', requireAdmin, async (req: Request, res: Response) => {
   }
 });
 
-/** DELETE /mcp/servers/:name — Remove an MCP server */
-router.delete('/servers/:name', requireAdmin, async (req: Request, res: Response) => {
+/**
+ * DELETE /mcp/servers/:name
+ * Remove a user-specific MCP server. System servers cannot be deleted by users.
+ */
+router.delete('/servers/:name', requireAuth, async (req: Request, res: Response) => {
+  const user = (req as any)._user as { userId: string; phone: string };
   const name = req.params.name as string;
 
-  const removed = await removeMCPServer(name);
-  if (!removed) {
-    res.status(404).json({ error: `MCP server "${name}" not found` });
+  // Check ownership — only user's own servers can be deleted
+  if (!isUserMcpServer(user.userId, name)) {
+    res.status(403).json({ error: 'You can only delete your own MCP servers' });
     return;
   }
+
+  // Remove from DB
+  removeUserMcpServer(user.userId, name);
+
+  // Disconnect and unregister
+  await mcpManager.removeServer(name);
+  syncCatalogFromRegistry();
 
   res.json({ removed: true });
 });

@@ -106,6 +106,21 @@ db.exec(`
   );
 `);
 
+// User MCP servers table (per-user isolation)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_mcp_servers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    command TEXT NOT NULL,
+    args TEXT DEFAULT '[]',
+    env TEXT,
+    enabled INTEGER DEFAULT 1,
+    created_at INTEGER,
+    UNIQUE(user_id, name)
+  );
+`);
+
 export function initDatabase(): void {
   console.log('[DB] SQLite database initialized at', DB_PATH);
 }

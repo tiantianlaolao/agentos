@@ -2,6 +2,8 @@
 name: github-cli
 description: Use GitHub CLI (gh) to query repositories, issues, pull requests, and releases.
 emoji: 🐙
+name_zh: GitHub CLI
+description_zh: GitHub 命令行工具使用指南
 ---
 
 # GitHub CLI

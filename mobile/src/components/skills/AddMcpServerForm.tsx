@@ -23,7 +23,8 @@ interface McpServer {
   args: string[];
   enabled: boolean;
   connected: boolean;
-  tools: string[];
+  system: boolean;
+  tools: Array<{ name: string; description: string }> | string[];
 }
 
 interface Props {
@@ -167,10 +168,17 @@ export default function AddMcpServerForm({ serverUrl, authToken, onClose, onAdde
                         </Text>
                       </View>
                     )}
+                    {server.system && (
+                      <View style={styles.systemBadge}>
+                        <Text style={styles.systemBadgeText}>System</Text>
+                      </View>
+                    )}
                   </View>
-                  <TouchableOpacity onPress={() => handleDelete(server.name)}>
-                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                  </TouchableOpacity>
+                  {!server.system && (
+                    <TouchableOpacity onPress={() => handleDelete(server.name)}>
+                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                    </TouchableOpacity>
+                  )}
                 </View>
                 <Text style={styles.serverCommand}>
                   {server.command} {server.args?.join(' ')}
@@ -418,5 +426,16 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 13,
     fontWeight: '600',
+  },
+  systemBadge: {
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  systemBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#22c55e',
   },
 });

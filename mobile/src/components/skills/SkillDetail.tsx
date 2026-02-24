@@ -2,26 +2,50 @@
  * SkillDetail — Full-screen detail view for a Skill.
  *
  * Shows emoji, description, function list, permissions, audit status, install button.
+ * Includes configuration form for skills that have config fields.
  */
 
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
+  TextInput,
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { randomUUID } from 'expo-crypto';
 import { useTranslation } from '../../i18n';
 import { useSettingsStore } from '../../stores/settingsStore';
-import type { SkillLibraryItem } from '../../types/protocol';
+import { MessageType } from '../../types/protocol';
+import type {
+  ClientMessage,
+  ServerMessage,
+  SkillLibraryItem,
+} from '../../types/protocol';
+
+interface WsClient {
+  send: (message: ClientMessage) => void;
+  on: (type: string, handler: (message: ServerMessage) => void) => () => void;
+  isConnected: boolean;
+}
+
+interface ConfigField {
+  key: string;
+  label: string;
+  type: string;
+  required?: boolean;
+  secret?: boolean;
+  description?: string;
+}
 
 interface Props {
   skill: SkillLibraryItem;
   onClose: () => void;
   onInstall: (name: string) => void;
   onUninstall: (name: string) => void;
+  wsClient?: WsClient | null;
 }
 
 function getAuditBadges(t: (key: string) => string): Record<string, { label: string; color: string; desc: string }> {
@@ -45,7 +69,7 @@ function getPermissionLabels(t: (key: string) => string): Record<string, { icon:
   };
 }
 
-export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: Props) {
+export default function SkillDetail({ skill, onClose, onInstall, onUninstall, wsClient }: Props) {
   const t = useTranslation();
   const locale = useSettingsStore((s) => s.locale);
   const AUDIT_BADGES = getAuditBadges(t);
@@ -54,6 +78,60 @@ export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: 
   const displayName = skill.locales?.[locale]?.displayName ?? skill.name;
   const displayDesc = skill.locales?.[locale]?.description ?? skill.description;
   const fnDesc = (fnName: string, fallback: string) => skill.locales?.[locale]?.functions?.[fnName] ?? fallback;
+
+  // Config state
+  const [configFields, setConfigFields] = useState<ConfigField[]>([]);
+  const [configValues, setConfigValues] = useState<Record<string, unknown>>({});
+  const [configDraft, setConfigDraft] = useState<Record<string, unknown>>({});
+  const [configSaved, setConfigSaved] = useState(false);
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+
+  // Fetch config on mount
+  useEffect(() => {
+    if (!wsClient?.isConnected || !skill.installed) return;
+
+    const unsub = wsClient.on(MessageType.SKILL_CONFIG_RESPONSE, (msg: ServerMessage) => {
+      const payload = (msg as any).payload;
+      if (payload?.skillName === skill.name) {
+        setConfigFields(payload.fields || []);
+        setConfigValues(payload.config || {});
+        setConfigDraft(payload.config || {});
+      }
+    });
+
+    wsClient.send({
+      id: randomUUID(),
+      type: MessageType.SKILL_CONFIG_GET,
+      timestamp: Date.now(),
+      payload: { skillName: skill.name },
+    } as any);
+
+    return unsub;
+  }, [wsClient, skill.name, skill.installed]);
+
+  const handleConfigChange = useCallback((key: string, value: string) => {
+    setConfigDraft((prev) => ({ ...prev, [key]: value }));
+    setConfigSaved(false);
+  }, []);
+
+  const handleConfigSave = useCallback(() => {
+    if (!wsClient?.isConnected) return;
+    wsClient.send({
+      id: randomUUID(),
+      type: MessageType.SKILL_CONFIG_SET,
+      timestamp: Date.now(),
+      payload: { skillName: skill.name, config: configDraft },
+    } as any);
+    setConfigValues(configDraft);
+    setConfigSaved(true);
+    setTimeout(() => setConfigSaved(false), 2000);
+  }, [wsClient, skill.name, configDraft]);
+
+  const toggleSecret = useCallback((key: string) => {
+    setShowSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const hasConfigChanges = JSON.stringify(configDraft) !== JSON.stringify(configValues);
 
   return (
     <View style={styles.container}>
@@ -96,6 +174,64 @@ export default function SkillDetail({ skill, onClose, onInstall, onUninstall }: 
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Configuration */}
+        {skill.installed && configFields.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('skillDetail.configuration')}</Text>
+            <Text style={styles.configDesc}>{t('skillDetail.configDesc')}</Text>
+            {configFields.map((field) => (
+              <View key={field.key} style={styles.configFieldContainer}>
+                <View style={styles.configLabelRow}>
+                  <Text style={styles.configLabel}>{field.label}</Text>
+                  {field.required && (
+                    <Text style={styles.configRequired}>{t('skillDetail.configRequired')}</Text>
+                  )}
+                </View>
+                {field.description ? (
+                  <Text style={styles.configFieldDesc}>{field.description}</Text>
+                ) : null}
+                <View style={styles.configInputRow}>
+                  <TextInput
+                    style={styles.configInput}
+                    value={String(configDraft[field.key] ?? '')}
+                    onChangeText={(text) => handleConfigChange(field.key, text)}
+                    placeholder={field.label}
+                    placeholderTextColor="#555"
+                    secureTextEntry={field.secret === true && !showSecrets[field.key]}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {field.secret && (
+                    <TouchableOpacity
+                      style={styles.secretToggle}
+                      onPress={() => toggleSecret(field.key)}
+                    >
+                      <Ionicons
+                        name={showSecrets[field.key] ? 'eye-off-outline' : 'eye-outline'}
+                        size={18}
+                        color="#888"
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            ))}
+            <TouchableOpacity
+              style={[
+                styles.configSaveBtn,
+                configSaved && styles.configSavedBtn,
+                !hasConfigChanges && !configSaved && styles.configSaveBtnDisabled,
+              ]}
+              onPress={handleConfigSave}
+              disabled={!hasConfigChanges && !configSaved}
+            >
+              <Text style={styles.configSaveText}>
+                {configSaved ? t('skillDetail.configSaved') : t('skillDetail.configSave')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Audit Status */}
         <View style={styles.section}>
@@ -273,6 +409,78 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 10,
   },
+  // Config styles
+  configDesc: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 12,
+  },
+  configFieldContainer: {
+    marginBottom: 14,
+  },
+  configLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  configLabel: {
+    color: '#ccc',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  configRequired: {
+    color: '#ef4444',
+    fontSize: 11,
+  },
+  configFieldDesc: {
+    color: '#666',
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  configInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  configInput: {
+    flex: 1,
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#2d2d44',
+    borderRadius: 8,
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+  },
+  secretToggle: {
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#2d2d44',
+    borderRadius: 8,
+  },
+  configSaveBtn: {
+    backgroundColor: '#6c63ff',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  configSavedBtn: {
+    backgroundColor: '#22c55e',
+  },
+  configSaveBtnDisabled: {
+    backgroundColor: '#333',
+    opacity: 0.5,
+  },
+  configSaveText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Existing styles
   auditCard: {
     borderWidth: 1,
     borderRadius: 10,

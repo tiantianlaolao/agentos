@@ -205,6 +205,9 @@ impl WsClient {
                             "skill.library.response" => {
                                 let _ = channel.send(json!({"type": "skill.library.response", "payload": &parsed["payload"]}));
                             }
+                            "skill.config.response" => {
+                                let _ = channel.send(json!({"type": "skill.config.response", "payload": &parsed["payload"]}));
+                            }
                             "desktop.command" => {
                                 // Server is requesting local command execution
                                 let payload = parsed["payload"].clone();
@@ -500,6 +503,44 @@ impl WsClient {
             "type": "skill.library.request",
             "timestamp": chrono_timestamp(),
             "payload": {}
+        });
+        let mut s = sink.lock().await;
+        s.send(Message::Text(msg.to_string())).await?;
+        Ok(())
+    }
+
+    pub async fn send_skill_config_get(
+        &self,
+        skill_name: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let sink = self.sink.as_ref().ok_or("Not connected")?;
+        let msg = json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "type": "skill.config.get",
+            "timestamp": chrono_timestamp(),
+            "payload": {
+                "skillName": skill_name
+            }
+        });
+        let mut s = sink.lock().await;
+        s.send(Message::Text(msg.to_string())).await?;
+        Ok(())
+    }
+
+    pub async fn send_skill_config_set(
+        &self,
+        skill_name: &str,
+        config: &Value,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let sink = self.sink.as_ref().ok_or("Not connected")?;
+        let msg = json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "type": "skill.config.set",
+            "timestamp": chrono_timestamp(),
+            "payload": {
+                "skillName": skill_name,
+                "config": config
+            }
         });
         let mut s = sink.lock().await;
         s.send(Message::Text(msg.to_string())).await?;

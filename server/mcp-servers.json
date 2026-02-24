@@ -1,1 +1,81 @@
-[]
+[
+  {
+    "name": "filesystem",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/agentos-sandbox"],
+    "enabled": true
+  },
+  {
+    "name": "fetch",
+    "command": "uvx",
+    "args": ["mcp-server-fetch"],
+    "enabled": true
+  },
+  {
+    "name": "memory",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-memory"],
+    "enabled": true
+  },
+  {
+    "name": "sqlite",
+    "command": "npx",
+    "args": ["-y", "@pollinations/mcp-server-sqlite", "/tmp/agentos-mcp.db"],
+    "enabled": true
+  },
+  {
+    "name": "brave-search",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+    "env": {
+      "BRAVE_API_KEY": "YOUR_API_KEY_HERE"
+    },
+    "enabled": false
+  },
+  {
+    "name": "github",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_TOKEN": "YOUR_API_KEY_HERE"
+    },
+    "enabled": false
+  },
+  {
+    "name": "sequential-thinking",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+    "enabled": true
+  },
+  {
+    "name": "puppeteer",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+    "enabled": false
+  },
+  {
+    "name": "google-maps",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-google-maps"],
+    "env": {
+      "GOOGLE_MAPS_API_KEY": "YOUR_API_KEY_HERE"
+    },
+    "enabled": false
+  },
+  {
+    "name": "slack",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-slack"],
+    "env": {
+      "SLACK_BOT_TOKEN": "YOUR_API_KEY_HERE",
+      "SLACK_TEAM_ID": "YOUR_TEAM_ID_HERE"
+    },
+    "enabled": false
+  },
+  {
+    "name": "everything",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-everything"],
+    "enabled": true
+  }
+]

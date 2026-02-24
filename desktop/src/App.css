@@ -1412,6 +1412,77 @@
   font-size: 11px;
 }
 
+/* ── Skill Install Count Badge ── */
+.skill-install-count {
+  font-size: 10px;
+  color: #888;
+  background: #252540;
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+/* ── Featured Section ── */
+.skills-featured-section {
+  padding: 10px 12px 4px;
+}
+
+.skills-featured-title {
+  color: #ccc;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.skills-featured-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.skills-featured-card {
+  background: #1a1a2e;
+  border: 1px solid rgba(108, 99, 255, 0.25);
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 150px;
+  max-width: 150px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: border-color 0.2s;
+}
+
+.skills-featured-card:hover {
+  border-color: #6c63ff;
+}
+
+.skills-featured-emoji {
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.skills-featured-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skills-featured-desc {
+  font-size: 11px;
+  color: #aaa;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* ── Skill Detail ── */
 
 .skill-detail-panel {

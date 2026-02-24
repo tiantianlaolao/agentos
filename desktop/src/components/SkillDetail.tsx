@@ -1,6 +1,14 @@
 /**
  * SkillDetail — Full detail view for a Skill in the desktop app.
+ * Includes configuration form for skills that have config fields.
  */
+
+import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from '../i18n/index.ts';
+import { useSettingsStore } from '../stores/settingsStore.ts';
+import type { useWebSocket } from '../hooks/useWebSocket.ts';
+
+type WsHandle = ReturnType<typeof useWebSocket>;
 
 interface SkillLibraryItem {
   name: string;
@@ -21,14 +29,21 @@ interface SkillLibraryItem {
   locales?: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }>;
 }
 
-import { useTranslation } from '../i18n/index.ts';
-import { useSettingsStore } from '../stores/settingsStore.ts';
+interface ConfigField {
+  key: string;
+  label: string;
+  type: string;
+  required?: boolean;
+  secret?: boolean;
+  description?: string;
+}
 
 interface Props {
   skill: SkillLibraryItem;
   onClose: () => void;
   onInstall: (name: string) => void;
   onUninstall: (name: string) => void;
+  ws?: WsHandle | null;
 }
 
 function getAuditInfo(t: (key: string) => string): Record<string, { label: string; color: string; desc: string }> {
@@ -52,7 +67,7 @@ function getPermInfo(t: (key: string) => string): Record<string, { label: string
   };
 }
 
-export function SkillDetail({ skill, onClose, onInstall, onUninstall }: Props) {
+export function SkillDetail({ skill, onClose, onInstall, onUninstall, ws }: Props) {
   const t = useTranslation();
   const locale = useSettingsStore((s) => s.locale);
   const AUDIT_INFO = getAuditInfo(t);
@@ -61,6 +76,54 @@ export function SkillDetail({ skill, onClose, onInstall, onUninstall }: Props) {
   const displayDesc = skill.locales?.[locale]?.description ?? skill.description;
   const fnDesc = (fnName: string, fallback: string) => skill.locales?.[locale]?.functions?.[fnName] ?? fallback;
   const badge = AUDIT_INFO[skill.audit] || AUDIT_INFO.unreviewed;
+
+  // Config state
+  const [configFields, setConfigFields] = useState<ConfigField[]>([]);
+  const [configValues, setConfigValues] = useState<Record<string, unknown>>({});
+  const [configDraft, setConfigDraft] = useState<Record<string, unknown>>({});
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configSaved, setConfigSaved] = useState(false);
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+
+  // Fetch config on mount
+  useEffect(() => {
+    if (!ws || !skill.installed) return;
+
+    setConfigLoading(true);
+    ws.setOnSkillConfig((data: { skillName: string; config: Record<string, unknown>; fields: ConfigField[] }) => {
+      if (data.skillName === skill.name) {
+        setConfigFields(data.fields || []);
+        setConfigValues(data.config || {});
+        setConfigDraft(data.config || {});
+        setConfigLoading(false);
+      }
+    });
+
+    ws.requestSkillConfig(skill.name);
+
+    return () => {
+      ws.setOnSkillConfig(null);
+    };
+  }, [ws, skill.name, skill.installed]);
+
+  const handleConfigChange = useCallback((key: string, value: string) => {
+    setConfigDraft((prev) => ({ ...prev, [key]: value }));
+    setConfigSaved(false);
+  }, []);
+
+  const handleConfigSave = useCallback(() => {
+    if (!ws) return;
+    ws.saveSkillConfig(skill.name, configDraft);
+    setConfigValues(configDraft);
+    setConfigSaved(true);
+    setTimeout(() => setConfigSaved(false), 2000);
+  }, [ws, skill.name, configDraft]);
+
+  const toggleSecretVisibility = useCallback((key: string) => {
+    setShowSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const hasConfigChanges = JSON.stringify(configDraft) !== JSON.stringify(configValues);
 
   return (
     <div className="skill-detail-panel">
@@ -94,6 +157,89 @@ export function SkillDetail({ skill, onClose, onInstall, onUninstall }: Props) {
             </button>
           )}
         </div>
+
+        {/* Configuration */}
+        {skill.installed && configFields.length > 0 && (
+          <div className="skill-detail-section">
+            <h4>{t('skillDetail.configuration')}</h4>
+            <p style={{ color: '#888', fontSize: '12px', marginBottom: '12px' }}>
+              {t('skillDetail.configDesc')}
+            </p>
+            {configLoading ? (
+              <p style={{ color: '#666', fontSize: '13px' }}>Loading...</p>
+            ) : (
+              <>
+                {configFields.map((field) => (
+                  <div key={field.key} style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', color: '#ccc', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>
+                      {field.label}
+                      {field.required && (
+                        <span style={{ color: '#ef4444', marginLeft: '4px', fontSize: '11px' }}>
+                          {t('skillDetail.configRequired')}
+                        </span>
+                      )}
+                    </label>
+                    {field.description && (
+                      <p style={{ color: '#666', fontSize: '11px', margin: '0 0 4px 0' }}>{field.description}</p>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <input
+                        type={field.secret && !showSecrets[field.key] ? 'password' : 'text'}
+                        value={String(configDraft[field.key] ?? '')}
+                        onChange={(e) => handleConfigChange(field.key, e.target.value)}
+                        placeholder={field.label}
+                        style={{
+                          flex: 1,
+                          background: '#1a1a2e',
+                          border: '1px solid #2d2d44',
+                          borderRadius: '8px',
+                          color: '#fff',
+                          padding: '8px 12px',
+                          fontSize: '13px',
+                          outline: 'none',
+                        }}
+                      />
+                      {field.secret && (
+                        <button
+                          onClick={() => toggleSecretVisibility(field.key)}
+                          style={{
+                            background: 'none',
+                            border: '1px solid #2d2d44',
+                            borderRadius: '6px',
+                            color: '#888',
+                            padding: '6px 8px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                          }}
+                        >
+                          {showSecrets[field.key] ? '🙈' : '👁'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <button
+                  onClick={handleConfigSave}
+                  disabled={!hasConfigChanges && !configSaved}
+                  style={{
+                    background: configSaved ? '#22c55e' : hasConfigChanges ? '#6c63ff' : '#333',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 24px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: hasConfigChanges ? 'pointer' : 'default',
+                    opacity: hasConfigChanges || configSaved ? 1 : 0.5,
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {configSaved ? t('skillDetail.configSaved') : t('skillDetail.configSave')}
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Audit */}
         <div className="skill-detail-section">

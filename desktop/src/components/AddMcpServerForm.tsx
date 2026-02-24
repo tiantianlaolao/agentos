@@ -12,7 +12,8 @@ interface McpServer {
   args: string[];
   enabled: boolean;
   connected: boolean;
-  tools: string[];
+  system: boolean;
+  tools: Array<{ name: string; description: string }> | string[];
 }
 
 interface Props {
@@ -167,8 +168,22 @@ export function AddMcpServerForm({ serverUrl, authToken, onClose, onAdded }: Pro
                           {server.tools.length} tool{server.tools.length !== 1 ? 's' : ''}
                         </span>
                       )}
+                      {server.system && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            color: '#22c55e',
+                            background: 'rgba(34, 197, 94, 0.15)',
+                            borderRadius: '6px',
+                            padding: '1px 6px',
+                          }}
+                        >
+                          System
+                        </span>
+                      )}
                     </div>
-                    {deleteConfirm === server.name ? (
+                    {!server.system && deleteConfirm === server.name ? (
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                         <span style={{ fontSize: '12px', color: '#ef4444' }}>Delete?</span>
                         <button
@@ -201,7 +216,7 @@ export function AddMcpServerForm({ serverUrl, authToken, onClose, onAdded }: Pro
                           No
                         </button>
                       </div>
-                    ) : (
+                    ) : !server.system ? (
                       <button
                         onClick={() => setDeleteConfirm(server.name)}
                         title="Remove server"
@@ -216,7 +231,7 @@ export function AddMcpServerForm({ serverUrl, authToken, onClose, onAdded }: Pro
                       >
                         &#x274C;
                       </button>
-                    )}
+                    ) : null}
                   </div>
                   <div
                     style={{

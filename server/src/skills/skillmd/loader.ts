@@ -28,7 +28,14 @@ function toSafeName(name: string): string {
  * Register a single parsed SKILL.md into the registry.
  * Exported so the upload route can reuse it.
  */
-export function registerSkillMd(name: string, description: string, body: string, version?: string, emoji?: string): void {
+export function registerSkillMd(
+  name: string,
+  description: string,
+  body: string,
+  version?: string,
+  emoji?: string,
+  locales?: Record<string, { displayName?: string; description?: string }>,
+): void {
   const safeName = toSafeName(name);
 
   skillMdContent.set(name, body);
@@ -60,6 +67,7 @@ export function registerSkillMd(name: string, description: string, body: string,
     category: 'knowledge',
     emoji: emoji || '📝',
     isDefault: false,
+    locales: locales || undefined,
   };
 
   const handlers: Record<string, SkillHandler> = {
@@ -130,7 +138,7 @@ export function loadSkillMdFiles(): number {
       if (!content) continue;
 
       const parsed = parseSkillMd(content);
-      registerSkillMd(parsed.name, parsed.description, parsed.body, parsed.version, parsed.emoji);
+      registerSkillMd(parsed.name, parsed.description, parsed.body, parsed.version, parsed.emoji, parsed.locales);
       loaded++;
     } catch (err) {
       console.error(`[SkillMd] Failed to load "${entry.name}":`, err instanceof Error ? err.message : err);

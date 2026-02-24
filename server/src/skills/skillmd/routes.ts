@@ -3,6 +3,7 @@
  *
  * GET    /skills/md          — List all loaded SKILL.md skills
  * POST   /skills/md/upload   — Upload a new SKILL.md (requires auth)
+ * POST   /skills/md/generate — AI-generate a SKILL.md from description (requires auth)
  * DELETE /skills/md/:name    — Delete a SKILL.md skill (requires auth)
  */
 
@@ -77,7 +78,7 @@ router.post('/upload', (req: Request, res: Response) => {
     fs.writeFileSync(filePath, content, 'utf-8');
 
     // Register in live registry
-    registerSkillMd(parsed.name, parsed.description, parsed.body, parsed.version, parsed.emoji);
+    registerSkillMd(parsed.name, parsed.description, parsed.body, parsed.version, parsed.emoji, parsed.locales);
     syncCatalogFromRegistry();
 
     res.json({
@@ -92,6 +93,106 @@ router.post('/upload', (req: Request, res: Response) => {
   } catch (err) {
     res.status(400).json({
       error: err instanceof Error ? err.message : 'Upload failed',
+    });
+  }
+});
+
+/**
+ * POST /skills/md/generate
+ * Body: { description: string, locale?: string }
+ * Use DeepSeek AI to generate a SKILL.md from a plain-text description.
+ * Returns { content, parsed: { name, description, emoji } } for preview.
+ */
+router.post('/generate', async (req: Request, res: Response) => {
+  const user = getUserFromAuth(req);
+  if (!user) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+
+  const { description, locale } = req.body as { description?: string; locale?: string };
+  if (!description || typeof description !== 'string' || !description.trim()) {
+    res.status(400).json({ error: 'Required field: description (plain-text description of the skill)' });
+    return;
+  }
+
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    res.status(500).json({ error: 'DEEPSEEK_API_KEY not configured on server' });
+    return;
+  }
+
+  const systemPrompt = `You are a SKILL.md generator for AgentOS. Generate a skill definition in markdown format.
+
+The file MUST start with YAML frontmatter (delimited by ---) containing:
+- name: lowercase-with-hyphens (e.g. "code-review")
+- description: one-line English description
+- emoji: a relevant emoji
+- name_zh: Chinese name
+- description_zh: Chinese description
+
+After the frontmatter, write the skill body in markdown with practical instructions, examples, templates, and best practices. The body should be comprehensive (at least 50 lines).
+
+Only output the SKILL.md content, nothing else.`;
+
+  const userPrompt = locale === 'zh'
+    ? `请生成一个技能定义，用户需求描述如下：\n\n${description.trim()}`
+    : `Generate a skill definition based on the following user request:\n\n${description.trim()}`;
+
+  try {
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        temperature: 0.7,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('[generate] DeepSeek API error:', response.status, errText);
+      res.status(502).json({ error: `AI service error: ${response.status}` });
+      return;
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    let content = data.choices?.[0]?.message?.content?.trim() || '';
+
+    // Strip markdown code fences if the model wrapped the output
+    if (content.startsWith('```')) {
+      content = content.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim();
+    }
+
+    if (!content.startsWith('---')) {
+      res.status(502).json({ error: 'AI generated invalid content (missing frontmatter)' });
+      return;
+    }
+
+    // Validate by parsing
+    const parsed = parseSkillMd(content);
+
+    res.json({
+      content,
+      parsed: {
+        name: parsed.name,
+        description: parsed.description,
+        emoji: parsed.emoji || '',
+      },
+    });
+  } catch (err) {
+    console.error('[generate] error:', err);
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'Generation failed',
     });
   }
 });

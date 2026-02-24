@@ -45,6 +45,8 @@ export function useWebSocket() {
   const onSkillListRef = useRef<((skills: SkillManifestInfo[]) => void) | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onSkillLibraryRef = useRef<((items: any[]) => void) | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onSkillConfigRef = useRef<((data: any) => void) | null>(null);
   const channelRef = useRef<Channel<WsEvent> | null>(null);
 
   const connect = useCallback(
@@ -105,6 +107,10 @@ export function useWebSocket() {
             case 'skill.library.response': {
               const items = (payload as unknown as { skills?: unknown[] })?.skills || [];
               onSkillLibraryRef.current?.(items);
+              break;
+            }
+            case 'skill.config.response': {
+              onSkillConfigRef.current?.(payload);
               break;
             }
             case 'error': {
@@ -238,6 +244,19 @@ export function useWebSocket() {
     await invoke('request_skill_library');
   }, []);
 
+  const requestSkillConfig = useCallback(async (skillName: string) => {
+    await invoke('request_skill_config', { skillName });
+  }, []);
+
+  const saveSkillConfig = useCallback(async (skillName: string, config: Record<string, unknown>) => {
+    await invoke('set_skill_config', { skillName, config });
+  }, []);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const setOnSkillConfig = useCallback((cb: ((data: any) => void) | null) => {
+    onSkillConfigRef.current = cb;
+  }, []);
+
   return useMemo(() => ({
     connected,
     connecting,
@@ -256,8 +275,12 @@ export function useWebSocket() {
     installSkill,
     uninstallSkill,
     requestSkillLibrary,
+    requestSkillConfig,
+    saveSkillConfig,
+    setOnSkillConfig,
   }), [connected, connecting, sessionId, streaming, activeSkill, error,
        connect, disconnect, sendMessage, stopGeneration, requestSkillList,
        toggleSkill, setOnSkillList, setOnSkillLibrary, installSkill,
-       uninstallSkill, requestSkillLibrary]);
+       uninstallSkill, requestSkillLibrary, requestSkillConfig,
+       saveSkillConfig, setOnSkillConfig]);
 }

@@ -550,6 +550,7 @@ function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMe
     installed: installedNames.includes(entry.name),
     isDefault: entry.isDefault,
     installCount: entry.installCount || 0,
+    featured: entry.featured || false,
     functions: entry.functions as Array<{ name: string; description: string }>,
     locales: entry.locales || undefined,
   }));

@@ -11,6 +11,8 @@ export interface SkillMdParsed {
   version?: string;
   emoji?: string;
   body: string;
+  /** Locale overrides extracted from frontmatter (e.g. name_zh, description_zh) */
+  locales?: Record<string, { displayName?: string; description?: string }>;
 }
 
 /**
@@ -60,11 +62,29 @@ export function parseSkillMd(content: string): SkillMdParsed {
     throw new Error('SKILL.md frontmatter missing required field: description');
   }
 
+  // Extract locale fields (name_{lang}, description_{lang})
+  const locales: Record<string, { displayName?: string; description?: string }> = {};
+  for (const [key, value] of Object.entries(meta)) {
+    const nameMatch = key.match(/^name_([a-z]{2})$/);
+    if (nameMatch) {
+      const lang = nameMatch[1];
+      if (!locales[lang]) locales[lang] = {};
+      locales[lang].displayName = value;
+    }
+    const descMatch = key.match(/^description_([a-z]{2})$/);
+    if (descMatch) {
+      const lang = descMatch[1];
+      if (!locales[lang]) locales[lang] = {};
+      locales[lang].description = value;
+    }
+  }
+
   return {
     name: meta.name,
     description: meta.description,
     version: meta.version || undefined,
     emoji: meta.emoji || undefined,
     body,
+    locales: Object.keys(locales).length > 0 ? locales : undefined,
   };
 }

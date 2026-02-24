@@ -41,6 +41,7 @@ import RegisterSkillForm from './RegisterSkillForm';
 import SkillDetail from './SkillDetail';
 import AddMcpServerForm from './AddMcpServerForm';
 import ImportSkillMdForm from './ImportSkillMdForm';
+import GenerateSkillForm from './GenerateSkillForm';
 import { useTranslation } from '../../i18n';
 import { useSettingsStore } from '../../stores/settingsStore';
 
@@ -110,7 +111,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedEnvFilter, setSelectedEnvFilter] = useState<'all' | 'desktop'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [addSkillMode, setAddSkillMode] = useState<null | 'menu' | 'http' | 'mcp' | 'skillmd'>(null);
+  const [addSkillMode, setAddSkillMode] = useState<null | 'menu' | 'http' | 'mcp' | 'skillmd' | 'generate'>(null);
   const [detailSkill, setDetailSkill] = useState<SkillLibraryItem | null>(null);
 
   // Self-hosted OpenClaw: fetch skills directly from Gateway
@@ -316,6 +317,11 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
     return items;
   }, [library, selectedCategory, selectedEnvFilter, searchQuery]);
 
+  // Featured skills (top of library)
+  const featuredSkills = useMemo(() => {
+    return library.filter((s) => s.featured);
+  }, [library]);
+
   // Group by category for display
   const groupedLibrary = useMemo(() => {
     if (selectedCategory !== 'all') return [{ category: selectedCategory, items: filteredLibrary }];
@@ -481,6 +487,12 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               })}
             </View>
           )}
+          {item.installCount > 0 && (
+            <View style={styles.installCountTag}>
+              <Ionicons name="download-outline" size={10} color="#888" />
+              <Text style={styles.installCountText}>{item.installCount}</Text>
+            </View>
+          )}
           {item.category && item.category !== 'general' && (
             <View style={styles.categoryTag}>
               <Text style={styles.categoryText}>{item.category}</Text>
@@ -583,6 +595,41 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
           </View>
         ) : (
           <View style={{ flex: 1 }}>
+            {/* Featured Section */}
+            {featuredSkills.length > 0 && !searchQuery.trim() && selectedCategory === 'all' && (
+              <View style={styles.featuredSection}>
+                <Text style={styles.featuredTitle}>{t('skills.featured')}</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.featuredScroll}
+                >
+                  {featuredSkills.map((skill) => {
+                    const displayName = skill.locales?.[locale]?.displayName ?? skill.name;
+                    const displayDesc = skill.locales?.[locale]?.description ?? skill.description;
+                    return (
+                      <TouchableOpacity
+                        key={skill.name}
+                        style={styles.featuredCard}
+                        onPress={() => setDetailSkill(skill)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.featuredEmoji}>{skill.emoji || '📦'}</Text>
+                        <Text style={styles.featuredName} numberOfLines={1}>{displayName}</Text>
+                        <Text style={styles.featuredDesc} numberOfLines={2}>{displayDesc}</Text>
+                        {skill.installCount > 0 && (
+                          <View style={styles.featuredInstalls}>
+                            <Ionicons name="download-outline" size={10} color="#888" />
+                            <Text style={styles.featuredInstallsText}>{skill.installCount}</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
             {/* Search Bar */}
             <View style={styles.searchContainer}>
               <Ionicons name="search-outline" size={16} color="#888" />
@@ -719,6 +766,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               uninstallSkill(name);
               setDetailSkill((prev) => prev ? { ...prev, installed: false } : null);
             }}
+            wsClient={wsClient}
           />
         )}
       </Modal>
@@ -757,6 +805,14 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
               </View>
               <Ionicons name="chevron-forward" size={18} color="#666" />
             </TouchableOpacity>
+            <TouchableOpacity style={styles.addSkillOptionCard} onPress={() => setAddSkillMode('generate')}>
+              <Text style={styles.addSkillOptionEmoji}>{'\u{1F916}'}</Text>
+              <View style={styles.addSkillOptionText}>
+                <Text style={styles.addSkillOptionTitle}>{t('skills.aiGenerate')}</Text>
+                <Text style={styles.addSkillOptionDesc}>{t('skills.aiGenerateDesc')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#666" />
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -788,6 +844,16 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
           authToken={authToken || ''}
           onClose={() => setAddSkillMode(null)}
           onImported={() => { handleRefresh(); setAddSkillMode(null); }}
+        />
+      </Modal>
+
+      {/* AI Generate Skill Form Modal */}
+      <Modal visible={addSkillMode === 'generate'} animationType="slide" presentationStyle="pageSheet">
+        <GenerateSkillForm
+          serverUrl={serverUrl || ''}
+          authToken={authToken || ''}
+          onClose={() => setAddSkillMode(null)}
+          onGenerated={() => { handleRefresh(); setAddSkillMode(null); }}
         />
       </Modal>
     </View>
@@ -1240,5 +1306,66 @@ const styles = StyleSheet.create({
   addSkillOptionDesc: {
     color: '#888',
     fontSize: 12,
+  },
+  installCountTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#252540',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  installCountText: {
+    color: '#888',
+    fontSize: 10,
+  },
+  featuredSection: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  featuredTitle: {
+    color: '#ccc',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  featuredScroll: {
+    gap: 10,
+    paddingRight: 12,
+  },
+  featuredCard: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    padding: 14,
+    width: 150,
+    borderWidth: 1,
+    borderColor: '#6c63ff44',
+  },
+  featuredEmoji: {
+    fontSize: 24,
+    marginBottom: 6,
+  },
+  featuredName: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  featuredDesc: {
+    color: '#aaa',
+    fontSize: 11,
+    lineHeight: 15,
+    marginBottom: 6,
+  },
+  featuredInstalls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  featuredInstallsText: {
+    color: '#888',
+    fontSize: 10,
   },
 });
