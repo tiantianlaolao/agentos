@@ -333,16 +333,99 @@ ClawHub 是 OpenClaw 的技能市场（3000+ 技能）。开发者写 JavaScript
 
 ---
 
-## 一句话总结
+## SKILL.md：用 Markdown 创造技能
+
+### 什么是 SKILL.md？
+
+SKILL.md 是一种**用纯文本定义的技能**。不需要写代码，不需要有服务器，只需要用 Markdown 写一份"专业手册"，AI 就能获得一个新的专业能力。
+
+比如一个 `github-cli.md`：
+
+```markdown
+---
+name: github-cli
+description: 用 GitHub CLI 查询仓库、Issue、PR
+emoji: 🐙
+---
+
+# GitHub CLI
+
+- `gh repo view <owner/repo>` — 查看仓库详情
+- `gh issue list -R <owner/repo>` — 列出 Issue
+- `gh pr list -R <owner/repo>` — 列出 PR
+- 用 `--json` 获取结构化数据
+
+## 示例
+- 查 star 数：`gh repo view owner/repo --json stargazerCount`
+```
+
+AI 读完这份"手册"后，当用户问"React 仓库有多少 star"，它就知道该执行什么命令了。
+
+### SKILL.md 和其他技能的本质区别
+
+```
+内置 Skill / MCP / HTTP Skill：
+  用户问 → AI 调用技能 → 技能自己干活拿到结果 → 返回给 AI
+  技能是"员工"，AI 只是转述结果
+
+SKILL.md：
+  用户问 → AI 调用技能 → 技能返回一份"操作手册" → AI 读懂后自己去干活
+  技能是"教科书"，AI 是执行者
+```
+
+### SKILL.md 最适合什么场景？
+
+```
+最适合：不需要调接口的"知识型"场景
+  ✅ 编程规范助手   — 教 AI 你们团队的代码规范
+  ✅ SEO 优化专家   — 教 AI 分析网页 SEO 的方法论
+  ✅ 运维排查手册   — 教 AI 你们服务器的常用命令和排查流程
+  ✅ 写作模板       — 教 AI 用特定格式写商务邮件、周报、方案
+  ✅ 面试题库       — 教 AI 按照岗位出题和评估
+
+不适合：需要调用外部接口获取实时数据的场景
+  ❌ 查奶茶库存     — 需要调 API，应该用 HTTP Skill 或 MCP
+  ❌ 查实时天气     — 需要调 API，应该用内置 Skill
+  ❌ 操作数据库     — 需要连接数据库，应该用 MCP
+```
+
+**SKILL.md 的价值**：任何人都能用 Markdown 写一份"专业手册"，不需要写代码，不需要有服务器，就能让 AI 获得一个新的专业能力。这是创建 Skill 成本最低的方式。
+
+---
+
+## 作为普通用户，你需要了解这些吗？
+
+**不需要。**
+
+以上所有技术概念——MCP、HTTP Skill、SKILL.md、内置 Skill——都是后台实现细节。作为普通用户，你只需要知道一件事：
+
+> **打开技能库，看到你需要的技能，点"安装"，然后告诉 AI 你想做什么。**
+
+就这样。
+
+你不需要知道"天气查询"背后是内置代码还是 MCP。你不需要知道"GitHub 工具"走的是什么协议。你不需要知道"写作助手"是一个 Markdown 文件。
+
+**你只需要说出你想做的事，AI 会自己找到对的技能去完成。**
+
+这正是 AgentOS 做 Skill 系统的初衷：
+
+```
+技术的事情，交给平台。
+你只需要说出你的需求。
+```
+
+---
+
+## 总结
 
 | 概念 | 一句话解释 |
 |------|-----------|
-| **MCP** | AI 调用工具的"通信协议"（像 USB 线） |
-| **MCP Server** | 遵循 MCP 协议的"工具包"（像 USB 设备） |
-| **HTTP Skill** | 把你已有的 API 接口接入 AgentOS（像给 App 加个快捷方式） |
-| **SKILL.md** | 纯文本定义的"知识型技能"（像给 AI 一本专业手册） |
-| **Skill** | 用户在 AgentOS 里看到的"技能"（像手机 App） |
-| **Skill 系统** | 管理所有技能的完整框架（像 App Store） |
+| **Skill（技能）** | AI 的能力扩展，像手机上的 App |
+| **MCP** | AI 调用工具的通信协议，像 USB 线 |
+| **MCP Server** | 遵循 MCP 协议的工具包，像 USB 设备 |
+| **HTTP Skill** | 把已有的 API 接口接入 AgentOS，像给 App 加个快捷方式 |
+| **SKILL.md** | 用纯文本定义的知识型技能，像给 AI 一本专业手册 |
+| **Skill 系统** | 管理所有技能的完整框架，像 App Store |
 
 ```
 Skill 的四种来源：
@@ -353,6 +436,7 @@ SKILL.md   → 纯文本定义，创建成本最低
 HTTP Skill → 接入已有系统，门槛最低
 
 四种来源，一个商店，统一体验。
+用户不需要关心来源，只需要说出需求。
 ```
 
 ---
