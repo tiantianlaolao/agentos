@@ -42,6 +42,8 @@ export default {
     fromAgent: '来自: {{source}}',
     copy: '复制',
     quoteReply: '引用回复',
+    deleteMessage: '删除消息',
+    deleteMessageConfirm: '确定删除这条消息吗？',
     today: '今天',
     yesterday: '昨天',
     clearConfirm: '确定清空所有对话消息吗？',

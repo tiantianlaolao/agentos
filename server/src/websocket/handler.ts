@@ -913,6 +913,7 @@ async function handleChatSend(
       const tools = userInstalledNames
         ? skillRegistry.toToolsForInstalledUser(userCtx, userInstalledNames)
         : skillRegistry.toFunctionCallingToolsForUser(userCtx);
+      console.log(`[Chat] userId=${session.userId}, installedNames=${userInstalledNames?.length ?? 'null(anon)'}, tools=${tools.length}`);
       const hasToolSupport = tools.length > 0 && llmProvider.chatWithTools;
 
       const batcher = new ChunkBatcher(ws, conversationId);

@@ -179,7 +179,7 @@ export class WebSocketClient {
         type: MessageType.PING,
         timestamp: Date.now(),
       });
-      // Set 10s pong timeout — if no PONG received, close socket to trigger reconnect
+      // Set 15s pong timeout — if no PONG received, close socket to trigger reconnect
       if (this.pongTimer) clearTimeout(this.pongTimer);
       this.pongTimer = setTimeout(() => {
         console.log('[WS] Pong timeout — closing connection');
@@ -187,8 +187,8 @@ export class WebSocketClient {
         if (this.ws) {
           this.ws.close();
         }
-      }, 10000);
-    }, 15000);
+      }, 15000);
+    }, 25000);
   }
 
   private stopPing(): void {

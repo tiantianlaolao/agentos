@@ -30,6 +30,7 @@ import {
   saveMessage,
   clearConversationMessages,
   deleteOldestMessages,
+  deleteMessage,
   getSetting,
   setSetting,
 } from '../../src/services/storage';
@@ -500,12 +501,10 @@ export default function ChatScreen() {
   // Scroll to bottom whenever this tab gains focus (re-entering chat)
   useFocusEffect(
     useCallback(() => {
-      if (messages.length > 0) {
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
-        }, 150);
-      }
-    }, [messages.length])
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 300);
+    }, [])
   );
 
   // Load messages (paginated) when switching conversations
@@ -816,6 +815,22 @@ export default function ChatScreen() {
     }
   }, [inputText, handleSend]);
 
+  // Delete message handler
+  const { removeMessage } = useChatStore();
+  const handleDeleteMessage = useCallback((id: string) => {
+    Alert.alert(t('chat.deleteMessageConfirm'), '', [
+      { text: t('chat.cancel'), style: 'cancel' },
+      {
+        text: t('chat.deleteMessage'),
+        style: 'destructive',
+        onPress: async () => {
+          try { await deleteMessage(id); } catch { /* ignore */ }
+          removeMessage(id);
+        },
+      },
+    ]);
+  }, [t, removeMessage]);
+
   // Quote reply handler
   const handleQuoteReply = useCallback((content: string) => {
     const quoted = content.length > 100 ? content.slice(0, 100) + '...' : content;
@@ -868,10 +883,11 @@ export default function ChatScreen() {
           isLast={isLast}
           onRetry={isLast ? handleRetryFinal : undefined}
           onQuoteReply={handleQuoteReply}
+          onDelete={() => handleDeleteMessage(item.id)}
         />
       </>
     );
-  }, [messages, handleRetryFinal, handleQuoteReply, getDateLabel]);
+  }, [messages, handleRetryFinal, handleQuoteReply, handleDeleteMessage, getDateLabel]);
 
   const keyExtractor = useCallback((item: ChatMessage) => item.id, []);
 

@@ -282,6 +282,12 @@ export async function getMessageCount(conversationId: string): Promise<number> {
   return row?.count || 0;
 }
 
+/** Delete a single message by id. */
+export async function deleteMessage(id: string): Promise<void> {
+  if (!db) throw new Error('Database not initialized');
+  await db.runAsync('DELETE FROM messages WHERE id = ?', id);
+}
+
 /** Delete the oldest N messages from a conversation, returning their content. */
 export async function deleteOldestMessages(
   conversationId: string,

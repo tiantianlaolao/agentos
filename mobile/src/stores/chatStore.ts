@@ -49,6 +49,7 @@ interface ChatState {
   prependMessages: (msgs: ChatMessage[]) => void;
   updateMessage: (id: string, updates: Partial<ChatMessage>) => void;
   appendToMessage: (id: string, delta: string) => void;
+  removeMessage: (id: string) => void;
   setMessages: (messages: ChatMessage[]) => void;
 }
 
@@ -78,6 +79,11 @@ export const useChatStore = create<ChatState>((set) => ({
       messages: state.messages.map((m) =>
         m.id === id ? { ...m, content: m.content + delta } : m
       ),
+    })),
+
+  removeMessage: (id) =>
+    set((state) => ({
+      messages: state.messages.filter((m) => m.id !== id),
     })),
 
   setMessages: (messages) => set({ messages }),

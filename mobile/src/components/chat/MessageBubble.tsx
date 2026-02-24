@@ -13,6 +13,7 @@ interface MessageBubbleProps {
   isLast?: boolean;
   onRetry?: () => void;
   onQuoteReply?: (content: string) => void;
+  onDelete?: () => void;
 }
 
 function BlinkingCursor() {
@@ -99,7 +100,7 @@ const markdownStyles = StyleSheet.create({
   hr: { backgroundColor: '#2d2d44', height: 1, marginVertical: 8 },
 });
 
-function MessageBubbleInner({ message, isLast, onRetry, onQuoteReply }: MessageBubbleProps) {
+function MessageBubbleInner({ message, isLast, onRetry, onQuoteReply, onDelete }: MessageBubbleProps) {
   const t = useTranslation();
   const isUser = message.role === 'user';
   // Default to plain text for very long messages to prevent JS thread freeze
@@ -251,6 +252,12 @@ function MessageBubbleInner({ message, isLast, onRetry, onQuoteReply }: MessageB
                 <Text style={styles.menuText}>{t('chat.quoteReply')}</Text>
               </TouchableOpacity>
             )}
+            {onDelete && (
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); onDelete(); }}>
+                <Ionicons name="trash-outline" size={16} color="#ff5252" />
+                <Text style={[styles.menuText, { color: '#ff5252' }]}>{t('chat.deleteMessage')}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </Pressable>
       </Modal>
@@ -264,7 +271,8 @@ const MessageBubble = React.memo(MessageBubbleInner, (prev, next) => {
     prev.message.content === next.message.content &&
     prev.message.isStreaming === next.message.isStreaming &&
     prev.isLast === next.isLast &&
-    prev.onQuoteReply === next.onQuoteReply
+    prev.onQuoteReply === next.onQuoteReply &&
+    prev.onDelete === next.onDelete
   );
 });
 

@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { mcpManager, type MCPServerConfig, type MCPToolInfo } from './mcpManager.js';
 import { skillRegistry, type SkillHandler } from '../skills/registry.js';
+import { syncCatalogFromRegistry } from '../skills/userSkills.js';
 import type { SkillManifest } from '../adapters/base.js';
 
 const CONFIG_PATH = join(import.meta.dirname, '../../mcp-servers.json');
@@ -101,6 +102,9 @@ export async function initMCPServers(): Promise<void> {
       console.error(`[MCP Bridge] Failed to connect to "${config.name}":`, err instanceof Error ? err.message : err);
     }
   }
+
+  // Sync MCP skills to the DB catalog so they appear in the skill library
+  await syncCatalogFromRegistry();
 }
 
 /**

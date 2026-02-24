@@ -42,6 +42,8 @@ export default {
     fromAgent: 'From: {{source}}',
     copy: 'Copy',
     quoteReply: 'Quote Reply',
+    deleteMessage: 'Delete',
+    deleteMessageConfirm: 'Delete this message?',
     today: 'Today',
     yesterday: 'Yesterday',
     clearConfirm: 'Clear all messages in this conversation?',
