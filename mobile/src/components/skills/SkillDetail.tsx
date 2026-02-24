@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { randomUUID } from 'expo-crypto';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../../i18n';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { MessageType } from '../../types/protocol';
@@ -71,6 +72,7 @@ function getPermissionLabels(t: (key: string) => string): Record<string, { icon:
 
 export default function SkillDetail({ skill, onClose, onInstall, onUninstall, wsClient }: Props) {
   const t = useTranslation();
+  const insets = useSafeAreaInsets();
   const locale = useSettingsStore((s) => s.locale);
   const AUDIT_BADGES = getAuditBadges(t);
   const PERMISSION_LABELS = getPermissionLabels(t);
@@ -134,7 +136,7 @@ export default function SkillDetail({ skill, onClose, onInstall, onUninstall, ws
   const hasConfigChanges = JSON.stringify(configDraft) !== JSON.stringify(configValues);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
           <Ionicons name="arrow-back" size={22} color="#6c63ff" />

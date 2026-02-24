@@ -822,7 +822,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         <RegisterSkillForm
           serverUrl={serverUrl || ''}
           authToken={authToken || ''}
-          onClose={() => setAddSkillMode(null)}
+          onClose={() => setAddSkillMode('menu')}
           onRegistered={() => { handleRefresh(); setAddSkillMode(null); }}
         />
       </Modal>
@@ -832,7 +832,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         <AddMcpServerForm
           serverUrl={serverUrl || ''}
           authToken={authToken || ''}
-          onClose={() => setAddSkillMode(null)}
+          onClose={() => setAddSkillMode('menu')}
           onAdded={() => handleRefresh()}
         />
       </Modal>
@@ -842,7 +842,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         <ImportSkillMdForm
           serverUrl={serverUrl || ''}
           authToken={authToken || ''}
-          onClose={() => setAddSkillMode(null)}
+          onClose={() => setAddSkillMode('menu')}
           onImported={() => { handleRefresh(); setAddSkillMode(null); }}
         />
       </Modal>
@@ -852,7 +852,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         <GenerateSkillForm
           serverUrl={serverUrl || ''}
           authToken={authToken || ''}
-          onClose={() => setAddSkillMode(null)}
+          onClose={() => setAddSkillMode('menu')}
           onGenerated={() => { handleRefresh(); setAddSkillMode(null); }}
         />
       </Modal>

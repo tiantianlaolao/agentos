@@ -15,7 +15,7 @@ import {
   AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useChatStore } from '../../src/stores/chatStore';
 import { useSettingsStore } from '../../src/stores/settingsStore';
 import { useAuthStore } from '../../src/stores/authStore';
@@ -113,8 +113,8 @@ export default function ChatScreen() {
   const throttleRef = useRef(0);
   const THROTTLE_MS = 32; // ~30fps
 
-  // Stream timeout: auto-recover if no chunk received for 15s
-  const STREAM_TIMEOUT_MS = 15000;
+  // Stream timeout: auto-recover if no chunk received for a long time
+  const STREAM_TIMEOUT_MS = 120000;
   const streamTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
@@ -230,7 +230,7 @@ export default function ChatScreen() {
         id: randomUUID(),
         conversationId: convId,
         role: 'system',
-        content: 'Stream timed out — no data received for 15 seconds.',
+        content: t('chat.streamTimeout'),
         timestamp: Date.now(),
         messageType: 'error',
         isError: true,
@@ -242,7 +242,7 @@ export default function ChatScreen() {
       currentAssistantId.current = null;
       streamTimeoutRef.current = null;
     }, STREAM_TIMEOUT_MS);
-  }, [clearStreamTimeout, addMessage, setGenerating]);
+  }, [clearStreamTimeout, addMessage, setGenerating, t]);
 
   // Auto-cleanup: when messages exceed threshold, extract memory from oldest and delete them
   // Use a ref so the connection effect doesn't re-run when this callback changes
@@ -495,6 +495,17 @@ export default function ChatScreen() {
       flatListRef.current?.scrollToEnd({ animated: false });
     }
   }, [streamingContent]);
+
+  // Scroll to bottom whenever this tab gains focus (re-entering chat)
+  useFocusEffect(
+    useCallback(() => {
+      if (messages.length > 0) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }, 150);
+      }
+    }, [messages.length])
+  );
 
   // Load messages (paginated) when switching conversations
   useEffect(() => {

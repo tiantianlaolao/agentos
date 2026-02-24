@@ -47,6 +47,7 @@ export default {
     clearConfirm: '确定清空所有对话消息吗？',
     clear: '清空',
     cleanupDone: '已自动归档 {{count}} 条旧消息到记忆中',
+    streamTimeout: '响应超时，请重新发送。',
     loadMore: '上滑加载更多',
   },
   login: {

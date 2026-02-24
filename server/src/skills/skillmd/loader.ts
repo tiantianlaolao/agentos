@@ -47,7 +47,7 @@ export function registerSkillMd(
     author: 'SKILL.md',
     agents: '*',
     environments: ['cloud', 'desktop'],
-    permissions: ['exec'],
+    permissions: [],
     functions: [{
       name: `use_${safeName}`,
       description: `Use the "${name}" skill. ${description}`,

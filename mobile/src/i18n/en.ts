@@ -47,6 +47,7 @@ export default {
     clearConfirm: 'Clear all messages in this conversation?',
     clear: 'Clear',
     cleanupDone: 'Archived {{count}} old messages to memory',
+    streamTimeout: 'Response timed out. Please try again.',
     loadMore: 'Scroll up to load more',
   },
   login: {
