@@ -9,6 +9,9 @@ on:
 jobs:
   build-macos:
     runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
     steps:
       - uses: actions/checkout@v4
 
@@ -19,6 +22,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -31,15 +36,15 @@ jobs:
 
       - name: Build Tauri app
         working-directory: desktop
-        run: npx tauri build
+        run: npx tauri build --target ${{ matrix.target }}
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-build
+          name: macos-build-${{ matrix.target }}
           path: |
-            desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -121,11 +126,17 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download macOS artifacts
+      - name: Download macOS aarch64 artifacts
         uses: actions/download-artifact@v4
         with:
-          name: macos-build
+          name: macos-build-aarch64-apple-darwin
           path: artifacts/macos
+
+      - name: Download macOS x86_64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build-x86_64-apple-darwin
+          path: artifacts/macos-x86
 
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
@@ -146,5 +157,6 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/macos/**/*
+            artifacts/macos-x86/**/*
             artifacts/windows/**/*
             artifacts/linux/**/*
