@@ -16,9 +16,13 @@ AgentOS 是一个通用 AI Agent 客户端，通过统一界面连接多种 Agen
 **技能系统**
 - 基于 `SkillManifest` 标准的可扩展技能框架
 - **技能库** —— 按用户浏览、安装和卸载技能
-- 内置技能：天气查询、翻译、美股监控、计算器、汇率换算、网页搜索、链接摘要、图片生成、日期时间、Claude Code（远程开发）
+- 10 个内置技能：天气查询、翻译、美股监控、计算器、汇率换算、网页搜索、链接摘要、图片生成、日期时间、Claude Code（远程开发）
+- 27 个 SKILL.md 知识技能：代码审查、React 模式、Git 提交、Linux 运维、数据分析、Remotion 视频制作等
+- **SKILL.md 目录模式** —— 多文件技能，按需加载子文档（如 Remotion 含 34 个主题文档），AI 先读索引再按需加载具体文档，节省 Token
+- MCP（Model Context Protocol）集成 —— 将外部 MCP 服务器桥接为可安装技能
 - 与所有 LLM Provider 集成的 Function Calling
 - 按用户的技能可见性（公开/私有）和安装状态
+- AI 生成技能 —— 描述需求，AI 自动创建 SKILL.md
 - 可视化技能执行卡片，实时显示状态
 
 **桌面远程执行**
@@ -180,6 +184,7 @@ AgentOS 支持 3 种 Agent 模式，内置助理有两个子模式：
 - "读取我电脑上的 ~/notes.txt"
 - "帮我分析一下 ~/agentos 项目的结构"
 - "帮我修复 ~/my-app 里的登录 bug"
+- "用 Remotion 做一个文字动画视频"（需安装 Remotion 技能）
 
 桌面技能在桌面端连接时自动注册并安装给当前登录用户。手机端会在桌面在线时显示绿色横幅"桌面已连接"。
 
@@ -203,10 +208,43 @@ interface AgentAdapter {
 
 ## 添加新技能
 
+**方式一：内置技能（TypeScript）**
+
 1. 在 `server/src/skills/你的技能/` 下创建目录
 2. 定义 `manifest.ts`，符合 `SkillManifest` 格式（name、description、functions 使用 OpenAI Function Calling 格式）
 3. 实现 `handler.ts`，处理函数调用并返回结果
 4. 技能在服务器启动时通过 `SkillLoader` 自动加载，同步到技能目录
+
+**方式二：SKILL.md（知识/指导型）**
+
+单文件：
+```
+server/data/skills-md/my-skill.md
+```
+
+目录模式（多文件，适合复杂主题）：
+```
+server/data/skills-md/my-skill/
+├── SKILL.md          # 主索引，含 frontmatter
+└── rules/            # 子文档，按需加载
+    ├── topic-a.md
+    └── topic-b.md
+```
+
+SKILL.md frontmatter 格式：
+```yaml
+---
+name: my-skill
+description: What this skill does
+emoji: 🔧
+name_zh: 中文名
+description_zh: 中文描述
+---
+```
+
+**方式三：MCP 服务器**
+
+通过技能库 UI 添加外部 MCP 服务器，服务端 MCP 进程会桥接为可安装技能。
 
 详见 [docs/skills-development.md](docs/skills-development.md)（技能开发指南）和 [docs/skills-guide.md](docs/skills-guide.md)（用户指南）。
 
@@ -238,10 +276,15 @@ interface AgentAdapter {
 - [x] Claude Code 远程技能（从手机调用桌面 Claude Code 进行开发）
 - [x] 技能内容国际化（manifest 内置 locales 字段，技能名称/描述/函数说明跟随界面语言自动切换）
 - [x] 统一 BYOK 子模式（移动端与桌面端一致，自带 Key 作为内置助理的子选项）
+- [x] 27 个 SKILL.md 知识技能，含精选推荐和安装量统计
+- [x] 用户自建技能：MCP 服务器、HTTP 技能、AI 生成 SKILL.md、文件导入
+- [x] SKILL.md 目录模式（多文件技能，按需加载子文档）
+- [x] Remotion 视频制作技能（桌面端执行，自动检测依赖）
 - [ ] 托管模式技能管理（OpenClaw/CoPaw）
 - [ ] 桌面执行安全加固（确认弹窗、命令白名单）
 - [ ] 技能市场和社区生态
 - [ ] 浏览器自动化技能（Playwright）
+- [ ] 本地大模型支持（Ollama）
 - [ ] 多 Agent 协作
 - [ ] iOS 客户端（TestFlight）
 - [ ] 支付集成（微信支付 / 支付宝）

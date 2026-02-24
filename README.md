@@ -16,9 +16,13 @@ AgentOS is a universal AI Agent client that connects to multiple agent backends 
 **Skill System**
 - Extensible skill framework with `SkillManifest` standard
 - **Skill Library** — browse, install, and uninstall skills per user
-- Built-in skills: Weather, Translation, US Stock Monitor, Calculator, Currency Exchange, Web Search, URL Summary, Image Generation, Date/Time, Claude Code (remote)
+- 10 built-in skills: Weather, Translation, US Stock Monitor, Calculator, Currency Exchange, Web Search, URL Summary, Image Generation, Date/Time, Claude Code (remote)
+- 27 SKILL.md knowledge skills: Code Review, React Patterns, Git Commit, Linux Admin, Data Analysis, Remotion Video, and more
+- **SKILL.md Directory Mode** — multi-file skills with on-demand sub-document loading (e.g., Remotion with 34 topic docs), AI reads index first then loads specific docs as needed to save tokens
+- MCP (Model Context Protocol) integration — bridge external MCP servers as installable skills
 - Function Calling integration with all LLM providers
 - Per-user skill visibility (public/private) and install state
+- AI-powered skill generation — describe what you want, AI creates a SKILL.md for you
 - Visual skill execution cards with real-time status
 
 **Desktop Remote Execution**
@@ -180,6 +184,7 @@ When the desktop app is running, it automatically registers as an execution node
 - "Read the file ~/notes.txt"
 - "Analyze the project structure of ~/agentos"
 - "Fix the login bug in ~/my-app"
+- "Create a text animation video with Remotion" (with Remotion skill installed)
 
 The desktop skills are automatically registered and installed for the logged-in user when the desktop app connects. Mobile shows a green "Desktop Connected" banner when desktop is online.
 
@@ -203,10 +208,43 @@ Register your adapter in the WebSocket handler, and it will automatically work w
 
 ## Adding a New Skill
 
+**Option 1: Built-in Skill (TypeScript)**
+
 1. Create a directory under `server/src/skills/your-skill/`
 2. Define a `manifest.ts` with `SkillManifest` (name, description, functions in OpenAI Function Calling format)
 3. Implement a `handler.ts` that processes function calls and returns results
 4. The skill auto-loads on server start via `SkillLoader` and syncs to the Skill Catalog
+
+**Option 2: SKILL.md (Knowledge/Instruction)**
+
+Single file:
+```
+server/data/skills-md/my-skill.md
+```
+
+Directory mode (multi-file, for complex topics):
+```
+server/data/skills-md/my-skill/
+├── SKILL.md          # Main index with frontmatter
+└── rules/            # Sub-documents loaded on demand
+    ├── topic-a.md
+    └── topic-b.md
+```
+
+SKILL.md frontmatter:
+```yaml
+---
+name: my-skill
+description: What this skill does
+emoji: 🔧
+name_zh: 中文名
+description_zh: 中文描述
+---
+```
+
+**Option 3: MCP Server**
+
+Add external MCP servers via the Skill Library UI. Server-side MCP processes are bridged as installable skills.
 
 See [docs/skills-development.md](docs/skills-development.md) for the full development guide, and [docs/skills-guide.md](docs/skills-guide.md) for the end-user guide.
 
@@ -238,10 +276,15 @@ See [docs/skills-development.md](docs/skills-development.md) for the full develo
 - [x] Claude Code remote skill (invoke Claude Code on desktop from mobile)
 - [x] Skill content i18n (locales in manifests — skill names, descriptions, and functions auto-switch with UI language)
 - [x] Unified BYOK sub-mode under Built-in Agent (mobile + desktop consistent)
+- [x] 27 SKILL.md knowledge skills with featured recommendations and install counts
+- [x] User-created skills: MCP Server, HTTP Skill, AI-generated SKILL.md, file import
+- [x] SKILL.md directory mode (multi-file skills with on-demand sub-document loading)
+- [x] Remotion video creation skill (desktop-side execution with dependency detection)
 - [ ] Hosted mode skill management (OpenClaw/CoPaw)
 - [ ] Desktop execution security (confirmation dialogs, command allowlists)
 - [ ] Skill marketplace and community ecosystem
 - [ ] Browser automation skill (Playwright)
+- [ ] Local LLM support (Ollama)
 - [ ] Multi-agent collaboration
 - [ ] iOS client (TestFlight)
 - [ ] Payment integration (WeChat Pay / Alipay)
