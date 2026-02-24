@@ -26,6 +26,7 @@ export class WebSocketClient {
   private handlers: Map<string, MessageHandler[]> = new Map();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private pongTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private lastMode: ConnectionMode | null = null;
   private lastOptions: any = undefined;
@@ -154,6 +155,12 @@ export class WebSocketClient {
   }
 
   private dispatch(message: ServerMessage): void {
+    // Clear pong timeout on any PONG response
+    if (message.type === MessageType.PONG && this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
+    }
+
     const handlers = this.handlers.get(message.type) || [];
     for (const handler of handlers) {
       handler(message);
@@ -172,6 +179,15 @@ export class WebSocketClient {
         type: MessageType.PING,
         timestamp: Date.now(),
       });
+      // Set 10s pong timeout — if no PONG received, close socket to trigger reconnect
+      if (this.pongTimer) clearTimeout(this.pongTimer);
+      this.pongTimer = setTimeout(() => {
+        console.log('[WS] Pong timeout — closing connection');
+        this.pongTimer = null;
+        if (this.ws) {
+          this.ws.close();
+        }
+      }, 10000);
     }, 15000);
   }
 
@@ -179,6 +195,10 @@ export class WebSocketClient {
     if (this.pingTimer) {
       clearInterval(this.pingTimer);
       this.pingTimer = null;
+    }
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
     }
   }
 

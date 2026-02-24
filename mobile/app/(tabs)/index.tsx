@@ -113,6 +113,10 @@ export default function ChatScreen() {
   const throttleRef = useRef(0);
   const THROTTLE_MS = 32; // ~30fps
 
+  // Stream timeout: auto-recover if no chunk received for 15s
+  const STREAM_TIMEOUT_MS = 15000;
+  const streamTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const {
     messages,
     currentConversationId,
@@ -192,6 +196,53 @@ export default function ChatScreen() {
     addMessage(pushMsg);
     try { await saveMessage(pushMsg); } catch { /* ignore */ }
   }, [addMessage]);
+
+  // Stream timeout helpers
+  const clearStreamTimeout = useCallback(() => {
+    if (streamTimeoutRef.current) {
+      clearTimeout(streamTimeoutRef.current);
+      streamTimeoutRef.current = null;
+    }
+  }, []);
+
+  const resetStreamTimeout = useCallback(() => {
+    clearStreamTimeout();
+    streamTimeoutRef.current = setTimeout(() => {
+      // Timeout fired: save whatever we have and show error
+      const convId = useChatStore.getState().currentConversationId || '';
+      if (currentAssistantId.current && streamBufferRef.current) {
+        addMessage({
+          id: currentAssistantId.current,
+          conversationId: convId,
+          role: 'assistant',
+          content: streamBufferRef.current,
+          timestamp: Date.now(),
+        });
+        saveMessage({
+          id: currentAssistantId.current,
+          conversationId: convId,
+          role: 'assistant',
+          content: streamBufferRef.current,
+          timestamp: Date.now(),
+        }).catch(() => {});
+      }
+      addMessage({
+        id: randomUUID(),
+        conversationId: convId,
+        role: 'system',
+        content: 'Stream timed out — no data received for 15 seconds.',
+        timestamp: Date.now(),
+        messageType: 'error',
+        isError: true,
+      });
+      setStreamingContent(null);
+      streamBufferRef.current = '';
+      setGenerating(false);
+      setActiveSkill(null);
+      currentAssistantId.current = null;
+      streamTimeoutRef.current = null;
+    }, STREAM_TIMEOUT_MS);
+  }, [clearStreamTimeout, addMessage, setGenerating]);
 
   // Auto-cleanup: when messages exceed threshold, extract memory from oldest and delete them
   // Use a ref so the connection effect doesn't re-run when this callback changes
@@ -294,6 +345,7 @@ export default function ChatScreen() {
         const chunk = msg as ChatChunkMessage;
         if (currentAssistantId.current) {
           streamBufferRef.current += chunk.payload.delta;
+          resetStreamTimeout();
           const now = Date.now();
           if (now - throttleRef.current > THROTTLE_MS) {
             setStreamingContent(streamBufferRef.current);
@@ -304,6 +356,7 @@ export default function ChatScreen() {
 
       const unsubDone = client.on(MessageType.CHAT_DONE, (msg: ServerMessage) => {
         const done = msg as ChatDoneMessage;
+        clearStreamTimeout();
         setGenerating(false);
         setActiveSkill(null);
         if (currentAssistantId.current) {
@@ -356,6 +409,7 @@ export default function ChatScreen() {
           setConnected(false);
           return;
         }
+        clearStreamTimeout();
         setGenerating(false);
         setActiveSkill(null);
         if (currentAssistantId.current) {
@@ -406,6 +460,7 @@ export default function ChatScreen() {
 
     return () => {
       cancelled = true;
+      clearStreamTimeout();
       if (cleanupRef.current) {
         cleanupRef.current();
         cleanupRef.current = null;
@@ -421,7 +476,7 @@ export default function ChatScreen() {
     settingsLoaded, serverUrl, mode, builtinSubMode, provider, apiKey, openclawUrl, openclawToken,
     copawUrl, copawToken, copawSubMode, authToken, selectedModel, openclawSubMode, handlePushMessage,
     setConnected, setGenerating, addMessage,
-    setCurrentConversation, setHostedQuota,
+    setCurrentConversation, setHostedQuota, resetStreamTimeout, clearStreamTimeout,
     // checkAndCleanup accessed via ref to avoid re-running connection on every render
   ]);
 
@@ -674,6 +729,7 @@ export default function ChatScreen() {
       });
     } else {
       // Builtin / BYOK (and fallback): send via WebSocket to AgentOS server
+      resetStreamTimeout();
       const client = getWsClient(serverUrl);
       client.send({
         id: randomUUID(),
@@ -689,11 +745,12 @@ export default function ChatScreen() {
   }, [
     inputText, isGenerating, currentConversationId, messages, serverUrl,
     mode, currentUserId, provider, apiKey, selectedModel, openclawUrl, openclawSubMode,
-    addMessage, setCurrentConversation, setGenerating,
+    addMessage, setCurrentConversation, setGenerating, resetStreamTimeout,
   ]);
 
   // P1: Stop generating
   const handleStop = useCallback(() => {
+    clearStreamTimeout();
     // WS mode: send CHAT_STOP
     if (wsClient?.isConnected && currentConversationId) {
       wsClient.send({
@@ -724,7 +781,7 @@ export default function ChatScreen() {
     setGenerating(false);
     setActiveSkill(null);
     currentAssistantId.current = null;
-  }, [currentConversationId, addMessage, setGenerating]);
+  }, [currentConversationId, addMessage, setGenerating, clearStreamTimeout]);
 
   // P1: Retry last message
   const pendingRetryRef = useRef(false);

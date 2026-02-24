@@ -49,6 +49,52 @@ interface Session {
   isHosted: boolean;
 }
 
+/**
+ * Batches CHAT_CHUNK messages within a 50ms window to reduce WS frame count.
+ * Mobile JS Bridge has high per-frame overhead; fewer, larger frames = faster rendering.
+ */
+class ChunkBatcher {
+  private buffer = '';
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private readonly BATCH_INTERVAL = 50; // ms
+
+  constructor(
+    private ws: WebSocket,
+    private conversationId: string,
+  ) {}
+
+  add(chunk: string): void {
+    this.buffer += chunk;
+    if (!this.timer) {
+      this.timer = setTimeout(() => this.flush(), this.BATCH_INTERVAL);
+    }
+  }
+
+  flush(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.buffer) {
+      send(this.ws, {
+        id: uuidv4(),
+        type: MessageType.CHAT_CHUNK,
+        timestamp: Date.now(),
+        payload: { conversationId: this.conversationId, delta: this.buffer },
+      });
+      this.buffer = '';
+    }
+  }
+
+  dispose(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.buffer = '';
+  }
+}
+
 // ── Desktop WebSocket mapping: userId → ws (for relaying commands to desktop) ──
 const desktopWebSockets = new Map<string, WebSocket>();
 
@@ -846,17 +892,15 @@ async function handleChatSend(
       };
 
       // Agent adapter modes: use simple streaming (skills handled by the agent itself)
+      const batcher = new ChunkBatcher(ws, conversationId);
       const stream = session.provider.chat(llmMessages, { signal: abortController.signal });
       for await (const chunk of stream) {
         if (abortController.signal.aborted) break;
         fullContent += chunk;
-        send(ws, {
-          id: uuidv4(),
-          type: MessageType.CHAT_CHUNK,
-          timestamp: Date.now(),
-          payload: { conversationId, delta: chunk },
-        });
+        batcher.add(chunk);
       }
+      if (!abortController.signal.aborted) batcher.flush();
+      batcher.dispose();
     } else {
       // Builtin / BYOK: use Function Calling with skill registry
       const llmProvider = session.provider as LLMProvider;
@@ -870,10 +914,11 @@ async function handleChatSend(
         : skillRegistry.toFunctionCallingToolsForUser(userCtx);
       const hasToolSupport = tools.length > 0 && llmProvider.chatWithTools;
 
+      const batcher = new ChunkBatcher(ws, conversationId);
       if (hasToolSupport) {
         console.log(`[Chat] Entering FC mode with ${tools.length} tools`);
         fullContent = await handleFunctionCallingChat(
-          ws, session, conversationId, llmMessages, tools, skillsInvoked, abortController,
+          ws, session, conversationId, llmMessages, tools, skillsInvoked, abortController, batcher,
         );
         console.log(`[Chat] FC done, fullContent length=${fullContent.length}, wsState=${ws.readyState}`);
       } else {
@@ -882,14 +927,11 @@ async function handleChatSend(
         for await (const chunk of stream) {
           if (abortController.signal.aborted) break;
           fullContent += chunk;
-          send(ws, {
-            id: uuidv4(),
-            type: MessageType.CHAT_CHUNK,
-            timestamp: Date.now(),
-            payload: { conversationId, delta: chunk },
-          });
+          batcher.add(chunk);
         }
       }
+      if (!abortController.signal.aborted) batcher.flush();
+      batcher.dispose();
     }
 
     if (!abortController.signal.aborted) {
@@ -953,6 +995,7 @@ async function handleFunctionCallingChat(
   tools: ReturnType<typeof skillRegistry.toFunctionCallingTools>,
   skillsInvoked: SkillInvocation[],
   abortController: AbortController,
+  batcher: ChunkBatcher,
 ): Promise<string> {
   const MAX_ROUNDS = 8;
   let fullContent = '';
@@ -984,12 +1027,7 @@ async function handleFunctionCallingChat(
       for await (const chunk of result.stream) {
         if (abortController.signal.aborted) break;
         fullContent += chunk;
-        send(ws, {
-          id: uuidv4(),
-          type: MessageType.CHAT_CHUNK,
-          timestamp: Date.now(),
-          payload: { conversationId, delta: chunk },
-        });
+        batcher.add(chunk);
       }
       break;
     }
@@ -1099,12 +1137,7 @@ async function handleFunctionCallingChat(
       for await (const chunk of finalResult.stream) {
         if (abortController.signal.aborted) break;
         fullContent += chunk;
-        send(ws, {
-          id: uuidv4(),
-          type: MessageType.CHAT_CHUNK,
-          timestamp: Date.now(),
-          payload: { conversationId, delta: chunk },
-        });
+        batcher.add(chunk);
       }
     }
   }
