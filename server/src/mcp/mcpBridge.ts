@@ -17,7 +17,7 @@ const CONFIG_PATH = join(import.meta.dirname, '../../mcp-servers.json');
 /**
  * Convert MCP tools from a server into a SkillManifest and register it.
  */
-export function registerMCPServerAsSkill(serverName: string, tools: MCPToolInfo[]): void {
+export function registerMCPServerAsSkill(serverName: string, tools: MCPToolInfo[], builtin = false): void {
   const skillName = `mcp-${serverName}`;
 
   const manifest: SkillManifest = {
@@ -33,7 +33,7 @@ export function registerMCPServerAsSkill(serverName: string, tools: MCPToolInfo[
       description: t.description,
       parameters: t.inputSchema,
     })),
-    audit: 'unreviewed',
+    audit: builtin ? 'reviewed' : 'unreviewed',
     auditSource: 'MCP',
     category: 'tools',
     emoji: '🔌',
@@ -97,7 +97,7 @@ export async function initMCPServers(): Promise<void> {
   for (const config of enabled) {
     try {
       const tools = await mcpManager.addServer(config);
-      registerMCPServerAsSkill(config.name, tools);
+      registerMCPServerAsSkill(config.name, tools, true);
     } catch (err) {
       console.error(`[MCP Bridge] Failed to connect to "${config.name}":`, err instanceof Error ? err.message : err);
     }
