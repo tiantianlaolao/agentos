@@ -47,6 +47,7 @@ import type {
   SkillListResponseMessage,
 } from '../../src/types/protocol';
 import MessageBubble from '../../src/components/chat/MessageBubble';
+import ThinkingBubble from '../../src/components/chat/ThinkingBubble';
 import SkillCard from '../../src/components/chat/SkillCard';
 import SkillsPanel from '../../src/components/skills/SkillsPanel';
 import type { ChatMessage } from '../../src/stores/chatStore';
@@ -643,7 +644,6 @@ export default function ChatScreen() {
     const assistantId = randomUUID();
     currentAssistantId.current = assistantId;
     streamBufferRef.current = '';
-    setStreamingContent('');
     setGenerating(true);
 
     // Build history from recent messages (limit to last 20 to avoid LLM context overflow)
@@ -1033,10 +1033,7 @@ export default function ChatScreen() {
                 <SkillCard skillName={activeSkill.name} description={activeSkill.description} />
               )}
               {isGenerating && !activeSkill && streamingContent === null && (
-                <View style={styles.thinkingContainer}>
-                  <ActivityIndicator size="small" color="#6c63ff" />
-                  <Text style={styles.thinkingText}>{t('chat.thinking')}</Text>
-                </View>
+                <ThinkingBubble />
               )}
             </>
           }
@@ -1149,21 +1146,6 @@ const styles = StyleSheet.create({
   },
   messageListContent: {
     paddingVertical: 12,
-  },
-  thinkingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 12,
-    marginVertical: 4,
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-  },
-  thinkingText: {
-    color: '#aaaaaa',
-    fontSize: 14,
   },
   inputContainer: {
     flexDirection: 'row',
