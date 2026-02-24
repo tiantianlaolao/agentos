@@ -33,7 +33,7 @@ export function registerMCPServerAsSkill(serverName: string, tools: MCPToolInfo[
       description: t.description,
       parameters: t.inputSchema,
     })),
-    audit: builtin ? 'reviewed' : 'unreviewed',
+    audit: builtin ? 'ecosystem' : 'unreviewed',
     auditSource: 'MCP',
     category: 'tools',
     emoji: '🔌',
