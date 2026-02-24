@@ -193,6 +193,31 @@ mcp-server-brave-search
 
 ---
 
+## 别的 AI 客户端怎么用 MCP？
+
+几乎所有 AI 客户端（Claude Desktop、Cursor、Windsurf 等）用 MCP 的方式都是一样的：**用户手动编辑 JSON 配置文件**。
+
+以 Claude Desktop 为例，用户需要：
+
+1. 自己去 GitHub 或市场上找到想用的 MCP Server
+2. 打开一个配置文件，手写 JSON（指定启动命令、参数、密钥等）
+3. 重启 Claude Desktop
+4. 工具直接全部生效——没有"安装/卸载"，所有对话都能用
+
+```
+Claude Desktop / Cursor：
+  用户自己找 → 手动写 JSON → 重启 → 全部生效，无法按需开关
+  （像手动安装电脑驱动程序）
+
+AgentOS：
+  我们预置 → 自动转成 Skill → 用户点"安装" → 按用户隔离
+  （像 App Store 装 App）
+```
+
+这就是 AgentOS 做 Skill 系统的核心价值——**把开发者才能用的东西，变成普通人能用的**。
+
+---
+
 ## 一句话总结
 
 | 概念 | 一句话解释 |
@@ -213,9 +238,130 @@ MCP 是来源之一，不是全部。
 
 ---
 
+## HTTP 技能：最简单的扩展方式
+
+除了内置技能和 MCP，AgentOS 还支持一种门槛最低的方式——**HTTP 技能**。
+
+### 什么是 HTTP 技能？
+
+如果你（或你的公司）已经有一个 API 接口，不需要学任何新协议，直接把 URL 告诉 AgentOS 就行：
+
+```
+你有个 API：https://my-milktea.com/api/skill
+  ↓
+在 AgentOS 里填入 URL + 描述功能
+  ↓
+自动变成你的私有 Skill
+  ↓
+跟 AI 说"珍珠奶茶还有多少"→ AI 调你的 API → 返回答案
+```
+
+AI 调用时，AgentOS 会向你的 URL 发送这样的请求：
+
+```json
+POST https://my-milktea.com/api/skill
+
+{
+  "function": "check_inventory",
+  "args": { "product": "珍珠奶茶" }
+}
+```
+
+你的服务器返回结果，AI 就能读懂并回复用户。
+
+### HTTP 技能是按用户隔离的
+
+你注册的 HTTP 技能**只有你自己能看到和使用**，别的用户看不到。这保护了你的业务接口不被他人访问。
+
+### 同一个需求，三种实现方式
+
+以"奶茶店库存查询"为例：
+
+| | 内置 Skill | MCP Server | HTTP Skill |
+|---|---|---|---|
+| **代码写在哪** | AgentOS 源码里 | 独立的工具包 | 你自己的服务器 |
+| **谁来做** | AgentOS 团队 | 任何开发者 | 任何开发者 |
+| **谁能用** | 所有用户 | 所有用户 | 仅注册者自己 |
+| **能跨平台吗** | 仅 AgentOS | Claude/Cursor 等都能用 | 仅 AgentOS |
+| **技术门槛** | 要懂 AgentOS 源码 | 要学 MCP 协议 | 会写 POST 接口就行 |
+| **适合场景** | 天气、翻译等通用能力 | GitHub、数据库等标准工具 | 接入已有的业务系统 |
+
+三种方式最终效果一样——用户跟 AI 说需求，AI 都能给出答案。区别在于谁来做、给谁用、怎么部署。
+
+**HTTP 技能的核心价值是"门槛最低"**——你的奶茶店已经有管理后台了，后台本来就有查库存的 API，不想重写成 MCP 也不想改 AgentOS 源码，直接填个 URL 就接进来了。
+
+---
+
+## 行业对比：各平台怎么做"自定义 API 接入"
+
+"开发者提供 API → 平台自动变成 AI 能力"这种模式是**行业共识**，不是 AgentOS 独创。但各家做法不同：
+
+### ChatGPT — GPT Actions
+
+OpenAI 最早做这个模式。创建自定义 GPT 时可以添加"Actions"——开发者提供一个 OpenAPI Schema（描述 API 的 JSON 文件）和 URL，ChatGPT 就知道怎么调用。
+
+但 GPT Actions **锁死在 ChatGPT 平台**，其他 AI 客户端用不了。
+
+### OpenClaw ClawHub — Skill 里用 fetch
+
+ClawHub 是 OpenClaw 的技能市场（3000+ 技能）。开发者写 JavaScript 代码，在代码里用 `fetch` 调 HTTP 接口。本质也是 HTTP 调用，只是包装在 JS 代码里。
+
+### Coze（字节跳动）— 插件系统
+
+和 ChatGPT 类似，开发者提交 API 接口描述，平台自动集成。锁定在字节生态内。
+
+### Dify — 自定义工具节点
+
+可视化工作流里添加"自定义工具"节点，填 API URL 和参数描述。
+
+### 各平台对比一览
+
+| 平台 | 接入方式 | 锁定在哪 | 开发者门槛 |
+|------|---------|---------|-----------|
+| **ChatGPT** GPT Actions | OpenAPI Schema + URL | 锁定 ChatGPT | 中（要写 OpenAPI JSON） |
+| **Coze** 插件 | API URL + 参数描述 | 锁定字节生态 | 低 |
+| **Dify** 自定义工具 | API URL + 配置 | 锁定 Dify | 低 |
+| **OpenClaw** ClawHub | JS 代码 + fetch | 锁定 OpenClaw | 中（要写 JavaScript） |
+| **AgentOS** HTTP Skill | API URL + 函数描述 | AgentOS | 最低（只需有个 POST 接口） |
+
+### AgentOS 的差异点
+
+1. **门槛最低**：不需要学 OpenAPI Schema，不需要写 JS 代码，只需要有一个能接收 POST 请求的接口
+2. **按用户隔离**：你注册的 Skill 只有你能看到，保护业务数据
+3. **统一管理**：HTTP Skill 和内置 Skill、MCP Skill 在同一个技能库里展示，用户体验一致
+4. **安全防护**：内置 SSRF 防护（禁止访问内网地址）、超时限制、响应大小限制
+
+---
+
+## 一句话总结
+
+| 概念 | 一句话解释 |
+|------|-----------|
+| **MCP** | AI 调用工具的"通信协议"（像 USB 线） |
+| **MCP Server** | 遵循 MCP 协议的"工具包"（像 USB 设备） |
+| **HTTP Skill** | 把你已有的 API 接口接入 AgentOS（像给 App 加个快捷方式） |
+| **SKILL.md** | 纯文本定义的"知识型技能"（像给 AI 一本专业手册） |
+| **Skill** | 用户在 AgentOS 里看到的"技能"（像手机 App） |
+| **Skill 系统** | 管理所有技能的完整框架（像 App Store） |
+
+```
+Skill 的四种来源：
+
+内置代码    → AgentOS 团队自研，质量最高
+MCP 转换    → 接入万级生态，数量最多
+SKILL.md   → 纯文本定义，创建成本最低
+HTTP Skill → 接入已有系统，门槛最低
+
+四种来源，一个商店，统一体验。
+```
+
+---
+
 ## 延伸阅读
 
 - [MCP 官方文档](https://modelcontextprotocol.io/)
 - [MCP 官方 Server 仓库](https://github.com/modelcontextprotocol/servers)
+- [GPT Actions vs MCP 对比](https://fast.io/resources/gpt-actions-vs-mcp/)
+- [ClawHub Skills Marketplace 开发指南](https://www.digitalapplied.com/blog/clawhub-skills-marketplace-developer-guide-2026)
 - [AgentOS Skill 开发指南](./skills-development.md)
 - [AgentOS Skill 使用指南](./skills-guide.md)
