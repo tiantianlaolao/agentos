@@ -70,7 +70,6 @@ function App() {
   const authToken = useAuthStore((s) => s.authToken);
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const bridgeEnabled = useSettingsStore((s) => s.bridgeEnabled);
-  const selfhostedType = useSettingsStore((s) => s.selfhostedType);
   const openclawToken = useSettingsStore((s) => s.openclawToken);
 
   const ws = useWebSocket();
