@@ -48,12 +48,11 @@ router.post('/register', async (req, res) => {
     return;
   }
 
-  // TODO: Re-enable SMS verification after Tencent Cloud approval
-  // const codeValid = verifySmsCode(phone, code);
-  // if (!codeValid) {
-  //   res.json({ ok: false, error: '验证码错误或已过期' });
-  //   return;
-  // }
+  const codeValid = verifySmsCode(phone, code);
+  if (!codeValid) {
+    res.json({ ok: false, error: '验证码错误或已过期' });
+    return;
+  }
 
   const passwordHash = bcrypt.hashSync(password, 10);
   const user = createUser(phone, passwordHash);
