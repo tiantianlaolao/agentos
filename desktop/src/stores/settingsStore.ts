@@ -29,6 +29,10 @@ interface SettingsState {
   copawToken: string;
   copawSubMode: 'hosted' | 'selfhosted';
 
+  // OpenClaw Bridge
+  bridgeEnabled: boolean;
+  bridgeGatewayUrl: string;
+
   // App
   locale: 'zh' | 'en';
 
@@ -51,6 +55,8 @@ interface SettingsState {
   setCopawUrl: (url: string) => void;
   setCopawToken: (token: string) => void;
   setCopawSubMode: (mode: 'hosted' | 'selfhosted') => void;
+  setBridgeEnabled: (enabled: boolean) => void;
+  setBridgeGatewayUrl: (url: string) => void;
   setLocale: (locale: 'zh' | 'en') => void;
   loadSettings: () => void;
   saveSettings: () => void;
@@ -75,6 +81,8 @@ export const useSettingsStore = create<SettingsState>()(
       copawUrl: '',
       copawToken: '',
       copawSubMode: 'hosted',
+      bridgeEnabled: false,
+      bridgeGatewayUrl: 'ws://localhost:18789',
       locale: 'zh',
       settingsLoaded: false,
 
@@ -93,6 +101,8 @@ export const useSettingsStore = create<SettingsState>()(
       setCopawUrl: (url) => set({ copawUrl: url }),
       setCopawToken: (token) => set({ copawToken: token }),
       setCopawSubMode: (mode) => set({ copawSubMode: mode }),
+      setBridgeEnabled: (enabled) => set({ bridgeEnabled: enabled }),
+      setBridgeGatewayUrl: (url) => set({ bridgeGatewayUrl: url }),
       setLocale: (locale) => set({ locale }),
       loadSettings: () => {
         // Persist middleware auto-loads from localStorage on creation.
@@ -124,6 +134,8 @@ export const useSettingsStore = create<SettingsState>()(
         copawUrl: state.copawUrl,
         copawToken: state.copawToken,
         copawSubMode: state.copawSubMode,
+        bridgeEnabled: state.bridgeEnabled,
+        bridgeGatewayUrl: state.bridgeGatewayUrl,
         locale: state.locale,
       }),
       version: 4,

@@ -38,6 +38,16 @@ export enum MessageType {
   DESKTOP_COMMAND = 'desktop.command',
   DESKTOP_RESULT = 'desktop.result',
 
+  // Bridge <-> Server (OpenClaw Bridge protocol)
+  BRIDGE_REGISTER = 'bridge.register',
+  BRIDGE_REGISTERED = 'bridge.registered',
+  BRIDGE_CHAT_REQUEST = 'bridge.chat.request',
+  BRIDGE_CHAT_CHUNK = 'bridge.chat.chunk',
+  BRIDGE_CHAT_DONE = 'bridge.chat.done',
+  BRIDGE_CHAT_ERROR = 'bridge.chat.error',
+  BRIDGE_SKILL_EVENT = 'bridge.skill.event',
+  BRIDGE_STATUS = 'bridge.status',
+
   // Bidirectional
   PING = 'ping',
   PONG = 'pong',
@@ -338,6 +348,86 @@ export interface DesktopResultMessage extends BaseMessage {
   };
 }
 
+// ===== Bridge Messages =====
+
+/** Bridge registers with server, declaring its userId and capabilities */
+export interface BridgeRegisterMessage extends BaseMessage {
+  type: MessageType.BRIDGE_REGISTER;
+  payload: {
+    /** Auth token to identify the user */
+    authToken: string;
+    /** The local OpenClaw Gateway URL the bridge is connected to */
+    gatewayUrl?: string;
+  };
+}
+
+/** Server confirms bridge registration */
+export interface BridgeRegisteredMessage extends BaseMessage {
+  type: MessageType.BRIDGE_REGISTERED;
+  payload: {
+    userId: string;
+    bridgeId: string;
+  };
+}
+
+/** Server asks bridge to send a chat message to local OpenClaw */
+export interface BridgeChatRequestMessage extends BaseMessage {
+  type: MessageType.BRIDGE_CHAT_REQUEST;
+  payload: {
+    conversationId: string;
+    content: string;
+    sessionKey: string;
+  };
+}
+
+/** Bridge streams a text chunk back to server */
+export interface BridgeChatChunkMessage extends BaseMessage {
+  type: MessageType.BRIDGE_CHAT_CHUNK;
+  payload: {
+    conversationId: string;
+    delta: string;
+  };
+}
+
+/** Bridge signals chat completion */
+export interface BridgeChatDoneMessage extends BaseMessage {
+  type: MessageType.BRIDGE_CHAT_DONE;
+  payload: {
+    conversationId: string;
+    fullContent: string;
+  };
+}
+
+/** Bridge signals chat error */
+export interface BridgeChatErrorMessage extends BaseMessage {
+  type: MessageType.BRIDGE_CHAT_ERROR;
+  payload: {
+    conversationId: string;
+    error: string;
+  };
+}
+
+/** Bridge forwards skill/tool events from OpenClaw */
+export interface BridgeSkillEventMessage extends BaseMessage {
+  type: MessageType.BRIDGE_SKILL_EVENT;
+  payload: {
+    conversationId: string;
+    phase: 'start' | 'result' | 'error';
+    skillName: string;
+    data?: Record<string, unknown>;
+    error?: string;
+  };
+}
+
+/** Bridge reports its status (connected/disconnected to local gateway) */
+export interface BridgeStatusMessage extends BaseMessage {
+  type: MessageType.BRIDGE_STATUS;
+  payload: {
+    gatewayConnected: boolean;
+    gatewayUrl?: string;
+  };
+}
+
 // ===== Bidirectional =====
 
 export interface PingMessage extends BaseMessage {
@@ -350,7 +440,7 @@ export interface PongMessage extends BaseMessage {
 
 // ===== Union =====
 
-export type ClientMessage = ConnectMessage | ChatSendMessage | ChatStopMessage | SkillListRequestMessage | SkillToggleMessage | SkillInstallMessage | SkillUninstallMessage | SkillLibraryRequestMessage | SkillConfigGetMessage | SkillConfigSetMessage | DesktopRegisterMessage | DesktopCommandMessage | DesktopResultMessage | PingMessage;
+export type ClientMessage = ConnectMessage | ChatSendMessage | ChatStopMessage | SkillListRequestMessage | SkillToggleMessage | SkillInstallMessage | SkillUninstallMessage | SkillLibraryRequestMessage | SkillConfigGetMessage | SkillConfigSetMessage | DesktopRegisterMessage | DesktopCommandMessage | DesktopResultMessage | BridgeRegisterMessage | BridgeChatChunkMessage | BridgeChatDoneMessage | BridgeChatErrorMessage | BridgeSkillEventMessage | BridgeStatusMessage | PingMessage;
 
 export type ServerMessage =
   | ConnectedMessage
@@ -364,6 +454,9 @@ export type ServerMessage =
   | SkillConfigResponseMessage
   | DesktopCommandMessage
   | DesktopResultMessage
+  | BridgeRegisteredMessage
+  | BridgeChatRequestMessage
+  | BridgeStatusMessage
   | ErrorMessage
   | PongMessage;
 

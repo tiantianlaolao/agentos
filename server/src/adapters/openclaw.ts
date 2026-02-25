@@ -556,6 +556,30 @@ export class OpenClawAdapter implements AgentAdapter {
     }
   }
 
+  async installSkill(manifest: SkillManifest): Promise<void> {
+    try {
+      await this.ensureConnected();
+      await this.request('skills.install', { name: manifest.name });
+      console.log(`[OpenClaw] Skill "${manifest.name}" installed`);
+      this.skillsCache = null; // Invalidate cache
+    } catch (err) {
+      // Gateway may not support skills.install yet — log and continue
+      console.log(`[OpenClaw] installSkill not available: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  async uninstallSkill(skillName: string): Promise<void> {
+    try {
+      await this.ensureConnected();
+      await this.request('skills.uninstall', { name: skillName });
+      console.log(`[OpenClaw] Skill "${skillName}" uninstalled`);
+      this.skillsCache = null; // Invalidate cache
+    } catch (err) {
+      // Gateway may not support skills.uninstall yet — log and continue
+      console.log(`[OpenClaw] uninstallSkill not available: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
   /** Close connections. */
   cleanup(): void {
     this.wsConnected = false;

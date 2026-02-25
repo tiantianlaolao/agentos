@@ -12,6 +12,7 @@ import { useWebSocket } from './hooks/useWebSocket.ts';
 import { useSettingsStore } from './stores/settingsStore.ts';
 import { useAuthStore } from './stores/authStore.ts';
 import { OpenClawDirectClient } from './services/openclawDirect.ts';
+import { OpenClawBridge, type BridgeStatus } from './services/openclawBridge.ts';
 import { getHostedStatus } from './services/hostedApi.ts';
 import {
   getOrCreateSingleConversation,
@@ -50,9 +51,11 @@ function App() {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [quotedText, setQuotedText] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
   const conversationId = useRef(generateId());
   const abortRef = useRef<AbortController | null>(null);
   const openclawClientRef = useRef<OpenClawDirectClient | null>(null);
+  const bridgeRef = useRef<OpenClawBridge | null>(null);
 
   const mode = useSettingsStore((s) => s.mode);
   const builtinSubMode = useSettingsStore((s) => s.builtinSubMode);
@@ -66,6 +69,9 @@ function App() {
   const hostedActivated = useSettingsStore((s) => s.hostedActivated);
   const authToken = useAuthStore((s) => s.authToken);
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const bridgeEnabled = useSettingsStore((s) => s.bridgeEnabled);
+  const bridgeGatewayUrl = useSettingsStore((s) => s.bridgeGatewayUrl);
+  const openclawToken = useSettingsStore((s) => s.openclawToken);
 
   const ws = useWebSocket();
   const phone = useAuthStore((s) => s.phone);
@@ -144,6 +150,48 @@ function App() {
       }
     }).catch(() => { /* ignore network errors */ });
   }, [isLoggedIn, authToken, isAdmin]);
+
+  // OpenClaw Bridge lifecycle: start/stop based on settings
+  useEffect(() => {
+    // Clean up existing bridge
+    if (bridgeRef.current) {
+      bridgeRef.current.stop();
+      bridgeRef.current = null;
+      setBridgeStatus(null);
+    }
+
+    if (!bridgeEnabled || !isLoggedIn || !authToken || !bridgeGatewayUrl) {
+      return;
+    }
+
+    const bridge = new OpenClawBridge(
+      serverUrl,
+      authToken,
+      bridgeGatewayUrl,
+      openclawToken || '',
+    );
+    bridge.onStatusChange = (status) => {
+      setBridgeStatus({ ...status });
+    };
+    bridgeRef.current = bridge;
+
+    bridge.start().catch((err) => {
+      console.error('[Bridge] Failed to start:', err);
+      setBridgeStatus({
+        serverConnected: false,
+        gatewayConnected: false,
+        bridgeId: null,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
+    return () => {
+      bridge.stop();
+      bridgeRef.current = null;
+      setBridgeStatus(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridgeEnabled, isLoggedIn, authToken, bridgeGatewayUrl, serverUrl, openclawToken]);
 
   // Auto-connect for WS modes (builtin, openclaw-hosted, copaw)
   // Watches ws.connected so it auto-reconnects when connection drops
@@ -611,6 +659,7 @@ function App() {
           sessionId={isDirect ? null : ws.sessionId}
           mode={mode}
           error={effectiveError}
+          bridgeStatus={bridgeEnabled && bridgeStatus ? bridgeStatus : null}
         />
       </div>
     </div>

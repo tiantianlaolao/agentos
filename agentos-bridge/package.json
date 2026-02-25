@@ -1,0 +1,29 @@
+{
+  "name": "agentos-bridge",
+  "version": "0.1.0",
+  "description": "Bridge your local OpenClaw Gateway to AgentOS mobile app",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "agentos-bridge": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["agentos", "openclaw", "bridge", "ai", "agent"],
+  "author": "tiantianlaolao",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.19.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

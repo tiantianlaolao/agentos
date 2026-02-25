@@ -17,6 +17,12 @@ import {
   type DesktopRegisterMessage,
   type DesktopCommandMessage,
   type DesktopResultMessage,
+  type BridgeRegisterMessage,
+  type BridgeChatChunkMessage,
+  type BridgeChatDoneMessage,
+  type BridgeChatErrorMessage,
+  type BridgeSkillEventMessage,
+  type BridgeStatusMessage,
 } from '../types/protocol.js';
 import { createProvider } from '../providers/factory.js';
 import type { LLMProvider, ToolCall } from '../providers/base.js';
@@ -101,6 +107,30 @@ const desktopWebSockets = new Map<string, WebSocket>();
 export function getDesktopWebSocket(userId: string): WebSocket | undefined {
   return desktopWebSockets.get(userId);
 }
+
+// ── OpenClaw Bridge WebSocket mapping: userId → bridge ws ──
+const bridgeWebSockets = new Map<string, WebSocket>();
+
+/** Check if a user has an active bridge connection */
+export function hasBridgeOnline(userId: string): boolean {
+  const ws = bridgeWebSockets.get(userId);
+  return ws !== undefined && ws.readyState === WebSocket.OPEN;
+}
+
+/** Get the bridge WebSocket for a user */
+export function getBridgeWebSocket(userId: string): WebSocket | undefined {
+  return bridgeWebSockets.get(userId);
+}
+
+// ── Bridge pending chats: conversationId → { resolve callbacks } ──
+interface PendingBridgeChat {
+  onChunk: (delta: string) => void;
+  onDone: (fullContent: string) => void;
+  onError: (error: string) => void;
+  onSkillEvent: (phase: string, skillName: string, data?: Record<string, unknown>, error?: string) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+const pendingBridgeChats = new Map<string, PendingBridgeChat>();
 
 // ── Desktop pending commands: commandId → { resolve, reject, timer } ──
 interface PendingDesktopCommand {
@@ -329,6 +359,57 @@ export function handleConnection(ws: WebSocket): void {
           break;
         }
 
+        case MessageType.BRIDGE_REGISTER:
+          handleBridgeRegister(ws, message as BridgeRegisterMessage);
+          break;
+
+        case MessageType.BRIDGE_CHAT_CHUNK: {
+          const chunkPayload = (message as BridgeChatChunkMessage).payload;
+          const pendingChunk = pendingBridgeChats.get(chunkPayload.conversationId);
+          if (pendingChunk) {
+            pendingChunk.onChunk(chunkPayload.delta);
+          }
+          break;
+        }
+
+        case MessageType.BRIDGE_CHAT_DONE: {
+          const donePayload = (message as BridgeChatDoneMessage).payload;
+          const pendingDone = pendingBridgeChats.get(donePayload.conversationId);
+          if (pendingDone) {
+            clearTimeout(pendingDone.timer);
+            pendingBridgeChats.delete(donePayload.conversationId);
+            pendingDone.onDone(donePayload.fullContent);
+          }
+          break;
+        }
+
+        case MessageType.BRIDGE_CHAT_ERROR: {
+          const errPayload = (message as BridgeChatErrorMessage).payload;
+          const pendingErr = pendingBridgeChats.get(errPayload.conversationId);
+          if (pendingErr) {
+            clearTimeout(pendingErr.timer);
+            pendingBridgeChats.delete(errPayload.conversationId);
+            pendingErr.onError(errPayload.error);
+          }
+          break;
+        }
+
+        case MessageType.BRIDGE_SKILL_EVENT: {
+          const skillPayload = (message as BridgeSkillEventMessage).payload;
+          const pendingSkill = pendingBridgeChats.get(skillPayload.conversationId);
+          if (pendingSkill) {
+            pendingSkill.onSkillEvent(skillPayload.phase, skillPayload.skillName, skillPayload.data, skillPayload.error);
+          }
+          break;
+        }
+
+        case MessageType.BRIDGE_STATUS: {
+          // Bridge reports its local gateway connection status
+          const statusPayload = (message as BridgeStatusMessage).payload;
+          console.log(`[Bridge] Status update: gatewayConnected=${statusPayload.gatewayConnected}`);
+          break;
+        }
+
         case MessageType.PING:
           send(ws, { id: uuidv4(), type: MessageType.PONG, timestamp: Date.now() });
           break;
@@ -355,6 +436,14 @@ export function handleConnection(ws: WebSocket): void {
 
   ws.on('close', () => {
     clearInterval(pingInterval);
+    // Clean up bridge registration if this was a bridge connection
+    if ((ws as unknown as Record<string, string>).__bridgeUserId) {
+      const bUserId = (ws as unknown as Record<string, string>).__bridgeUserId;
+      if (bridgeWebSockets.get(bUserId) === ws) {
+        bridgeWebSockets.delete(bUserId);
+        console.log(`[Bridge] Bridge disconnected for user ${bUserId}`);
+      }
+    }
     if (session) {
       session.abortController?.abort();
       if (activePushWs === ws) {
@@ -838,6 +927,58 @@ async function handleChatSend(
     }
     llmMessages.push({ role: 'user', content });
 
+    // Bridge routing: if openclaw mode and bridge is available, route through bridge
+    if (session.mode === 'openclaw' && session.userId && hasBridgeOnline(session.userId)) {
+      console.log(`[Chat] Routing through bridge for user ${session.userId}`);
+      const batcher = new ChunkBatcher(ws, conversationId);
+      const sessionKey = `agentos-${session.id}`;
+
+      await new Promise<void>((resolveChat, rejectChat) => {
+        sendChatViaBridge(session.userId!, conversationId, content, sessionKey, {
+          onChunk: (delta) => {
+            if (abortController.signal.aborted) return;
+            fullContent += delta;
+            batcher.add(delta);
+          },
+          onDone: (full) => {
+            fullContent = full;
+            if (!abortController.signal.aborted) batcher.flush();
+            batcher.dispose();
+            resolveChat();
+          },
+          onError: (error) => {
+            batcher.dispose();
+            rejectChat(new Error(error));
+          },
+          onSkillEvent: (phase, skillName, data, error) => {
+            if (phase === 'start') {
+              send(ws, {
+                id: uuidv4(),
+                type: MessageType.SKILL_START,
+                timestamp: Date.now(),
+                payload: { conversationId, skillName, description: `Running ${skillName}...` },
+              });
+            } else if (phase === 'result') {
+              const resultData = data || {};
+              send(ws, {
+                id: uuidv4(),
+                type: MessageType.SKILL_RESULT,
+                timestamp: Date.now(),
+                payload: { conversationId, skillName, success: true, data: resultData },
+              });
+              skillsInvoked.push({ name: skillName, input: {}, output: resultData });
+            } else if (phase === 'error') {
+              send(ws, {
+                id: uuidv4(),
+                type: MessageType.SKILL_RESULT,
+                timestamp: Date.now(),
+                payload: { conversationId, skillName, success: false, error: error || 'Tool error' },
+              });
+            }
+          },
+        });
+      });
+    } else
     // Set up agent adapter session key and tool event forwarding
     if ((session.mode === 'openclaw' || session.mode === 'copaw' || session.isHosted) && session.provider && isAgentAdapter(session.provider)) {
       // CoPaw: stable per-user sessionKey so CoPaw retains conversation context across reconnects
@@ -1275,6 +1416,84 @@ function handleDesktopCommand(ws: WebSocket, session: Session, message: DesktopC
   });
 
   console.log(`[Desktop] Forwarded command "${message.payload.command}" to desktop for user ${userId}`);
+}
+
+// ── Bridge handlers ──
+
+function handleBridgeRegister(ws: WebSocket, message: BridgeRegisterMessage): void {
+  const { authToken } = message.payload;
+
+  // Verify JWT to get userId
+  const decoded = verifyToken(authToken);
+  if (!decoded) {
+    sendError(ws, ErrorCode.AUTH_FAILED, 'Bridge authentication failed');
+    return;
+  }
+
+  const userId = decoded.userId;
+
+  // Register bridge WebSocket
+  bridgeWebSockets.set(userId, ws);
+  // Tag the WS for cleanup on disconnect
+  (ws as unknown as Record<string, string>).__bridgeUserId = userId;
+
+  const bridgeId = uuidv4();
+
+  send(ws, {
+    id: uuidv4(),
+    type: MessageType.BRIDGE_REGISTERED,
+    timestamp: Date.now(),
+    payload: { userId, bridgeId },
+  });
+
+  console.log(`[Bridge] Registered for user ${userId} (phone: ${decoded.phone}), bridgeId=${bridgeId}`);
+}
+
+/**
+ * Send a chat message through the bridge to the user's local OpenClaw Gateway.
+ * Returns a promise that resolves when the full response is received.
+ */
+export function sendChatViaBridge(
+  userId: string,
+  conversationId: string,
+  content: string,
+  sessionKey: string,
+  callbacks: {
+    onChunk: (delta: string) => void;
+    onDone: (fullContent: string) => void;
+    onError: (error: string) => void;
+    onSkillEvent: (phase: string, skillName: string, data?: Record<string, unknown>, error?: string) => void;
+  },
+  timeout = 120000,
+): void {
+  const bridgeWs = bridgeWebSockets.get(userId);
+  if (!bridgeWs || bridgeWs.readyState !== WebSocket.OPEN) {
+    callbacks.onError('Bridge not connected');
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    pendingBridgeChats.delete(conversationId);
+    callbacks.onError('Bridge chat timed out');
+  }, timeout);
+
+  pendingBridgeChats.set(conversationId, {
+    onChunk: callbacks.onChunk,
+    onDone: callbacks.onDone,
+    onError: callbacks.onError,
+    onSkillEvent: callbacks.onSkillEvent,
+    timer,
+  });
+
+  // Send chat request to bridge
+  send(bridgeWs, {
+    id: uuidv4(),
+    type: MessageType.BRIDGE_CHAT_REQUEST,
+    timestamp: Date.now(),
+    payload: { conversationId, content, sessionKey },
+  });
+
+  console.log(`[Bridge] Chat request sent to bridge for user ${userId}, convId=${conversationId}`);
 }
 
 function send(ws: WebSocket, message: ServerMessage): void {

@@ -557,6 +557,49 @@
   color: #f44336;
 }
 
+.status-bridge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.status-bridge::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.status-bridge.bridge-active {
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.status-bridge.bridge-active::before {
+  background: #4caf50;
+}
+
+.status-bridge.bridge-partial {
+  color: #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+}
+
+.status-bridge.bridge-partial::before {
+  background: #ff9800;
+}
+
+.settings-bridge-active {
+  background: #c62828 !important;
+  border-color: #c62828 !important;
+}
+
+.settings-bridge-active:hover {
+  background: #b71c1c !important;
+}
+
 /* ── Conversation History ── */
 
 .conversation-history {

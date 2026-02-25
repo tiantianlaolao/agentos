@@ -559,6 +559,32 @@ export function SettingsPanel({ onClose }: Props) {
           </div>
         )}
 
+        {/* OpenClaw Bridge */}
+        <div className="settings-section">
+          <h3 className="settings-section-title">{t('bridge.title')}</h3>
+          <p className="settings-hosted-note">{t('bridge.description')}</p>
+          <div className="settings-field">
+            <label className="settings-label">{t('bridge.gatewayUrl')}</label>
+            <input
+              className="settings-input"
+              value={store.bridgeGatewayUrl}
+              onChange={(e) => store.setBridgeGatewayUrl(e.target.value)}
+              placeholder={t('bridge.gatewayUrlPlaceholder')}
+            />
+            <span className="settings-hint">{t('bridge.gatewayUrlHint')}</span>
+          </div>
+          {!auth.isLoggedIn ? (
+            <p className="settings-hosted-note">{t('bridge.needLogin')}</p>
+          ) : (
+            <button
+              className={`settings-auth-btn ${store.bridgeEnabled ? 'settings-bridge-active' : ''}`}
+              onClick={() => store.setBridgeEnabled(!store.bridgeEnabled)}
+            >
+              {store.bridgeEnabled ? t('bridge.disable') : t('bridge.enable')}
+            </button>
+          )}
+        </div>
+
         {/* Language */}
         <div className="settings-section">
           <h3 className="settings-section-title">{t('settings.language')}</h3>
