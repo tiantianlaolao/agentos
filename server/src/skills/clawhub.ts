@@ -140,7 +140,7 @@ export async function clawhubExplore(): Promise<ClawHubSkillInfo[]> {
   }
 
   try {
-    const output = await execClawhub(['explore', '--limit', '50']);
+    const output = await execClawhub(['explore', '--limit', '500']);
     _exploreCache = parseSkillList(output);
     _exploreCacheTime = Date.now();
     console.log(`[ClawHub] Explore returned ${_exploreCache.length} skills`);

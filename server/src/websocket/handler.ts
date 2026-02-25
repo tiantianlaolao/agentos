@@ -571,12 +571,19 @@ async function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, s
     try {
       const workdir = getHostedWorkspacePath(session.userId);
       await clawhubInstall(skillName, workdir);
-      // Invalidate adapter cache so next listSkills picks up the new skill
+      // Poll until Gateway hot-reloads the new skill (max 8s)
       if (session.provider.invalidateSkillsCache) {
         session.provider.invalidateSkillsCache();
       }
-      // Wait for Gateway hot-reload
-      await new Promise((r) => setTimeout(r, 1000));
+      const adapter = session.provider;
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
+        if (typeof adapter.listSkills === 'function') {
+          const current = await adapter.listSkills();
+          if (current.some((s) => s.name === skillName)) break;
+        }
+      }
       await handleSkillListRequest(ws, session);
     } catch (err) {
       sendError(ws, ErrorCode.SKILL_ERROR, `安装技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
@@ -617,10 +624,19 @@ async function handleSkillUninstall(ws: WebSocket, message: SkillUninstallMessag
     try {
       const workdir = getHostedWorkspacePath(session.userId);
       await clawhubUninstall(skillName, workdir);
+      // Poll until Gateway removes the skill (max 8s)
       if (session.provider.invalidateSkillsCache) {
         session.provider.invalidateSkillsCache();
       }
-      await new Promise((r) => setTimeout(r, 1000));
+      const adapter = session.provider;
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
+        if (typeof adapter.listSkills === 'function') {
+          const current = await adapter.listSkills();
+          if (!current.some((s) => s.name === skillName)) break;
+        }
+      }
       await handleSkillListRequest(ws, session);
     } catch (err) {
       sendError(ws, ErrorCode.SKILL_ERROR, `卸载技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
