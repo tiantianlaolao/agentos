@@ -64,6 +64,8 @@ export default {
     submit: 'Login',
     register: 'Register',
     skip: 'Skip Login',
+    confirmPassword: 'Confirm Password',
+    passwordMismatch: 'Passwords do not match',
     phoneRequired: 'Please enter your phone number',
     invalidPhone: 'Invalid phone number format',
   },

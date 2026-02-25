@@ -107,6 +107,13 @@ export function SettingsPanel({ onClose }: Props) {
       return;
     }
 
+    const serverUrl = formServerUrl || store.serverUrl;
+    const result = await apiSendCode(authPhone.trim(), serverUrl);
+    if (!result.ok) {
+      setAuthError(result.error || 'Failed to send code');
+      return;
+    }
+
     setAuthCountdown(60);
     const timer = setInterval(() => {
       setAuthCountdown((prev) => {
@@ -117,12 +124,6 @@ export function SettingsPanel({ onClose }: Props) {
         return prev - 1;
       });
     }, 1000);
-
-    const serverUrl = formServerUrl || store.serverUrl;
-    const result = await apiSendCode(authPhone.trim(), serverUrl);
-    if (!result.ok) {
-      setAuthError(result.error || 'Failed to send code');
-    }
   }, [authPhone, formServerUrl, store.serverUrl, t]);
 
   const handleAuth = useCallback(async () => {

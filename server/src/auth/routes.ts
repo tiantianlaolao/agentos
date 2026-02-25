@@ -19,6 +19,12 @@ router.post('/send-code', async (req, res) => {
     return;
   }
 
+  const existing = findUserByPhone(phone);
+  if (existing) {
+    res.json({ ok: false, error: '该手机号已注册' });
+    return;
+  }
+
   const result = await sendVerificationCode(phone);
   if (!result.ok) {
     res.json({ ok: false, error: result.error });

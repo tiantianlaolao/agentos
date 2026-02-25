@@ -64,6 +64,8 @@ export default {
     submit: '登录',
     register: '注册',
     skip: '跳过登录',
+    confirmPassword: '确认密码',
+    passwordMismatch: '两次密码不一致',
     phoneRequired: '请输入手机号',
     invalidPhone: '手机号格式不正确',
   },

@@ -25,6 +25,7 @@ export default function LoginScreen() {
   const [tab, setTab] = useState<TabMode>('login');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -54,18 +55,6 @@ export default function LoginScreen() {
       return;
     }
 
-    setCountdown(60);
-    countdownRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          if (countdownRef.current) clearInterval(countdownRef.current);
-          countdownRef.current = null;
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
     try {
       const res = await fetch(`${baseUrl}/auth/send-code`, {
         method: 'POST',
@@ -73,9 +62,22 @@ export default function LoginScreen() {
         body: JSON.stringify({ phone: phone.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || data.message || 'Failed to send code');
+      if (!data.ok) {
+        setError(data.error || 'Failed to send code');
+        return;
       }
+
+      setCountdown(60);
+      countdownRef.current = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            if (countdownRef.current) clearInterval(countdownRef.current);
+            countdownRef.current = null;
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     } catch {
       setError('Network error');
     }
@@ -89,6 +91,11 @@ export default function LoginScreen() {
     }
     if (!validatePhone(phone.trim())) {
       setError(t('login.invalidPhone'));
+      return;
+    }
+
+    if (tab === 'register' && password !== confirmPassword) {
+      setError(t('login.passwordMismatch'));
       return;
     }
 
@@ -190,6 +197,23 @@ export default function LoginScreen() {
             autoCorrect={false}
           />
         </View>
+
+        {/* Confirm password (register only) */}
+        {tab === 'register' && (
+          <View style={styles.fieldContainer}>
+            <Text style={styles.fieldLabel}>{t('login.confirmPassword')}</Text>
+            <TextInput
+              style={styles.textInput}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="********"
+              placeholderTextColor="#555555"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+        )}
 
         {/* Verification code (register only) */}
         {tab === 'register' && (
