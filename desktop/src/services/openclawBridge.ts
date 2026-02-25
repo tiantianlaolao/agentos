@@ -21,15 +21,6 @@ import {
   type DeviceIdentity,
 } from './deviceIdentity';
 
-// ── Protocol message types (mirrors server/src/types/protocol.ts) ──
-
-interface BaseMessage {
-  id: string;
-  type: string;
-  timestamp: number;
-  payload?: Record<string, unknown>;
-}
-
 // ── Callbacks ──
 
 export type BridgeStatusCallback = (status: BridgeStatus) => void;
