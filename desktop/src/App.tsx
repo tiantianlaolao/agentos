@@ -9,7 +9,7 @@ import { SkillsPanel } from './components/SkillsPanel.tsx';
 import { MemoryPanel } from './components/MemoryPanel.tsx';
 import { ProcessPanel } from './components/ProcessPanel.tsx';
 import { useWebSocket } from './hooks/useWebSocket.ts';
-import { useSettingsStore } from './stores/settingsStore.ts';
+import { useSettingsStore, OPENCLAW_LOCAL_GATEWAY } from './stores/settingsStore.ts';
 import { useAuthStore } from './stores/authStore.ts';
 import { OpenClawDirectClient } from './services/openclawDirect.ts';
 import { OpenClawBridge, type BridgeStatus } from './services/openclawBridge.ts';
@@ -70,7 +70,7 @@ function App() {
   const authToken = useAuthStore((s) => s.authToken);
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const bridgeEnabled = useSettingsStore((s) => s.bridgeEnabled);
-  const bridgeGatewayUrl = useSettingsStore((s) => s.bridgeGatewayUrl);
+  const selfhostedType = useSettingsStore((s) => s.selfhostedType);
   const openclawToken = useSettingsStore((s) => s.openclawToken);
 
   const ws = useWebSocket();
@@ -160,14 +160,14 @@ function App() {
       setBridgeStatus(null);
     }
 
-    if (!bridgeEnabled || !isLoggedIn || !authToken || !bridgeGatewayUrl) {
+    if (!bridgeEnabled || !isLoggedIn || !authToken) {
       return;
     }
 
     const bridge = new OpenClawBridge(
       serverUrl,
       authToken,
-      bridgeGatewayUrl,
+      OPENCLAW_LOCAL_GATEWAY,
       openclawToken || '',
     );
     bridge.onStatusChange = (status) => {
@@ -191,7 +191,7 @@ function App() {
       setBridgeStatus(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridgeEnabled, isLoggedIn, authToken, bridgeGatewayUrl, serverUrl, openclawToken]);
+  }, [bridgeEnabled, isLoggedIn, authToken, serverUrl, openclawToken]);
 
   // Auto-connect for WS modes (builtin, openclaw-hosted, copaw)
   // Watches ws.connected so it auto-reconnects when connection drops
@@ -228,13 +228,14 @@ function App() {
   }, [mode, userId]);
 
   const getOrCreateOpenClawClient = useCallback(() => {
-    const { openclawUrl, openclawToken } = useSettingsStore.getState();
-    if (!openclawUrl) {
+    const { openclawUrl, openclawToken, selfhostedType: shType } = useSettingsStore.getState();
+    const url = shType === 'local' ? OPENCLAW_LOCAL_GATEWAY : openclawUrl;
+    if (!url) {
       setOpenclawError('OpenClaw URL not configured. Set it in Settings.');
       return null;
     }
     if (openclawClientRef.current) return openclawClientRef.current;
-    const client = new OpenClawDirectClient(openclawUrl, openclawToken);
+    const client = new OpenClawDirectClient(url, openclawToken);
     client.onConnectionChange = (connected) => {
       setOpenclawConnected(connected);
       if (!connected) setOpenclawError(null);

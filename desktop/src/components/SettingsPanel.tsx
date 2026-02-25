@@ -56,6 +56,7 @@ export function SettingsPanel({ onClose }: Props) {
   const [formOpenclawUrl, setFormOpenclawUrl] = useState(store.openclawUrl);
   const [formOpenclawToken, setFormOpenclawToken] = useState(store.openclawToken);
   const [formOpenclawSubMode, setFormOpenclawSubMode] = useState(store.openclawSubMode);
+  const [formSelfhostedType, setFormSelfhostedType] = useState(store.selfhostedType);
   const [formCopawUrl, setFormCopawUrl] = useState(store.copawUrl);
   const [formCopawToken, setFormCopawToken] = useState(store.copawToken);
   const [formCopawSubMode, setFormCopawSubMode] = useState(store.copawSubMode);
@@ -88,6 +89,7 @@ export function SettingsPanel({ onClose }: Props) {
     store.setOpenclawUrl(formOpenclawUrl);
     store.setOpenclawToken(formOpenclawToken);
     store.setOpenclawSubMode(formOpenclawSubMode);
+    store.setSelfhostedType(formSelfhostedType);
     store.setCopawUrl(formCopawUrl);
     store.setCopawToken(formCopawToken);
     store.setCopawSubMode(formCopawSubMode);
@@ -97,7 +99,7 @@ export function SettingsPanel({ onClose }: Props) {
   }, [
     store, formMode, formBuiltinSubMode, formProvider, formApiKey, formServerUrl,
     formSelectedModel, formOpenclawUrl, formOpenclawToken,
-    formOpenclawSubMode, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,
+    formOpenclawSubMode, formSelfhostedType, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,
   ]);
 
   const handleSendCode = useCallback(async () => {
@@ -437,27 +439,75 @@ export function SettingsPanel({ onClose }: Props) {
             </div>
             {formOpenclawSubMode === 'selfhosted' && (
               <>
-                <div className="settings-field">
-                  <label className="settings-label">{t('settings.openclawUrl')}</label>
-                  <input
-                    className="settings-input"
-                    value={formOpenclawUrl}
-                    onChange={(e) => setFormOpenclawUrl(e.target.value)}
-                    placeholder={t('settings.openclawUrlPlaceholder')}
-                  />
-                  <span className="settings-hint">{t('settings.openclawUrlHint')}</span>
+                <div className="settings-submode-row" style={{ marginTop: '8px' }}>
+                  <button
+                    className={`settings-submode-btn ${formSelfhostedType === 'remote' ? 'active' : ''}`}
+                    onClick={() => setFormSelfhostedType('remote')}
+                  >
+                    {t('settings.selfhostedRemote')}
+                  </button>
+                  <button
+                    className={`settings-submode-btn ${formSelfhostedType === 'local' ? 'active' : ''}`}
+                    onClick={() => setFormSelfhostedType('local')}
+                  >
+                    {t('settings.selfhostedLocal')}
+                  </button>
                 </div>
-                <div className="settings-field">
-                  <label className="settings-label">{t('settings.accessToken')}</label>
-                  <input
-                    className="settings-input"
-                    type="password"
-                    value={formOpenclawToken}
-                    onChange={(e) => setFormOpenclawToken(e.target.value)}
-                    placeholder={t('settings.accessTokenPlaceholder')}
-                  />
-                  <span className="settings-hint">{t('settings.openclawTokenHint')}</span>
-                </div>
+                {formSelfhostedType === 'remote' && (
+                  <>
+                    <span className="settings-hint">{t('settings.remoteHint')}</span>
+                    <div className="settings-field">
+                      <label className="settings-label">{t('settings.openclawUrl')}</label>
+                      <input
+                        className="settings-input"
+                        value={formOpenclawUrl}
+                        onChange={(e) => setFormOpenclawUrl(e.target.value)}
+                        placeholder={t('settings.openclawUrlPlaceholder')}
+                      />
+                      <span className="settings-hint">{t('settings.openclawUrlHint')}</span>
+                    </div>
+                    <div className="settings-field">
+                      <label className="settings-label">{t('settings.accessToken')}</label>
+                      <input
+                        className="settings-input"
+                        type="password"
+                        value={formOpenclawToken}
+                        onChange={(e) => setFormOpenclawToken(e.target.value)}
+                        placeholder={t('settings.accessTokenPlaceholder')}
+                      />
+                      <span className="settings-hint">{t('settings.openclawTokenHint')}</span>
+                    </div>
+                  </>
+                )}
+                {formSelfhostedType === 'local' && (
+                  <>
+                    <span className="settings-hint">{t('settings.localHint')}</span>
+                    <div className="settings-field">
+                      <label className="settings-label">{t('settings.accessToken')}</label>
+                      <input
+                        className="settings-input"
+                        type="password"
+                        value={formOpenclawToken}
+                        onChange={(e) => setFormOpenclawToken(e.target.value)}
+                        placeholder={t('settings.accessTokenPlaceholder')}
+                      />
+                      <span className="settings-hint">{t('settings.openclawTokenHint')}</span>
+                    </div>
+                    {!auth.isLoggedIn ? (
+                      <p className="settings-hosted-note">{t('bridge.needLogin')}</p>
+                    ) : (
+                      <>
+                        <button
+                          className={`settings-auth-btn ${store.bridgeEnabled ? 'settings-bridge-active' : ''}`}
+                          onClick={() => store.setBridgeEnabled(!store.bridgeEnabled)}
+                        >
+                          {store.bridgeEnabled ? t('bridge.disable') : t('bridge.enable')}
+                        </button>
+                        <span className="settings-hint">{t('settings.localBridgeHint')}</span>
+                      </>
+                    )}
+                  </>
+                )}
               </>
             )}
             {formOpenclawSubMode === 'hosted' && (
@@ -558,32 +608,6 @@ export function SettingsPanel({ onClose }: Props) {
             )}
           </div>
         )}
-
-        {/* OpenClaw Bridge */}
-        <div className="settings-section">
-          <h3 className="settings-section-title">{t('bridge.title')}</h3>
-          <p className="settings-hosted-note">{t('bridge.description')}</p>
-          <div className="settings-field">
-            <label className="settings-label">{t('bridge.gatewayUrl')}</label>
-            <input
-              className="settings-input"
-              value={store.bridgeGatewayUrl}
-              onChange={(e) => store.setBridgeGatewayUrl(e.target.value)}
-              placeholder={t('bridge.gatewayUrlPlaceholder')}
-            />
-            <span className="settings-hint">{t('bridge.gatewayUrlHint')}</span>
-          </div>
-          {!auth.isLoggedIn ? (
-            <p className="settings-hosted-note">{t('bridge.needLogin')}</p>
-          ) : (
-            <button
-              className={`settings-auth-btn ${store.bridgeEnabled ? 'settings-bridge-active' : ''}`}
-              onClick={() => store.setBridgeEnabled(!store.bridgeEnabled)}
-            >
-              {store.bridgeEnabled ? t('bridge.disable') : t('bridge.enable')}
-            </button>
-          )}
-        </div>
 
         {/* Language */}
         <div className="settings-section">

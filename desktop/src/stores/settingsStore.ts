@@ -2,9 +2,13 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AgentMode } from '../types/index.ts';
 
+export const OPENCLAW_LOCAL_GATEWAY = 'ws://localhost:18789';
+
 type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
 
 type BuiltinSubMode = 'free' | 'byok';
+
+type SelfhostedType = 'remote' | 'local';
 
 interface SettingsState {
   // Connection
@@ -19,6 +23,7 @@ interface SettingsState {
   openclawUrl: string;
   openclawToken: string;
   openclawSubMode: 'hosted' | 'selfhosted';
+  selfhostedType: SelfhostedType;
   hostedActivated: boolean;
   hostedQuotaUsed: number;
   hostedQuotaTotal: number;
@@ -31,7 +36,6 @@ interface SettingsState {
 
   // OpenClaw Bridge
   bridgeEnabled: boolean;
-  bridgeGatewayUrl: string;
 
   // App
   locale: 'zh' | 'en';
@@ -49,6 +53,7 @@ interface SettingsState {
   setOpenclawUrl: (url: string) => void;
   setOpenclawToken: (token: string) => void;
   setOpenclawSubMode: (mode: 'hosted' | 'selfhosted') => void;
+  setSelfhostedType: (type: SelfhostedType) => void;
   setHostedActivated: (v: boolean) => void;
   setHostedQuota: (used: number, total: number) => void;
   setHostedInstanceStatus: (status: string) => void;
@@ -56,7 +61,6 @@ interface SettingsState {
   setCopawToken: (token: string) => void;
   setCopawSubMode: (mode: 'hosted' | 'selfhosted') => void;
   setBridgeEnabled: (enabled: boolean) => void;
-  setBridgeGatewayUrl: (url: string) => void;
   setLocale: (locale: 'zh' | 'en') => void;
   loadSettings: () => void;
   saveSettings: () => void;
@@ -74,6 +78,7 @@ export const useSettingsStore = create<SettingsState>()(
       openclawUrl: '',
       openclawToken: '',
       openclawSubMode: 'hosted',
+      selfhostedType: 'remote',
       hostedActivated: false,
       hostedQuotaUsed: 0,
       hostedQuotaTotal: 0,
@@ -82,7 +87,6 @@ export const useSettingsStore = create<SettingsState>()(
       copawToken: '',
       copawSubMode: 'hosted',
       bridgeEnabled: false,
-      bridgeGatewayUrl: 'ws://localhost:18789',
       locale: 'zh',
       settingsLoaded: false,
 
@@ -95,6 +99,7 @@ export const useSettingsStore = create<SettingsState>()(
       setOpenclawUrl: (url) => set({ openclawUrl: url }),
       setOpenclawToken: (token) => set({ openclawToken: token }),
       setOpenclawSubMode: (mode) => set({ openclawSubMode: mode }),
+      setSelfhostedType: (type) => set({ selfhostedType: type }),
       setHostedActivated: (v) => set({ hostedActivated: v }),
       setHostedQuota: (used, total) => set({ hostedQuotaUsed: used, hostedQuotaTotal: total }),
       setHostedInstanceStatus: (status) => set({ hostedInstanceStatus: status }),
@@ -102,7 +107,6 @@ export const useSettingsStore = create<SettingsState>()(
       setCopawToken: (token) => set({ copawToken: token }),
       setCopawSubMode: (mode) => set({ copawSubMode: mode }),
       setBridgeEnabled: (enabled) => set({ bridgeEnabled: enabled }),
-      setBridgeGatewayUrl: (url) => set({ bridgeGatewayUrl: url }),
       setLocale: (locale) => set({ locale }),
       loadSettings: () => {
         // Persist middleware auto-loads from localStorage on creation.
@@ -127,6 +131,7 @@ export const useSettingsStore = create<SettingsState>()(
         openclawUrl: state.openclawUrl,
         openclawToken: state.openclawToken,
         openclawSubMode: state.openclawSubMode,
+        selfhostedType: state.selfhostedType,
         hostedActivated: state.hostedActivated,
         hostedQuotaUsed: state.hostedQuotaUsed,
         hostedQuotaTotal: state.hostedQuotaTotal,
@@ -135,10 +140,9 @@ export const useSettingsStore = create<SettingsState>()(
         copawToken: state.copawToken,
         copawSubMode: state.copawSubMode,
         bridgeEnabled: state.bridgeEnabled,
-        bridgeGatewayUrl: state.bridgeGatewayUrl,
         locale: state.locale,
       }),
-      version: 4,
+      version: 5,
       migrate: (persisted: unknown) => {
         const state = (persisted || {}) as Record<string, unknown>;
         // v1→v3: if selfhosted was set but no URL configured, reset to hosted
@@ -153,6 +157,11 @@ export const useSettingsStore = create<SettingsState>()(
         if (!state.builtinSubMode) {
           state.builtinSubMode = 'free';
         }
+        // v4→v5: add selfhostedType, remove bridgeGatewayUrl
+        if (!state.selfhostedType) {
+          state.selfhostedType = 'remote';
+        }
+        delete state.bridgeGatewayUrl;
         return state;
       },
       onRehydrateStorage: () => {
