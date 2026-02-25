@@ -49,6 +49,7 @@ import {
   clawhubInstall,
   clawhubUninstall,
   getHostedWorkspacePath,
+  resolveSkillSlug,
 } from '../skills/clawhub.js';
 
 interface Session {
@@ -572,6 +573,19 @@ async function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, s
       const account = getHostedAccount(session.userId);
       const workdir = await getHostedWorkspacePath(session.userId, account?.port);
       await clawhubInstall(skillName, workdir);
+      // Read the installed skill's display name from its SKILL.md
+      let installedDisplayName = skillName;
+      try {
+        const { readFile: rf } = await import('node:fs/promises');
+        const { join } = await import('node:path');
+        for (const fn of ['skill.yaml', 'SKILL.md']) {
+          try {
+            const raw = await rf(join(workdir, 'skills', skillName, fn), 'utf-8');
+            const m = raw.match(/^name:\s*(.+)$/m);
+            if (m) { installedDisplayName = m[1].trim(); break; }
+          } catch { /* try next */ }
+        }
+      } catch { /* keep slug as fallback */ }
       // Brief wait for Gateway hot-reload, then return list with optimistic inject
       const adapter = session.provider;
       if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
@@ -596,10 +610,11 @@ async function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, s
         };
       });
       // Optimistic inject: if Gateway hasn't picked up the new skill yet, add it
-      if (!skills.some((s) => s.name === skillName)) {
-        console.log(`[ClawHub] Gateway hasn't reloaded "${skillName}" yet, injecting optimistically`);
+      // Match by both slug and display name since Gateway uses display name
+      if (!skills.some((s) => s.name === skillName || s.name === installedDisplayName)) {
+        console.log(`[ClawHub] Gateway hasn't reloaded "${skillName}" (display: "${installedDisplayName}") yet, injecting optimistically`);
         skills.push({
-          name: skillName,
+          name: installedDisplayName,
           version: '1.0.0',
           description: '',
           author: 'ClawHub',
@@ -657,7 +672,9 @@ async function handleSkillUninstall(ws: WebSocket, message: SkillUninstallMessag
     try {
       const account = getHostedAccount(session.userId);
       const workdir = await getHostedWorkspacePath(session.userId, account?.port);
-      await clawhubUninstall(skillName, workdir);
+      // Resolve display name (e.g. "DOCX") → directory slug (e.g. "word-docx")
+      const slug = await resolveSkillSlug(skillName, workdir);
+      await clawhubUninstall(slug, workdir);
       // Brief wait, then return list with optimistic removal
       const adapter = session.provider;
       if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
@@ -728,18 +745,16 @@ async function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryReq
         ? await clawhubSearch(opts.search)
         : await clawhubExplore();
 
-      // Get currently installed skills to mark installed status
-      const installedSkills = typeof session.provider.listSkills === 'function'
-        ? await session.provider.listSkills()
-        : [];
-      const installedWorkspaceNames = new Set(
-        installedSkills
-          .filter((s) => {
-            const extra = s as unknown as Record<string, unknown>;
-            return extra.source === 'openclaw-workspace';
-          })
-          .map((s) => s.name),
-      );
+      // Get installed skill directory names (slugs) from workspace filesystem
+      const account = getHostedAccount(session.userId!);
+      const workdir = await getHostedWorkspacePath(session.userId!, account?.port);
+      let installedSlugs = new Set<string>();
+      try {
+        const { readdir: rd } = await import('node:fs/promises');
+        const { join } = await import('node:path');
+        const entries = await rd(join(workdir, 'skills'), { withFileTypes: true });
+        installedSlugs = new Set(entries.filter((e) => e.isDirectory()).map((e) => e.name));
+      } catch { /* skills dir may not exist */ }
 
       const skills = hubSkills.map((h) => ({
         name: h.slug || h.name,
@@ -753,7 +768,7 @@ async function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryReq
         audit: 'ecosystem',
         auditSource: 'ClawHub',
         visibility: 'public',
-        installed: installedWorkspaceNames.has(h.slug || h.name),
+        installed: installedSlugs.has(h.slug || h.name),
         isDefault: false,
         installCount: 0,
         featured: false,

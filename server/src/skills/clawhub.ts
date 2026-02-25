@@ -129,6 +129,56 @@ function parseSkillList(output: string): ClawHubSkillInfo[] {
   return skills;
 }
 
+// ── Name → Slug resolution ──
+
+/**
+ * Scan workspace/skills/ to build a displayName → dirName mapping.
+ * Gateway returns the SKILL.md `name` field (e.g. "DOCX", "Inspiration"),
+ * but clawhub install/uninstall and the filesystem use the directory slug
+ * (e.g. "word-docx", "inspiration").
+ */
+export async function resolveSkillSlug(displayName: string, workdir: string): Promise<string> {
+  // If it already looks like a valid slug, check if directory exists first
+  if (SLUG_RE.test(displayName)) {
+    try {
+      const entries = await readdir(path.join(workdir, 'skills'));
+      if (entries.includes(displayName)) return displayName;
+    } catch { /* fall through */ }
+  }
+
+  // Scan all skill dirs and match by name field in SKILL.md / skill.yaml
+  try {
+    const skillsDir = path.join(workdir, 'skills');
+    const entries = await readdir(skillsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const dirName = entry.name;
+      // Try skill.yaml first, then SKILL.md
+      for (const filename of ['skill.yaml', 'SKILL.md']) {
+        try {
+          const raw = await readFile(path.join(skillsDir, dirName, filename), 'utf-8');
+          // Extract name from YAML frontmatter: "name: <value>"
+          const nameMatch = raw.match(/^name:\s*(.+)$/m);
+          if (nameMatch) {
+            const skillName = nameMatch[1].trim();
+            if (skillName === displayName) {
+              console.log(`[ClawHub] Resolved display name "${displayName}" → slug "${dirName}"`);
+              return dirName;
+            }
+          }
+        } catch { /* file doesn't exist, try next */ }
+      }
+    }
+  } catch {
+    // skills dir doesn't exist
+  }
+
+  // Last resort: lowercase + replace spaces with hyphens
+  const guessed = displayName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  console.log(`[ClawHub] Could not resolve "${displayName}", guessing slug: "${guessed}"`);
+  return guessed;
+}
+
 // ── Public API ──
 
 /**
