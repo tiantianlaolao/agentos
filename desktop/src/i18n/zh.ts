@@ -96,6 +96,9 @@ export default {
     passwordMismatch: '两次密码不一致',
     phoneRequired: '请输入手机号',
     passwordRequired: '请输入密码',
+    verificationCode: '验证码',
+    sendCode: '获取验证码',
+    resendIn: '%{seconds}秒后重发',
   },
   memory: {
     title: '记忆',

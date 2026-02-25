@@ -35,9 +35,28 @@ export async function login(
   }
 }
 
+export async function sendCode(
+  phone: string,
+  serverUrl: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const baseUrl = deriveHttpBaseUrl(serverUrl);
+    const raw = await invoke<string>('http_fetch', {
+      url: `${baseUrl}/auth/send-code`,
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    });
+    const json = JSON.parse(raw);
+    return { ok: !!json.ok, error: json.error };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function register(
   phone: string,
   password: string,
+  code: string,
   serverUrl: string
 ): Promise<AuthResult> {
   try {
@@ -45,7 +64,7 @@ export async function register(
     const raw = await invoke<string>('http_fetch', {
       url: `${baseUrl}/auth/register`,
       method: 'POST',
-      body: JSON.stringify({ phone, password }),
+      body: JSON.stringify({ phone, password, code }),
     });
     const json = JSON.parse(raw);
     if (json.ok && json.data?.token) {

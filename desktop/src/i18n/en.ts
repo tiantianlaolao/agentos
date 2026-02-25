@@ -96,6 +96,9 @@ export default {
     passwordMismatch: 'Passwords do not match',
     phoneRequired: 'Phone number is required',
     passwordRequired: 'Password is required',
+    verificationCode: 'Verification Code',
+    sendCode: 'Send Code',
+    resendIn: 'Resend in %{seconds}s',
   },
   memory: {
     title: 'Memory',

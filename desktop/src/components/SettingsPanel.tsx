@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useSettingsStore } from '../stores/settingsStore.ts';
 import { useAuthStore } from '../stores/authStore.ts';
-import { login as apiLogin, register as apiRegister } from '../services/authApi.ts';
+import { login as apiLogin, register as apiRegister, sendCode as apiSendCode } from '../services/authApi.ts';
 import { activateHostedAccess, getHostedStatus } from '../services/hostedApi.ts';
 import { useTranslation } from '../i18n/index.ts';
 import type { AgentMode } from '../types/index.ts';
@@ -67,6 +67,8 @@ export function SettingsPanel({ onClose }: Props) {
   const [authPhone, setAuthPhone] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [authCode, setAuthCode] = useState('');
+  const [authCountdown, setAuthCountdown] = useState(0);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
@@ -98,6 +100,31 @@ export function SettingsPanel({ onClose }: Props) {
     formOpenclawSubMode, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,
   ]);
 
+  const handleSendCode = useCallback(async () => {
+    setAuthError('');
+    if (!authPhone.trim()) {
+      setAuthError(t('settings.phoneRequired'));
+      return;
+    }
+
+    setAuthCountdown(60);
+    const timer = setInterval(() => {
+      setAuthCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    const serverUrl = formServerUrl || store.serverUrl;
+    const result = await apiSendCode(authPhone.trim(), serverUrl);
+    if (!result.ok) {
+      setAuthError(result.error || 'Failed to send code');
+    }
+  }, [authPhone, formServerUrl, store.serverUrl, t]);
+
   const handleAuth = useCallback(async () => {
     setAuthError('');
     setAuthSuccess('');
@@ -117,8 +144,9 @@ export function SettingsPanel({ onClose }: Props) {
 
     setAuthLoading(true);
     const serverUrl = formServerUrl || store.serverUrl;
-    const fn = authTab === 'login' ? apiLogin : apiRegister;
-    const result = await fn(authPhone, authPassword, serverUrl);
+    const result = authTab === 'login'
+      ? await apiLogin(authPhone, authPassword, serverUrl)
+      : await apiRegister(authPhone, authPassword, authCode, serverUrl);
     setAuthLoading(false);
 
     if (result.ok && result.data) {
@@ -127,11 +155,12 @@ export function SettingsPanel({ onClose }: Props) {
       setAuthPhone('');
       setAuthPassword('');
       setAuthConfirmPassword('');
+      setAuthCode('');
       setTimeout(() => setAuthSuccess(''), 2000);
     } else {
       setAuthError(result.error || 'Unknown error');
     }
-  }, [authTab, authPhone, authPassword, authConfirmPassword, formServerUrl, store.serverUrl, auth, t]);
+  }, [authTab, authPhone, authPassword, authConfirmPassword, authCode, formServerUrl, store.serverUrl, auth, t]);
 
   const handleLogout = useCallback(() => {
     auth.logout();
@@ -235,16 +264,41 @@ export function SettingsPanel({ onClose }: Props) {
                 />
               </div>
               {authTab === 'register' && (
-                <div className="settings-field">
-                  <label className="settings-label">{t('settings.confirmPassword')}</label>
-                  <input
-                    className="settings-input"
-                    type="password"
-                    value={authConfirmPassword}
-                    onChange={(e) => setAuthConfirmPassword(e.target.value)}
-                    placeholder={t('settings.confirmPasswordPlaceholder')}
-                  />
-                </div>
+                <>
+                  <div className="settings-field">
+                    <label className="settings-label">{t('settings.confirmPassword')}</label>
+                    <input
+                      className="settings-input"
+                      type="password"
+                      value={authConfirmPassword}
+                      onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                      placeholder={t('settings.confirmPasswordPlaceholder')}
+                    />
+                  </div>
+                  <div className="settings-field">
+                    <label className="settings-label">{t('settings.verificationCode')}</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        className="settings-input"
+                        style={{ flex: 1 }}
+                        value={authCode}
+                        onChange={(e) => setAuthCode(e.target.value)}
+                        placeholder="123456"
+                        maxLength={6}
+                      />
+                      <button
+                        className="settings-auth-btn"
+                        style={{ whiteSpace: 'nowrap', minWidth: '110px', marginTop: 0 }}
+                        onClick={handleSendCode}
+                        disabled={authCountdown > 0}
+                      >
+                        {authCountdown > 0
+                          ? t('settings.resendIn').replace('%{seconds}', String(authCountdown))
+                          : t('settings.sendCode')}
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
               {authError && <p className="settings-auth-error">{authError}</p>}
               {authSuccess && <p className="settings-auth-success">{authSuccess}</p>}
