@@ -114,8 +114,10 @@ function getCacheKey(mode: AgentMode, openclawSubMode?: string): string {
   return 'builtin';
 }
 
-function canManageSkills(mode: AgentMode): boolean {
-  return mode === 'builtin';
+function canManageSkills(mode: AgentMode, openclawSubMode?: string): boolean {
+  if (mode === 'builtin') return true;
+  if (mode === 'openclaw' && openclawSubMode === 'hosted') return true;
+  return false;
 }
 
 export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken }: Props) {
@@ -129,7 +131,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
   const mode = useSettingsStore((s) => s.mode);
   const openclawSubMode = useSettingsStore((s) => s.openclawSubMode);
   const cacheKey = getCacheKey(mode, openclawSubMode);
-  const manageable = canManageSkills(mode);
+  const manageable = canManageSkills(mode, openclawSubMode);
   const [activeTab, setActiveTab] = useState<TabKey>('installed');
   const [skills, setSkills] = useState<SkillManifestInfo[]>(skillsCache.get(cacheKey) || []);
   const [library, setLibrary] = useState<SkillLibraryItem[]>(libraryCache.get(cacheKey) || []);
@@ -420,21 +422,52 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                           <span className="skill-private-badge">{t('skills.private')}</span>
                         )}
                         <SkillTypeBadge name={skill.name} />
+                        {skill.source === 'openclaw-workspace' && (
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              color: '#fff',
+                              background: '#8b5cf6',
+                              borderRadius: '6px',
+                              padding: '1px 6px',
+                              marginLeft: '4px',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {t('skills.clawhubBadge')}
+                          </span>
+                        )}
                       </div>
-                      {manageable ? (
-                        <button
-                          className="skill-uninstall-btn"
-                          onClick={() => uninstallSkill(skill.name)}
-                        >
-                          {t('skills.uninstall')}
-                        </button>
-                      ) : (
-                        <span
-                          className="skill-status-dot"
-                          style={{ background: skill.enabled ? '#22c55e' : '#666' }}
-                          title={skill.enabled ? 'Active' : 'Inactive'}
-                        />
-                      )}
+                      {(() => {
+                        const canUninstall = mode === 'builtin' || skill.source === 'openclaw-workspace';
+                        if (manageable && canUninstall) {
+                          return (
+                            <button
+                              className="skill-uninstall-btn"
+                              onClick={() => uninstallSkill(skill.name)}
+                            >
+                              {t('skills.uninstall')}
+                            </button>
+                          );
+                        }
+                        if (skill.source === 'openclaw-bundled') {
+                          return (
+                            <span
+                              className="skill-status-dot"
+                              style={{ background: skill.enabled ? '#22c55e' : '#666' }}
+                              title={t('skills.bundledReadonly')}
+                            />
+                          );
+                        }
+                        return (
+                          <span
+                            className="skill-status-dot"
+                            style={{ background: skill.enabled ? '#22c55e' : '#666' }}
+                            title={skill.enabled ? 'Active' : 'Inactive'}
+                          />
+                        );
+                      })()}
                     </div>
 
                     <div className="skill-desc">{loc(skill).desc}</div>
@@ -640,8 +673,8 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
         )}
       </div>
 
-      {/* Add Skill Button */}
-      {manageable && authToken && serverUrl && (
+      {/* Add Skill Button (builtin mode only — hosted OpenClaw installs from Library) */}
+      {mode === 'builtin' && authToken && serverUrl && (
         <div className="skills-register-bar">
           <button className="skills-register-btn" onClick={() => setAddSkillMode('menu')}>
             {t('skills.addSkill')}

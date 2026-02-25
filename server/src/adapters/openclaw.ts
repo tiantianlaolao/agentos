@@ -535,13 +535,14 @@ export class OpenClawAdapter implements AgentAdapter {
         name: s.name,
         version: '1.0.0',
         description: s.description || '',
-        author: s.source || 'OpenClaw',
+        author: 'OpenClaw',
         agents: ['openclaw'],
         environments: ['cloud'],
         permissions: [],
         functions: [],
         audit: 'ecosystem' as const,
         auditSource: 'OpenClaw',
+        source: s.source,
         // Extra metadata for display
         emoji: s.emoji,
         eligible: s.eligible ?? false,
@@ -578,6 +579,12 @@ export class OpenClawAdapter implements AgentAdapter {
       // Gateway may not support skills.uninstall yet — log and continue
       console.log(`[OpenClaw] uninstallSkill not available: ${err instanceof Error ? err.message : err}`);
     }
+  }
+
+  /** Invalidate the skills cache, forcing a re-fetch on next listSkills(). */
+  invalidateSkillsCache(): void {
+    this.skillsCache = null;
+    this.skillsCacheTime = 0;
   }
 
   /** Close connections. */

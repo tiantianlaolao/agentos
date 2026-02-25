@@ -246,6 +246,8 @@ export default {
     confirmImport: '确认导入',
     generatePromptPlaceholder: '描述你想要的技能，例如"一个 React 项目代码审查清单"',
     featured: '精选推荐',
+    clawhubBadge: '社区',
+    bundledReadonly: '内置技能，不可卸载',
   },
   skillDetail: {
     title: '技能详情',

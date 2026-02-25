@@ -43,6 +43,13 @@ import { verifyToken } from '../auth/jwt.js';
 import { getMemory, migrateMemory } from '../memory/store.js';
 import { extractAndUpdateMemory } from '../memory/extractor.js';
 import { getHostedAccount, checkHostedQuota, incrementHostedUsage } from '../auth/hosted.js';
+import {
+  clawhubExplore,
+  clawhubSearch,
+  clawhubInstall,
+  clawhubUninstall,
+  getHostedWorkspacePath,
+} from '../skills/clawhub.js';
 
 interface Session {
   id: string;
@@ -311,15 +318,21 @@ export function handleConnection(ws: WebSocket): void {
           break;
 
         case MessageType.SKILL_INSTALL:
-          handleSkillInstall(ws, message as SkillInstallMessage, session ?? undefined);
+          handleSkillInstall(ws, message as SkillInstallMessage, session ?? undefined).catch((err) => {
+            console.error('[Skills] handleSkillInstall error:', err);
+          });
           break;
 
         case MessageType.SKILL_UNINSTALL:
-          handleSkillUninstall(ws, message as SkillUninstallMessage, session ?? undefined);
+          handleSkillUninstall(ws, message as SkillUninstallMessage, session ?? undefined).catch((err) => {
+            console.error('[Skills] handleSkillUninstall error:', err);
+          });
           break;
 
         case MessageType.SKILL_LIBRARY_REQUEST:
-          handleSkillLibraryRequest(ws, message as SkillLibraryRequestMessage, session ?? undefined);
+          handleSkillLibraryRequest(ws, message as SkillLibraryRequestMessage, session ?? undefined).catch((err) => {
+            console.error('[Skills] handleSkillLibraryRequest error:', err);
+          });
           break;
 
         case MessageType.SKILL_CONFIG_GET:
@@ -487,6 +500,7 @@ async function handleSkillListRequest(ws: WebSocket, session?: Session): Promise
           enabled: extra.disabled !== true,
           emoji: typeof extra.emoji === 'string' ? extra.emoji : undefined,
           eligible: typeof extra.eligible === 'boolean' ? extra.eligible : undefined,
+          source: typeof extra.source === 'string' ? extra.source : undefined,
           functions: (s.functions || []).map((f) => ({
             name: f.name,
             description: f.description,
@@ -545,10 +559,28 @@ function handleSkillToggle(ws: WebSocket, _message: SkillToggleMessage, session?
 }
 
 /** Handle SKILL_INSTALL: install a skill for the current user */
-function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, session?: Session): void {
+async function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, session?: Session): Promise<void> {
   const { skillName } = message.payload;
   if (!session?.userId) {
     sendError(ws, ErrorCode.AUTH_FAILED, '请先登录后再安装技能');
+    return;
+  }
+
+  // Hosted OpenClaw → install via ClawHub CLI
+  if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.type === 'openclaw') {
+    try {
+      const workdir = getHostedWorkspacePath(session.userId);
+      await clawhubInstall(skillName, workdir);
+      // Invalidate adapter cache so next listSkills picks up the new skill
+      if (session.provider.invalidateSkillsCache) {
+        session.provider.invalidateSkillsCache();
+      }
+      // Wait for Gateway hot-reload
+      await new Promise((r) => setTimeout(r, 1000));
+      await handleSkillListRequest(ws, session);
+    } catch (err) {
+      sendError(ws, ErrorCode.SKILL_ERROR, `安装技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
+    }
     return;
   }
 
@@ -573,10 +605,26 @@ function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, session
 }
 
 /** Handle SKILL_UNINSTALL: uninstall a skill for the current user */
-function handleSkillUninstall(ws: WebSocket, message: SkillUninstallMessage, session?: Session): void {
+async function handleSkillUninstall(ws: WebSocket, message: SkillUninstallMessage, session?: Session): Promise<void> {
   const { skillName } = message.payload;
   if (!session?.userId) {
     sendError(ws, ErrorCode.AUTH_FAILED, '请先登录后再卸载技能');
+    return;
+  }
+
+  // Hosted OpenClaw → uninstall via filesystem removal
+  if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.type === 'openclaw') {
+    try {
+      const workdir = getHostedWorkspacePath(session.userId);
+      await clawhubUninstall(skillName, workdir);
+      if (session.provider.invalidateSkillsCache) {
+        session.provider.invalidateSkillsCache();
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+      await handleSkillListRequest(ws, session);
+    } catch (err) {
+      sendError(ws, ErrorCode.SKILL_ERROR, `卸载技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
+    }
     return;
   }
 
@@ -602,8 +650,67 @@ let _catalogCache: { data: import('../skills/userSkills.js').SkillCatalogEntry[]
 const CATALOG_CACHE_TTL = 60_000;
 
 /** Handle SKILL_LIBRARY_REQUEST: return full catalog with installed status */
-function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMessage, session?: Session): void {
+async function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMessage, session?: Session): Promise<void> {
   const opts = message.payload || {};
+
+  // Hosted OpenClaw → query ClawHub marketplace
+  if (session?.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.type === 'openclaw') {
+    try {
+      const hubSkills = opts.search
+        ? await clawhubSearch(opts.search)
+        : await clawhubExplore();
+
+      // Get currently installed skills to mark installed status
+      const installedSkills = typeof session.provider.listSkills === 'function'
+        ? await session.provider.listSkills()
+        : [];
+      const installedWorkspaceNames = new Set(
+        installedSkills
+          .filter((s) => {
+            const extra = s as unknown as Record<string, unknown>;
+            return extra.source === 'openclaw-workspace';
+          })
+          .map((s) => s.name),
+      );
+
+      const skills = hubSkills.map((h) => ({
+        name: h.slug || h.name,
+        version: h.version || '1.0.0',
+        description: h.description || '',
+        author: h.author || 'ClawHub',
+        category: h.category || 'tools',
+        emoji: h.emoji || undefined,
+        environments: ['cloud'] as string[],
+        permissions: [] as string[],
+        audit: 'ecosystem',
+        auditSource: 'ClawHub',
+        visibility: 'public',
+        installed: installedWorkspaceNames.has(h.slug || h.name),
+        isDefault: false,
+        installCount: 0,
+        featured: false,
+        functions: [] as Array<{ name: string; description: string }>,
+        locales: undefined,
+      }));
+
+      send(ws, {
+        id: uuidv4(),
+        type: MessageType.SKILL_LIBRARY_RESPONSE,
+        timestamp: Date.now(),
+        payload: { skills },
+      });
+    } catch (err) {
+      console.error('[Skills] ClawHub library request failed:', err);
+      send(ws, {
+        id: uuidv4(),
+        type: MessageType.SKILL_LIBRARY_RESPONSE,
+        timestamp: Date.now(),
+        payload: { skills: [] },
+      });
+    }
+    return;
+  }
+
   const cacheKey = JSON.stringify(opts);
   let catalog: import('../skills/userSkills.js').SkillCatalogEntry[];
 

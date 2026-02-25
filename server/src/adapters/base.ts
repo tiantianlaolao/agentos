@@ -49,6 +49,9 @@ export interface SkillManifest {
   /** User-configurable fields for this skill (e.g. API keys) */
   config?: SkillConfigField[];
 
+  /** Skill source tag, e.g. 'openclaw-bundled' | 'openclaw-workspace' */
+  source?: string;
+
   /** Skill visibility: 'public' (default) | 'private' (only owner can see/use) */
   visibility?: 'public' | 'private';
   /** Owner identifier (phone number) — required when visibility='private' */
@@ -162,6 +165,9 @@ export interface AgentAdapter {
 
   /** Enable/disable a skill */
   setSkillEnabled?(skillName: string, enabled: boolean): Promise<void>;
+
+  /** Invalidate the adapter's skills cache (forces re-fetch on next listSkills) */
+  invalidateSkillsCache?(): void;
 }
 
 export type AgentType = 'builtin' | 'openclaw' | 'copaw' | 'desktop';

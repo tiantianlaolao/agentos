@@ -50,6 +50,7 @@ export interface SkillManifestInfo {
   visibility?: string;
   emoji?: string;
   eligible?: boolean;
+  source?: string;
   functions: Array<{ name: string; description: string }>;
   locales?: Record<string, { displayName?: string; description?: string; functions?: Record<string, string> }>;
 }
