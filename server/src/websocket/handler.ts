@@ -569,7 +569,8 @@ async function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, s
   // Hosted OpenClaw → install via ClawHub CLI
   if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.type === 'openclaw') {
     try {
-      const workdir = getHostedWorkspacePath(session.userId);
+      const account = getHostedAccount(session.userId);
+      const workdir = await getHostedWorkspacePath(session.userId, account?.port);
       await clawhubInstall(skillName, workdir);
       // Brief wait for Gateway hot-reload, then return list with optimistic inject
       const adapter = session.provider;
@@ -654,7 +655,8 @@ async function handleSkillUninstall(ws: WebSocket, message: SkillUninstallMessag
   // Hosted OpenClaw → uninstall via filesystem removal
   if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.type === 'openclaw') {
     try {
-      const workdir = getHostedWorkspacePath(session.userId);
+      const account = getHostedAccount(session.userId);
+      const workdir = await getHostedWorkspacePath(session.userId, account?.port);
       await clawhubUninstall(skillName, workdir);
       // Brief wait, then return list with optimistic removal
       const adapter = session.provider;

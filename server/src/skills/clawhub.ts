@@ -6,7 +6,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import { rm } from 'node:fs/promises';
+import { readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 // ── Types ──
@@ -174,7 +174,7 @@ export async function clawhubSearch(query: string): Promise<ClawHubSkillInfo[]> 
 export async function clawhubInstall(slug: string, workdir: string): Promise<void> {
   validateSlug(slug);
   console.log(`[ClawHub] Installing "${slug}" into ${workdir}`);
-  await execClawhub(['install', slug, '--workdir', workdir], 60_000);
+  await execClawhub(['install', slug, '--workdir', workdir, '--force', '--no-input'], 60_000);
   console.log(`[ClawHub] Installed "${slug}" successfully`);
 }
 
@@ -196,11 +196,44 @@ export async function clawhubUninstall(slug: string, workdir: string): Promise<v
 }
 
 /**
- * Compute the hosted workspace path for a given userId.
- * Mirrors the logic in auth/hosted.ts provisionHostedInstance().
+ * Resolve the actual hosted workspace path for a given userId.
+ *
+ * The instance directory may have been provisioned with a previous userId prefix.
+ * We find the correct directory by matching the Gateway port from the DB against
+ * each user-xxx/openclaw.json config file.
+ *
+ * Falls back to userId.slice(0,8) convention if no port match is found.
  */
-export function getHostedWorkspacePath(userId: string): string {
+export async function getHostedWorkspacePath(userId: string, port?: number | null): Promise<string> {
   const baseDir = process.env.HOSTED_BASE_DIR || '/opt/openclaw-hosted';
+
+  // If we have a port, scan instance dirs to find the one with matching Gateway port
+  if (port) {
+    try {
+      const entries = await readdir(baseDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.startsWith('user-')) continue;
+        const configPath = path.join(baseDir, entry.name, 'openclaw.json');
+        try {
+          const raw = await readFile(configPath, 'utf-8');
+          const config = JSON.parse(raw);
+          const gwPort = config?.gateway?.port;
+          if (gwPort === port) {
+            const workspace = config?.agents?.defaults?.workspace
+              || path.join(baseDir, entry.name, 'workspace');
+            console.log(`[ClawHub] Resolved workspace for port ${port}: ${workspace}`);
+            return workspace;
+          }
+        } catch {
+          // skip unreadable config files
+        }
+      }
+    } catch {
+      // baseDir doesn't exist or can't be read
+    }
+  }
+
+  // Fallback to convention
   const shortId = userId.slice(0, 8);
   return path.join(baseDir, `user-${shortId}`, 'workspace');
 }
