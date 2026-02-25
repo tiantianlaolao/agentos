@@ -191,6 +191,37 @@ export default function LoginScreen() {
           />
         </View>
 
+        {/* Verification code (register only) */}
+        {tab === 'register' && (
+          <View style={styles.fieldContainer}>
+            <Text style={styles.fieldLabel}>{t('login.code')}</Text>
+            <View style={styles.codeRow}>
+              <TextInput
+                style={[styles.textInput, styles.codeInput]}
+                value={code}
+                onChangeText={setCode}
+                placeholder="123456"
+                placeholderTextColor="#555555"
+                keyboardType="number-pad"
+                maxLength={6}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                style={[styles.codeButton, countdown > 0 && styles.codeButtonDisabled]}
+                onPress={handleSendCode}
+                disabled={countdown > 0}
+              >
+                <Text style={styles.codeButtonText}>
+                  {countdown > 0
+                    ? t('login.resendIn', { seconds: countdown })
+                    : t('login.sendCode')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Error message */}
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
