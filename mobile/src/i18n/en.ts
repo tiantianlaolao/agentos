@@ -232,6 +232,8 @@ export default {
     confirmImport: 'Confirm & Import',
     generatePromptPlaceholder: 'Describe the skill you want, e.g. "A code review checklist for React projects"',
     featured: 'Featured',
+    clawhubBadge: 'Community',
+    bundledReadonly: 'Built-in skill, cannot uninstall',
   },
   skillDetail: {
     title: 'Skill Details',

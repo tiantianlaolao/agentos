@@ -93,16 +93,18 @@ function getCacheKey(mode?: ConnectionMode, openclawSubMode?: string): string {
   return 'builtin';
 }
 
-/** Whether this is a builtin/byok mode where install/uninstall works */
-function canManageSkills(mode?: ConnectionMode): boolean {
-  return !mode || mode === 'builtin';
+/** Whether this mode supports install/uninstall (Library tab visible) */
+function canManageSkills(mode?: ConnectionMode, openclawSubMode?: string): boolean {
+  if (!mode || mode === 'builtin') return true;
+  if (mode === 'openclaw' && openclawSubMode === 'hosted') return true;
+  return false;
 }
 
 export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, openclawClient, serverUrl, authToken }: SkillsPanelProps) {
   const t = useTranslation();
   const locale = useSettingsStore((s) => s.locale);
   const cacheKey = getCacheKey(mode, openclawSubMode);
-  const manageable = canManageSkills(mode);
+  const manageable = canManageSkills(mode, openclawSubMode);
   const [activeTab, setActiveTab] = useState<TabKey>('installed');
   const [skills, setSkills] = useState<SkillManifestInfo[]>(skillsCache.get(cacheKey) || []);
   const [library, setLibrary] = useState<SkillLibraryItem[]>(libraryCache.get(cacheKey) || []);
@@ -367,18 +369,31 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
                 <Text style={styles.typeBadgeText}>{typeBadge.label}</Text>
               </View>
             )}
+            {item.source === 'openclaw-workspace' && (
+              <View style={[styles.typeBadge, { backgroundColor: '#8b5cf6' }]}>
+                <Text style={styles.typeBadgeText}>{t('skills.clawhubBadge')}</Text>
+              </View>
+            )}
           </View>
-          {manageable ? (
-            <TouchableOpacity
-              style={styles.uninstallBtn}
-              onPress={() => uninstallSkill(item.name)}
-            >
-              <Ionicons name="trash-outline" size={16} color="#ef4444" />
-              <Text style={styles.uninstallText}>{t('skills.uninstall')}</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={[styles.statusDot, { backgroundColor: item.enabled ? '#22c55e' : '#666' }]} />
-          )}
+          {(() => {
+            const canUninstall = (!mode || mode === 'builtin') || item.source === 'openclaw-workspace';
+            if (manageable && canUninstall) {
+              return (
+                <TouchableOpacity
+                  style={styles.uninstallBtn}
+                  onPress={() => uninstallSkill(item.name)}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                  <Text style={styles.uninstallText}>{t('skills.uninstall')}</Text>
+                </TouchableOpacity>
+              );
+            }
+            return (
+              <View
+                style={[styles.statusDot, { backgroundColor: item.enabled ? '#22c55e' : '#666' }]}
+              />
+            );
+          })()}
         </View>
 
         <Text style={styles.skillDesc} numberOfLines={2}>{displayDesc}</Text>
@@ -741,8 +756,8 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         )
       )}
 
-      {/* Add Skill Button */}
-      {manageable && authToken && serverUrl && (
+      {/* Add Skill Button (builtin mode only — hosted OpenClaw installs from Library) */}
+      {(!mode || mode === 'builtin') && authToken && serverUrl && (
         <TouchableOpacity
           style={styles.registerSkillBtn}
           onPress={() => setAddSkillMode('menu')}
