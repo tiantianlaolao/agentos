@@ -571,20 +571,52 @@ async function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, s
     try {
       const workdir = getHostedWorkspacePath(session.userId);
       await clawhubInstall(skillName, workdir);
-      // Poll until Gateway hot-reloads the new skill (max 8s)
-      if (session.provider.invalidateSkillsCache) {
-        session.provider.invalidateSkillsCache();
-      }
+      // Brief wait for Gateway hot-reload, then return list with optimistic inject
       const adapter = session.provider;
-      for (let i = 0; i < 8; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
-        if (typeof adapter.listSkills === 'function') {
-          const current = await adapter.listSkills();
-          if (current.some((s) => s.name === skillName)) break;
-        }
+      if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
+      await new Promise((r) => setTimeout(r, 2000));
+      if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
+      const adapterSkills = typeof adapter.listSkills === 'function' ? await adapter.listSkills() : [];
+      const adapterName = adapter.name;
+      const skills = adapterSkills.map((s) => {
+        const extra = s as unknown as Record<string, unknown>;
+        return {
+          name: s.name,
+          version: s.version || '1.0.0',
+          description: s.description || '',
+          author: s.author || adapterName,
+          audit: s.audit || 'ecosystem',
+          auditSource: s.auditSource || adapterName,
+          enabled: extra.disabled !== true,
+          emoji: typeof extra.emoji === 'string' ? extra.emoji : undefined,
+          eligible: typeof extra.eligible === 'boolean' ? extra.eligible : undefined,
+          source: typeof extra.source === 'string' ? extra.source : undefined,
+          functions: (s.functions || []).map((f) => ({ name: f.name, description: f.description })),
+        };
+      });
+      // Optimistic inject: if Gateway hasn't picked up the new skill yet, add it
+      if (!skills.some((s) => s.name === skillName)) {
+        console.log(`[ClawHub] Gateway hasn't reloaded "${skillName}" yet, injecting optimistically`);
+        skills.push({
+          name: skillName,
+          version: '1.0.0',
+          description: '',
+          author: 'ClawHub',
+          audit: 'ecosystem',
+          auditSource: 'ClawHub',
+          enabled: true,
+          emoji: undefined,
+          eligible: undefined,
+          source: 'openclaw-workspace',
+          functions: [],
+        });
       }
-      await handleSkillListRequest(ws, session);
+      send(ws, {
+        id: uuidv4(),
+        type: MessageType.SKILL_LIST_RESPONSE,
+        timestamp: Date.now(),
+        payload: { skills },
+      });
     } catch (err) {
       sendError(ws, ErrorCode.SKILL_ERROR, `安装技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
     }
@@ -624,20 +656,38 @@ async function handleSkillUninstall(ws: WebSocket, message: SkillUninstallMessag
     try {
       const workdir = getHostedWorkspacePath(session.userId);
       await clawhubUninstall(skillName, workdir);
-      // Poll until Gateway removes the skill (max 8s)
-      if (session.provider.invalidateSkillsCache) {
-        session.provider.invalidateSkillsCache();
-      }
+      // Brief wait, then return list with optimistic removal
       const adapter = session.provider;
-      for (let i = 0; i < 8; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
-        if (typeof adapter.listSkills === 'function') {
-          const current = await adapter.listSkills();
-          if (!current.some((s) => s.name === skillName)) break;
-        }
-      }
-      await handleSkillListRequest(ws, session);
+      if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
+      await new Promise((r) => setTimeout(r, 2000));
+      if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
+      const adapterSkills = typeof adapter.listSkills === 'function' ? await adapter.listSkills() : [];
+      const adapterName = adapter.name;
+      // Filter out the uninstalled skill even if Gateway still reports it
+      const skills = adapterSkills
+        .filter((s) => s.name !== skillName)
+        .map((s) => {
+          const extra = s as unknown as Record<string, unknown>;
+          return {
+            name: s.name,
+            version: s.version || '1.0.0',
+            description: s.description || '',
+            author: s.author || adapterName,
+            audit: s.audit || 'ecosystem',
+            auditSource: s.auditSource || adapterName,
+            enabled: extra.disabled !== true,
+            emoji: typeof extra.emoji === 'string' ? extra.emoji : undefined,
+            eligible: typeof extra.eligible === 'boolean' ? extra.eligible : undefined,
+            source: typeof extra.source === 'string' ? extra.source : undefined,
+            functions: (s.functions || []).map((f) => ({ name: f.name, description: f.description })),
+          };
+        });
+      send(ws, {
+        id: uuidv4(),
+        type: MessageType.SKILL_LIST_RESPONSE,
+        timestamp: Date.now(),
+        payload: { skills },
+      });
     } catch (err) {
       sendError(ws, ErrorCode.SKILL_ERROR, `卸载技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
     }
