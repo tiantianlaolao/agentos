@@ -10,12 +10,13 @@ AgentOS 是一个通用 AI Agent 客户端，通过统一界面连接多种 Agen
 
 **多 Agent 支持**
 - **内置助理** —— 零配置 AI 助手（DeepSeek 驱动），支持免费额度或自带 Key（BYOK）两种子模式
-- **OpenClaw** —— 连接托管或自建的 [OpenClaw](https://github.com/nicepkg/openclaw) 实例，完整支持记忆、技能和会话管理
+- **OpenClaw** —— 连接托管或自建的 [OpenClaw](https://github.com/nicepkg/openclaw) 实例，完整支持记忆、技能和会话管理。桌面端 Bridge 模式支持本地 OpenClaw 实例
 - **CoPaw** —— 连接阿里 [AgentScope](https://github.com/modelscope/agentscope) 的 CoPaw Agent（HTTP SSE 协议）
 
 **技能系统**
 - 基于 `SkillManifest` 标准的可扩展技能框架
 - **技能库** —— 按用户浏览、安装和卸载技能
+- **ClawHub 社区市场** —— OpenClaw 托管模式可浏览并安装 200+ 社区技能
 - 10 个内置技能：天气查询、翻译、美股监控、计算器、汇率换算、网页搜索、链接摘要、图片生成、日期时间、Claude Code（远程开发）
 - 27 个 SKILL.md 知识技能：代码审查、React 模式、Git 提交、Linux 运维、数据分析、Remotion 视频制作等
 - **SKILL.md 目录模式** —— 多文件技能，按需加载子文档（如 Remotion 含 34 个主题文档），AI 先读索引再按需加载具体文档，节省 Token
@@ -280,9 +281,9 @@ description_zh: 中文描述
 - [x] 用户自建技能：MCP 服务器、HTTP 技能、AI 生成 SKILL.md、文件导入
 - [x] SKILL.md 目录模式（多文件技能，按需加载子文档）
 - [x] Remotion 视频制作技能（桌面端执行，自动检测依赖）
-- [ ] 托管模式技能管理（OpenClaw/CoPaw）
+- [x] 托管模式技能管理 —— ClawHub 社区市场集成，OpenClaw 用户可浏览、安装、卸载 200+ 社区技能
+- [x] OpenClaw 桌面 Bridge —— 本地 OpenClaw 实例通过桌面端连接，支持远程和本地两种模式
 - [ ] 桌面执行安全加固（确认弹窗、命令白名单）
-- [ ] 技能市场和社区生态
 - [ ] 浏览器自动化技能（Playwright）
 - [ ] 本地大模型支持（Ollama）
 - [ ] 多 Agent 协作

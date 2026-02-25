@@ -10,12 +10,13 @@ AgentOS is a universal AI Agent client that connects to multiple agent backends 
 
 **Multi-Agent Support**
 - **Built-in Agent** — Zero-config AI assistant powered by DeepSeek, with free quota or BYOK (Bring Your Own Key) sub-modes
-- **OpenClaw** — Connect to hosted or self-hosted [OpenClaw](https://github.com/nicepkg/openclaw) instances with full memory, skills, and session management
+- **OpenClaw** — Connect to hosted or self-hosted [OpenClaw](https://github.com/nicepkg/openclaw) instances with full memory, skills, and session management. Desktop Bridge mode for local OpenClaw instances
 - **CoPaw** — Connect to Alibaba's [AgentScope](https://github.com/modelscope/agentscope) CoPaw agents via HTTP SSE
 
 **Skill System**
 - Extensible skill framework with `SkillManifest` standard
 - **Skill Library** — browse, install, and uninstall skills per user
+- **ClawHub Marketplace** — browse and install 200+ community skills from ClawHub for OpenClaw hosted mode
 - 10 built-in skills: Weather, Translation, US Stock Monitor, Calculator, Currency Exchange, Web Search, URL Summary, Image Generation, Date/Time, Claude Code (remote)
 - 27 SKILL.md knowledge skills: Code Review, React Patterns, Git Commit, Linux Admin, Data Analysis, Remotion Video, and more
 - **SKILL.md Directory Mode** — multi-file skills with on-demand sub-document loading (e.g., Remotion with 34 topic docs), AI reads index first then loads specific docs as needed to save tokens
@@ -280,9 +281,9 @@ See [docs/skills-development.md](docs/skills-development.md) for the full develo
 - [x] User-created skills: MCP Server, HTTP Skill, AI-generated SKILL.md, file import
 - [x] SKILL.md directory mode (multi-file skills with on-demand sub-document loading)
 - [x] Remotion video creation skill (desktop-side execution with dependency detection)
-- [ ] Hosted mode skill management (OpenClaw/CoPaw)
+- [x] Hosted mode skill management — ClawHub marketplace integration for OpenClaw (browse, install, uninstall 200+ community skills)
+- [x] OpenClaw Desktop Bridge — local OpenClaw instances connect via desktop app, supporting both remote and local modes
 - [ ] Desktop execution security (confirmation dialogs, command allowlists)
-- [ ] Skill marketplace and community ecosystem
 - [ ] Browser automation skill (Playwright)
 - [ ] Local LLM support (Ollama)
 - [ ] Multi-agent collaboration
