@@ -84,19 +84,46 @@ function parseSkillList(output: string): ClawHubSkillInfo[] {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('-')) continue;
 
-    // Try to extract: slug  description
+    // explore format: "slug  vX.Y.Z  time_ago  description…"
+    // search format:  "slug vX.Y.Z  Display Name  (score)"
     const parts = trimmed.split(/\s{2,}/);
     if (parts.length >= 2) {
-      const slug = parts[0].trim();
-      if (SLUG_RE.test(slug)) {
-        skills.push({
-          name: slug,
-          slug,
-          description: parts.slice(1).join(' ').trim(),
-          author: 'ClawHub',
-          version: '1.0.0',
-        });
+      // First part may be "slug vX.Y.Z" (search) or just "slug" (explore)
+      const firstPart = parts[0].trim();
+      const slugVersionMatch = firstPart.match(/^([a-z0-9][a-z0-9-]*)\s+v(\d+\.\d+\.\d+)$/);
+      let slug: string;
+      let version = '1.0.0';
+
+      if (slugVersionMatch) {
+        // search format: "slug vX.Y.Z"
+        slug = slugVersionMatch[1];
+        version = slugVersionMatch[2];
+      } else if (SLUG_RE.test(firstPart)) {
+        slug = firstPart;
+        // explore format: second part is "vX.Y.Z"
+        const vMatch = parts[1]?.match(/^v(\d+\.\d+\.\d+)$/);
+        if (vMatch) {
+          version = vMatch[1];
+        }
+      } else {
+        continue;
       }
+
+      // Collect description from remaining parts (skip version/time fields)
+      const descParts = parts.slice(1).filter((p) => {
+        if (/^v\d+\.\d+\.\d+$/.test(p)) return false; // version
+        if (/^\d+[smhd] ago$/.test(p) || p === 'just now') return false; // time
+        if (/^\(\d+\.\d+\)$/.test(p)) return false; // score
+        return true;
+      });
+
+      skills.push({
+        name: slug,
+        slug,
+        description: descParts.join(' ').trim(),
+        author: 'ClawHub',
+        version,
+      });
     }
   }
   return skills;
@@ -113,21 +140,15 @@ export async function clawhubExplore(): Promise<ClawHubSkillInfo[]> {
   }
 
   try {
-    const output = await execClawhub(['explore', '--json']);
+    const output = await execClawhub(['explore', '--limit', '50']);
     _exploreCache = parseSkillList(output);
-  } catch {
-    // Fallback without --json
-    try {
-      const output = await execClawhub(['explore']);
-      _exploreCache = parseSkillList(output);
-    } catch (err) {
-      console.error('[ClawHub] explore failed:', err instanceof Error ? err.message : err);
-      return _exploreCache || [];
-    }
+    _exploreCacheTime = Date.now();
+    console.log(`[ClawHub] Explore returned ${_exploreCache.length} skills`);
+  } catch (err) {
+    console.error('[ClawHub] explore failed:', err instanceof Error ? err.message : err);
+    return _exploreCache || [];
   }
 
-  _exploreCacheTime = Date.now();
-  console.log(`[ClawHub] Explore returned ${_exploreCache.length} skills`);
   return _exploreCache;
 }
 
@@ -138,16 +159,11 @@ export async function clawhubSearch(query: string): Promise<ClawHubSkillInfo[]> 
   if (!query.trim()) return clawhubExplore();
 
   try {
-    const output = await execClawhub(['search', query, '--json']);
+    const output = await execClawhub(['search', query, '--limit', '30']);
     return parseSkillList(output);
-  } catch {
-    try {
-      const output = await execClawhub(['search', query]);
-      return parseSkillList(output);
-    } catch (err) {
-      console.error('[ClawHub] search failed:', err instanceof Error ? err.message : err);
-      return [];
-    }
+  } catch (err) {
+    console.error('[ClawHub] search failed:', err instanceof Error ? err.message : err);
+    return [];
   }
 }
 
@@ -168,9 +184,14 @@ export async function clawhubInstall(slug: string, workdir: string): Promise<voi
  */
 export async function clawhubUninstall(slug: string, workdir: string): Promise<void> {
   validateSlug(slug);
-  const skillDir = path.join(workdir, 'skills', slug);
-  console.log(`[ClawHub] Uninstalling "${slug}" from ${skillDir}`);
-  await rm(skillDir, { recursive: true, force: true });
+  console.log(`[ClawHub] Uninstalling "${slug}" from ${workdir}`);
+  try {
+    await execClawhub(['uninstall', slug, '--workdir', workdir], 30_000);
+  } catch {
+    // Fallback: remove directory directly if CLI uninstall fails
+    const skillDir = path.join(workdir, 'skills', slug);
+    await rm(skillDir, { recursive: true, force: true });
+  }
   console.log(`[ClawHub] Uninstalled "${slug}" successfully`);
 }
 
