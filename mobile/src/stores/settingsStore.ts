@@ -59,7 +59,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   apiKey: '',
   openclawUrl: '',
   openclawToken: '',
-  serverUrl: 'ws://150.109.157.27:3100/ws',
+  serverUrl: 'ws://43.154.188.177:3100/ws',
   selectedModel: 'deepseek',
   openclawSubMode: 'hosted',
   hostedActivated: false,
