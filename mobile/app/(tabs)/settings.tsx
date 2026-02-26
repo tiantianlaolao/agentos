@@ -170,9 +170,12 @@ export default function SettingsScreen() {
         if (hostedActivated === 'true') { store.setHostedActivated(true); }
 
         // Always fetch hosted status from server for logged-in users
-        if (authStore.authToken) {
+        // Read token directly from DB (not from Zustand closure) to avoid stale value
+        const dbAuthToken = await getSetting('auth_token');
+        const currentServerUrl = store.serverUrl || 'ws://43.154.188.177:3100/ws';
+        if (dbAuthToken) {
           try {
-            const status = await getHostedStatus(authStore.authToken, store.serverUrl);
+            const status = await getHostedStatus(dbAuthToken, currentServerUrl);
             if (status.activated && status.account) {
               store.setHostedActivated(true);
               store.setHostedQuota(status.account.quotaUsed, status.account.quotaTotal);
