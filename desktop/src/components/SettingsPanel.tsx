@@ -151,7 +151,8 @@ export function SettingsPanel({ onClose }: Props) {
         const httpUrl = formServerUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
         const baseUrl = isDefault ? `${httpUrl}/api/llm-proxy/v1` : undefined;
 
-        await invoke('update_local_openclaw_config', { provider, apiKey, model, baseUrl });
+        const userId = auth.userId || undefined;
+        await invoke('update_local_openclaw_config', { provider, apiKey, model, baseUrl, userId });
         store.setLocalOpenclawProvider(provider);
         store.setLocalOpenclawApiKey(apiKey);
         store.setLocalOpenclawModel(model);
@@ -162,7 +163,7 @@ export function SettingsPanel({ onClose }: Props) {
         if (status?.running) {
           await invoke('stop_local_openclaw');
           await new Promise((r) => setTimeout(r, 1000));
-          await invoke('start_local_openclaw', { port });
+          await invoke('start_local_openclaw', { port, userId });
         }
       } catch (e) {
         console.error('Auto-sync openclaw config failed:', e);
@@ -229,7 +230,16 @@ export function SettingsPanel({ onClose }: Props) {
     setAuthLoading(false);
 
     if (result.ok && result.data) {
+      // Stop any running OpenClaw from previous user before switching
+      try {
+        await invoke('stop_local_openclaw');
+      } catch { /* ignore */ }
       auth.login(result.data.userId, result.data.phone, result.data.token);
+      // Check if new user has local OpenClaw installed
+      try {
+        const installed = await invoke<boolean>('check_local_openclaw_installed', { userId: result.data.userId });
+        store.setLocalOpenclawInstalled(installed);
+      } catch { /* ignore */ }
       setAuthSuccess(authTab === 'login' ? t('settings.loginSuccess') : t('settings.registerSuccess'));
       setAuthPhone('');
       setAuthPassword('');
@@ -241,11 +251,16 @@ export function SettingsPanel({ onClose }: Props) {
     }
   }, [authTab, authPhone, authPassword, authConfirmPassword, authCode, formServerUrl, store.serverUrl, auth, t]);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    // Stop local OpenClaw before logging out (it belongs to current user)
+    try {
+      await invoke('stop_local_openclaw');
+    } catch { /* ignore */ }
     auth.logout();
     store.setHostedActivated(false);
     store.setHostedQuota(0, 0);
     store.setHostedInstanceStatus('');
+    store.setLocalOpenclawInstalled(false);
   }, [auth, store]);
 
   const handleActivate = useCallback(async () => {

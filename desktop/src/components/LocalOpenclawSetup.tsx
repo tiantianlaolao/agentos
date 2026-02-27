@@ -95,6 +95,7 @@ export function LocalOpenclawSetup({ onInstalled }: Props) {
         port: store.localOpenclawPort || 18789,
         registry,
         baseUrl,
+        userId: auth.userId || undefined,
       });
 
       if (!result.success) {
@@ -114,7 +115,7 @@ export function LocalOpenclawSetup({ onInstalled }: Props) {
       // Auto-start
       setPhase('starting');
       try {
-        await invoke('start_local_openclaw', { port: store.localOpenclawPort || 18789 });
+        await invoke('start_local_openclaw', { port: store.localOpenclawPort || 18789, userId: auth.userId || undefined });
       } catch (e) {
         console.warn('Auto-start failed, user can start manually:', e);
       }

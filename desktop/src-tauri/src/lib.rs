@@ -318,10 +318,15 @@ async fn install_openclaw(
     port: Option<u16>,
     registry: Option<String>,
     base_url: Option<String>,
+    user_id: Option<String>,
 ) -> Result<InstallResult, String> {
     let port = port.unwrap_or(18789);
     let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
-    let config_dir = home.join(".agentos").join("openclaw");
+    let config_dir = if let Some(ref uid) = user_id {
+        home.join(".agentos").join("openclaw").join("users").join(uid)
+    } else {
+        home.join(".agentos").join("openclaw")
+    };
     let path = extended_path();
 
     // Step 1: npm install -g openclaw (skip if already installed)
@@ -409,7 +414,7 @@ async fn install_openclaw(
             "openai" => "gpt-4o",
             "anthropic" => "claude-sonnet-4-20250514",
             "gemini" => "gemini-2.5-flash",
-            "moonshot" => "moonshot-v1-auto",
+            "moonshot" => "kimi-k2.5",
             "qwen" => "qwen-max",
             "zhipu" => "glm-4",
             "openrouter" => "auto",
@@ -478,6 +483,7 @@ async fn install_openclaw(
 async fn start_local_openclaw(
     state: tauri::State<'_, AppState>,
     port: Option<u16>,
+    user_id: Option<String>,
 ) -> Result<String, String> {
     let port = port.unwrap_or(18789);
     let mut pm = state.process_manager.lock().await;
@@ -487,7 +493,11 @@ async fn start_local_openclaw(
     }
 
     let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
-    let config_dir = home.join(".agentos").join("openclaw");
+    let config_dir = if let Some(ref uid) = user_id {
+        home.join(".agentos").join("openclaw").join("users").join(uid)
+    } else {
+        home.join(".agentos").join("openclaw")
+    };
     let config_path = config_dir.join("openclaw.json");
     let state_dir = config_dir.join("state");
 
@@ -621,9 +631,14 @@ async fn update_local_openclaw_config(
     api_key: String,
     model: String,
     base_url: Option<String>,
+    user_id: Option<String>,
 ) -> Result<(), String> {
     let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
-    let config_dir = home.join(".agentos").join("openclaw");
+    let config_dir = if let Some(ref uid) = user_id {
+        home.join(".agentos").join("openclaw").join("users").join(uid)
+    } else {
+        home.join(".agentos").join("openclaw")
+    };
     let config_path = config_dir.join("openclaw.json");
     let agent_auth_dir = config_dir.join("state").join("agents").join("main").join("agent");
 
@@ -657,7 +672,7 @@ async fn update_local_openclaw_config(
             "openai" => "gpt-4o",
             "anthropic" => "claude-sonnet-4-20250514",
             "gemini" => "gemini-2.5-flash",
-            "moonshot" => "moonshot-v1-auto",
+            "moonshot" => "kimi-k2.5",
             "qwen" => "qwen-max",
             "zhipu" => "glm-4",
             "openrouter" => "auto",
@@ -713,6 +728,13 @@ async fn update_local_openclaw_config(
     ).map_err(|e| format!("Failed to write auth-profiles: {}", e))?;
 
     Ok(())
+}
+
+#[tauri::command]
+async fn check_local_openclaw_installed(user_id: String) -> Result<bool, String> {
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let config_path = home.join(".agentos").join("openclaw").join("users").join(&user_id).join("openclaw.json");
+    Ok(config_path.exists())
 }
 
 #[tauri::command]
@@ -994,6 +1016,7 @@ pub fn run() {
             stop_local_openclaw,
             get_local_openclaw_status,
             update_local_openclaw_config,
+            check_local_openclaw_installed,
             upgrade_openclaw,
         ])
         .on_window_event(|window, event| {

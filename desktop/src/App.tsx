@@ -148,6 +148,7 @@ function App() {
         apiKey: authToken,
         model: '',
         baseUrl: proxyBaseUrl,
+        userId: useAuthStore.getState().userId || undefined,
       }).catch((err) => {
         console.warn('[App] Failed to update proxy config with new token:', err);
       });
@@ -246,6 +247,16 @@ function App() {
     migrateToSingleConversation();
   }, []);
 
+  // Verify local OpenClaw installation status for current user on mount
+  useEffect(() => {
+    const uid = useAuthStore.getState().userId;
+    if (uid) {
+      invoke<boolean>('check_local_openclaw_installed', { userId: uid }).then((installed) => {
+        useSettingsStore.getState().setLocalOpenclawInstalled(installed);
+      }).catch(() => { /* ignore */ });
+    }
+  }, []);
+
   // Auto-start local OpenClaw on mount if configured
   useEffect(() => {
     const { openclawSubMode: ocSub, deployType: depType, selfhostedType: shType } = useSettingsStore.getState();
@@ -254,7 +265,7 @@ function App() {
       (ocSub === 'selfhosted' && shType === 'local')
     );
     if (shouldAutoStart) {
-      invoke('start_local_openclaw', { port: localOpenclawPort || 18789 })
+      invoke('start_local_openclaw', { port: localOpenclawPort || 18789, userId: useAuthStore.getState().userId || undefined })
         .then((result) => {
           console.log('[App] Auto-started local OpenClaw:', result);
           // Auto-enable bridge if configured

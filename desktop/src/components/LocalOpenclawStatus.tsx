@@ -39,7 +39,7 @@ export function LocalOpenclawStatus() {
   const handleStart = async () => {
     setLoading(true);
     try {
-      await invoke('start_local_openclaw', { port });
+      await invoke('start_local_openclaw', { port, userId: auth.userId || undefined });
       await refreshStatus();
     } catch (e) {
       console.error('Start failed:', e);
@@ -63,7 +63,7 @@ export function LocalOpenclawStatus() {
     try {
       await invoke('stop_local_openclaw');
       await new Promise((r) => setTimeout(r, 1000));
-      await invoke('start_local_openclaw', { port });
+      await invoke('start_local_openclaw', { port, userId: auth.userId || undefined });
       await refreshStatus();
     } catch (e) {
       console.error('Restart failed:', e);
