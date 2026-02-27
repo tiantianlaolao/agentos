@@ -211,7 +211,7 @@ export const useSettingsStore = create<SettingsState>()(
         localOpenclawAutoBridge: state.localOpenclawAutoBridge,
         locale: state.locale,
       }),
-      version: 7,
+      version: 8,
       migrate: (persisted: unknown) => {
         const state = (persisted || {}) as Record<string, unknown>;
         // v1→v3: if selfhosted was set but no URL configured, reset to hosted
