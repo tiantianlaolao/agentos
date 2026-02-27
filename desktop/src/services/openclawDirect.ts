@@ -104,7 +104,8 @@ export class OpenClawDirectClient {
   }
 
   private async _connect(): Promise<void> {
-    const identity = await this.ensureDeviceIdentity();
+    // Only load device identity if no token (device auth fallback)
+    const identity = this.token ? null : await this.ensureDeviceIdentity();
 
     return new Promise((resolve, reject) => {
       if (this.ws) {
@@ -143,42 +144,49 @@ export class OpenClawDirectClient {
             const signedAtMs = Date.now();
             const authToken = this.token || undefined;
 
-            const devicePayload = buildDeviceAuthPayload({
-              deviceId: identity.deviceId,
-              clientId,
-              clientMode,
+            // Build connect params — use token-only auth when token available,
+            // fall back to device identity when no token.
+            const connectParams: Record<string, unknown> = {
+              minProtocol: 3,
+              maxProtocol: 3,
               role,
               scopes,
-              signedAtMs,
-              token: authToken ?? null,
-              nonce,
-            });
-            const signature = signDevicePayload(identity.secretKey, devicePayload);
+              auth: authToken ? { token: authToken } : {},
+              client: {
+                id: clientId,
+                platform: 'desktop',
+                mode: clientMode,
+                version: '0.1.0',
+              },
+            };
+
+            // Only include device identity if no token (selfhosted without token)
+            if (!authToken && identity) {
+              const devicePayload = buildDeviceAuthPayload({
+                deviceId: identity.deviceId,
+                clientId,
+                clientMode,
+                role,
+                scopes,
+                signedAtMs,
+                token: null,
+                nonce,
+              });
+              const signature = signDevicePayload(identity.secretKey, devicePayload);
+              connectParams.device = {
+                id: identity.deviceId,
+                publicKey: getPublicKeyBase64Url(identity),
+                signature,
+                signedAt: signedAtMs,
+                nonce,
+              };
+            }
 
             ws.send(JSON.stringify({
               type: 'req',
               id: crypto.randomUUID(),
               method: 'connect',
-              params: {
-                minProtocol: 3,
-                maxProtocol: 3,
-                role,
-                scopes,
-                auth: authToken ? { token: authToken } : {},
-                client: {
-                  id: clientId,
-                  platform: 'desktop',
-                  mode: clientMode,
-                  version: '0.1.0',
-                },
-                device: {
-                  id: identity.deviceId,
-                  publicKey: getPublicKeyBase64Url(identity),
-                  signature,
-                  signedAt: signedAtMs,
-                  nonce,
-                },
-              },
+              params: connectParams,
             }));
             return;
           }

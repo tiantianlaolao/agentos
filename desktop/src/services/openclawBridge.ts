@@ -269,8 +269,6 @@ export class OpenClawBridge {
   // ════════════════════════════════════════════════
 
   private async connectToGateway(): Promise<void> {
-    const identity = await this.ensureDeviceIdentity();
-
     return new Promise((resolve, reject) => {
       if (this.gatewayWs) {
         try { this.gatewayWs.close(); } catch { /* ignore */ }
@@ -300,26 +298,11 @@ export class OpenClawBridge {
           const payload = (msg.payload || {}) as Record<string, unknown>;
 
           if (eventName === 'connect.challenge') {
-            const nonce = typeof payload.nonce === 'string' ? payload.nonce : undefined;
             const role = 'operator';
             const scopes = ['operator.admin', 'operator.write'];
-            const clientId = 'agentos-bridge';
-            const clientMode = 'backend';
-            const signedAtMs = Date.now();
             const authToken = this.gatewayToken || undefined;
 
-            const devicePayload = buildDeviceAuthPayload({
-              deviceId: identity.deviceId,
-              clientId,
-              clientMode,
-              role,
-              scopes,
-              signedAtMs,
-              token: authToken ?? null,
-              nonce,
-            });
-            const signature = signDevicePayload(identity.secretKey, devicePayload);
-
+            // Use token-only auth (no device identity) — gateway accepts this
             ws.send(JSON.stringify({
               type: 'req',
               id: crypto.randomUUID(),
@@ -331,17 +314,10 @@ export class OpenClawBridge {
                 scopes,
                 auth: authToken ? { token: authToken } : {},
                 client: {
-                  id: clientId,
+                  id: 'gateway-client',
                   platform: 'desktop',
-                  mode: clientMode,
+                  mode: 'backend',
                   version: '0.1.0',
-                },
-                device: {
-                  id: identity.deviceId,
-                  publicKey: getPublicKeyBase64Url(identity),
-                  signature,
-                  signedAt: signedAtMs,
-                  nonce,
                 },
               },
             }));
