@@ -541,8 +541,28 @@ async fn start_local_openclaw(
 async fn stop_local_openclaw(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    // First try to kill via process manager (app-managed process)
     let mut pm = state.process_manager.lock().await;
-    pm.kill(OPENCLAW_PROCESS_NAME).map_err(|e| e.to_string())
+    let _ = pm.kill(OPENCLAW_PROCESS_NAME);
+    drop(pm);
+
+    // Also find and kill any process listening on port 18789 (handles
+    // externally-started gateway processes not tracked by process manager)
+    if let Ok(output) = std::process::Command::new("lsof")
+        .args(&["-ti", ":18789"])
+        .output()
+    {
+        let pids = String::from_utf8_lossy(&output.stdout);
+        for pid_str in pids.split_whitespace() {
+            if let Ok(_pid) = pid_str.parse::<u32>() {
+                let _ = std::process::Command::new("kill")
+                    .arg(pid_str.trim())
+                    .output();
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -560,12 +580,28 @@ async fn get_local_openclaw_status(
 ) -> Result<LocalOpenclawStatus, String> {
     let port = port.unwrap_or(18789);
     let pm = state.process_manager.lock().await;
-    let running = pm.is_running(OPENCLAW_PROCESS_NAME);
-    let pid = if running {
+    let mut running = pm.is_running(OPENCLAW_PROCESS_NAME);
+    let mut pid = if running {
         pm.list().into_iter().find(|(n, _)| n == OPENCLAW_PROCESS_NAME).and_then(|(_, info)| info.1)
     } else {
         None
     };
+
+    // Also check if any process is listening on the port (catches externally-started gateways)
+    if !running {
+        if let Ok(output) = std::process::Command::new("lsof")
+            .args(&["-ti", &format!(":{}", port)])
+            .output()
+        {
+            let pids_str = String::from_utf8_lossy(&output.stdout);
+            if let Some(first_pid) = pids_str.split_whitespace().next() {
+                if let Ok(p) = first_pid.parse::<u32>() {
+                    running = true;
+                    pid = Some(p);
+                }
+            }
+        }
+    }
 
     let oc_output = std::process::Command::new("openclaw")
         .arg("--version")
