@@ -22,7 +22,8 @@ interface SettingsState {
   // OpenClaw
   openclawUrl: string;
   openclawToken: string;
-  openclawSubMode: 'hosted' | 'selfhosted';
+  openclawSubMode: 'hosted' | 'selfhosted' | 'deploy';
+  deployType: 'cloud' | 'local';
   selfhostedType: SelfhostedType;
   hostedActivated: boolean;
   hostedQuotaUsed: number;
@@ -62,7 +63,8 @@ interface SettingsState {
   setSelectedModel: (model: string) => void;
   setOpenclawUrl: (url: string) => void;
   setOpenclawToken: (token: string) => void;
-  setOpenclawSubMode: (mode: 'hosted' | 'selfhosted') => void;
+  setOpenclawSubMode: (mode: 'hosted' | 'selfhosted' | 'deploy') => void;
+  setDeployType: (type: 'cloud' | 'local') => void;
   setSelfhostedType: (type: SelfhostedType) => void;
   setHostedActivated: (v: boolean) => void;
   setHostedQuota: (used: number, total: number) => void;
@@ -95,7 +97,8 @@ export const useSettingsStore = create<SettingsState>()(
       selectedModel: 'deepseek',
       openclawUrl: '',
       openclawToken: '',
-      openclawSubMode: 'hosted',
+      openclawSubMode: 'deploy',
+      deployType: 'cloud',
       selfhostedType: 'remote',
       hostedActivated: false,
       hostedQuotaUsed: 0,
@@ -125,6 +128,7 @@ export const useSettingsStore = create<SettingsState>()(
       setOpenclawUrl: (url) => set({ openclawUrl: url }),
       setOpenclawToken: (token) => set({ openclawToken: token }),
       setOpenclawSubMode: (mode) => set({ openclawSubMode: mode }),
+      setDeployType: (type) => set({ deployType: type }),
       setSelfhostedType: (type) => set({ selfhostedType: type }),
       setHostedActivated: (v) => set({ hostedActivated: v }),
       setHostedQuota: (used, total) => set({ hostedQuotaUsed: used, hostedQuotaTotal: total }),
@@ -165,6 +169,7 @@ export const useSettingsStore = create<SettingsState>()(
         openclawUrl: state.openclawUrl,
         openclawToken: state.openclawToken,
         openclawSubMode: state.openclawSubMode,
+        deployType: state.deployType,
         selfhostedType: state.selfhostedType,
         hostedActivated: state.hostedActivated,
         hostedQuotaUsed: state.hostedQuotaUsed,
@@ -204,7 +209,13 @@ export const useSettingsStore = create<SettingsState>()(
           state.selfhostedType = 'remote';
         }
         delete state.bridgeGatewayUrl;
-        // v5→v6: add local OpenClaw fields
+        // v5→v6: restructure OpenClaw sub-modes + add local deploy fields
+        // 'hosted' → 'deploy' with deployType='cloud'
+        if (state.openclawSubMode === 'hosted') {
+          state.openclawSubMode = 'deploy';
+          state.deployType = 'cloud';
+        }
+        if (!state.deployType) state.deployType = 'cloud';
         if (state.localOpenclawInstalled === undefined) state.localOpenclawInstalled = false;
         if (!state.localOpenclawToken) state.localOpenclawToken = '';
         if (!state.localOpenclawPort) state.localOpenclawPort = 18789;

@@ -75,17 +75,18 @@ function App() {
   const localOpenclawAutoStart = useSettingsStore((s) => s.localOpenclawAutoStart);
   const localOpenclawAutoBridge = useSettingsStore((s) => s.localOpenclawAutoBridge);
   const localOpenclawPort = useSettingsStore((s) => s.localOpenclawPort);
-  const selfhostedType = useSettingsStore((s) => s.selfhostedType);
-
   const ws = useWebSocket();
   const phone = useAuthStore((s) => s.phone);
   const userId = useAuthStore((s) => s.userId);
   const isAdmin = ADMIN_PHONES.includes(phone);
 
+  const deployType = useSettingsStore((s) => s.deployType);
   // Determine if we're in a direct (non-WS) mode
   // Admin users always go through WS — server routes to built-in OpenClaw
-  // Note: BYOK now goes through WS (server-side), no more direct mode
-  const isDirectOpenClaw = mode === 'openclaw' && openclawSubMode === 'selfhosted' && !isAdmin;
+  // selfhosted = user already has OpenClaw running, connect directly
+  // deploy+local+installed = one-click local install, also connect directly
+  const isDeployLocal = mode === 'openclaw' && openclawSubMode === 'deploy' && deployType === 'local' && localOpenclawInstalled;
+  const isDirectOpenClaw = (mode === 'openclaw' && openclawSubMode === 'selfhosted' && !isAdmin) || isDeployLocal;
   const isDirect = isDirectOpenClaw;
 
   // OpenClaw selfhosted tracks its own connection state; all others use WS
@@ -168,8 +169,11 @@ function App() {
       return;
     }
 
-    const { selfhostedType: shType, localOpenclawInstalled: localInstalled, localOpenclawToken: localToken } = useSettingsStore.getState();
-    const isLocal = shType === 'local' && localInstalled;
+    const { selfhostedType: shType, deployType: depType, openclawSubMode: ocSub, localOpenclawInstalled: localInstalled, localOpenclawToken: localToken } = useSettingsStore.getState();
+    const isLocal = localInstalled && (
+      (ocSub === 'selfhosted' && shType === 'local') ||
+      (ocSub === 'deploy' && depType === 'local')
+    );
     const gatewayToken = isLocal ? localToken : (openclawToken || '');
     const bridge = new OpenClawBridge(
       serverUrl,
@@ -210,7 +214,7 @@ function App() {
     }, 500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, isDirect, authToken, builtinSubMode, copawSubMode, openclawSubMode, hostedActivated, ws.connected, ws.connecting]);
+  }, [mode, isDirect, authToken, builtinSubMode, copawSubMode, openclawSubMode, deployType, hostedActivated, ws.connected, ws.connecting]);
 
   // Run migration once on mount
   useEffect(() => {
@@ -219,13 +223,12 @@ function App() {
 
   // Auto-start local OpenClaw on mount if configured
   useEffect(() => {
-    if (
-      localOpenclawInstalled &&
-      localOpenclawAutoStart &&
-      mode === 'openclaw' &&
-      openclawSubMode === 'selfhosted' &&
-      selfhostedType === 'local'
-    ) {
+    const { openclawSubMode: ocSub, deployType: depType, selfhostedType: shType } = useSettingsStore.getState();
+    const shouldAutoStart = localOpenclawInstalled && localOpenclawAutoStart && mode === 'openclaw' && (
+      (ocSub === 'deploy' && depType === 'local') ||
+      (ocSub === 'selfhosted' && shType === 'local')
+    );
+    if (shouldAutoStart) {
       invoke('start_local_openclaw', { port: localOpenclawPort || 18789 })
         .then((result) => {
           console.log('[App] Auto-started local OpenClaw:', result);
@@ -259,8 +262,11 @@ function App() {
   }, [mode, userId]);
 
   const getOrCreateOpenClawClient = useCallback(() => {
-    const { openclawUrl, openclawToken, selfhostedType: shType, localOpenclawInstalled: localInstalled, localOpenclawToken: localToken } = useSettingsStore.getState();
-    const isLocal = shType === 'local' && localInstalled;
+    const { openclawUrl, openclawToken, selfhostedType: shType, deployType: depType, openclawSubMode: ocSub, localOpenclawInstalled: localInstalled, localOpenclawToken: localToken } = useSettingsStore.getState();
+    const isLocal = localInstalled && (
+      (ocSub === 'selfhosted' && shType === 'local') ||
+      (ocSub === 'deploy' && depType === 'local')
+    );
     const url = isLocal ? OPENCLAW_LOCAL_GATEWAY : openclawUrl;
     const token = isLocal ? localToken : openclawToken;
     if (!url) {
@@ -302,7 +308,7 @@ function App() {
 
     // Admin users: no openclawHosted flag → server ADMIN_PHONES check → built-in OpenClaw
     // Normal users with hosted activated: pass openclawHosted flag
-    const useHosted = mode === 'openclaw' && !isAdmin && openclawSubMode === 'hosted' && hostedActivated;
+    const useHosted = mode === 'openclaw' && !isAdmin && openclawSubMode === 'deploy' && deployType === 'cloud' && hostedActivated;
     const useCopawHosted = mode === 'copaw' && copawSubMode === 'hosted';
 
     // BYOK: pass apiKey and provider/model to server (server already supports this from mobile Sprint 3.5)
@@ -326,7 +332,7 @@ function App() {
       useHosted ? true : undefined,
       useCopawHosted ? true : undefined,
     );
-  }, [ws, serverUrl, mode, builtinSubMode, copawUrl, copawToken, copawSubMode, isDirectOpenClaw, getOrCreateOpenClawClient, authToken, isLoggedIn, openclawSubMode, hostedActivated, isAdmin]);
+  }, [ws, serverUrl, mode, builtinSubMode, copawUrl, copawToken, copawSubMode, isDirectOpenClaw, getOrCreateOpenClawClient, authToken, isLoggedIn, openclawSubMode, deployType, hostedActivated, isAdmin]);
 
   const handleDisconnect = useCallback(() => {
     if (isDirectOpenClaw && openclawClientRef.current) {

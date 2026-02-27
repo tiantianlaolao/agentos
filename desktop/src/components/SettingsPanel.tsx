@@ -58,6 +58,7 @@ export function SettingsPanel({ onClose }: Props) {
   const [formOpenclawUrl, setFormOpenclawUrl] = useState(store.openclawUrl);
   const [formOpenclawToken, setFormOpenclawToken] = useState(store.openclawToken);
   const [formOpenclawSubMode, setFormOpenclawSubMode] = useState(store.openclawSubMode);
+  const [formDeployType, setFormDeployType] = useState(store.deployType);
   const [formSelfhostedType, setFormSelfhostedType] = useState(store.selfhostedType);
   const [formCopawUrl, setFormCopawUrl] = useState(store.copawUrl);
   const [formCopawToken, setFormCopawToken] = useState(store.copawToken);
@@ -91,6 +92,7 @@ export function SettingsPanel({ onClose }: Props) {
     store.setOpenclawUrl(formOpenclawUrl);
     store.setOpenclawToken(formOpenclawToken);
     store.setOpenclawSubMode(formOpenclawSubMode);
+    store.setDeployType(formDeployType);
     store.setSelfhostedType(formSelfhostedType);
     store.setCopawUrl(formCopawUrl);
     store.setCopawToken(formCopawToken);
@@ -101,7 +103,7 @@ export function SettingsPanel({ onClose }: Props) {
   }, [
     store, formMode, formBuiltinSubMode, formProvider, formApiKey, formServerUrl,
     formSelectedModel, formOpenclawUrl, formOpenclawToken,
-    formOpenclawSubMode, formSelfhostedType, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,
+    formOpenclawSubMode, formDeployType, formSelfhostedType, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,
   ]);
 
   const handleSendCode = useCallback(async () => {
@@ -427,10 +429,10 @@ export function SettingsPanel({ onClose }: Props) {
             <h3 className="settings-section-title">{t('settings.openclawConfig')}</h3>
             <div className="settings-submode-row">
               <button
-                className={`settings-submode-btn ${formOpenclawSubMode === 'hosted' ? 'active' : ''}`}
-                onClick={() => setFormOpenclawSubMode('hosted')}
+                className={`settings-submode-btn ${formOpenclawSubMode === 'deploy' ? 'active' : ''}`}
+                onClick={() => setFormOpenclawSubMode('deploy')}
               >
-                {t('settings.hosted')}
+                {t('settings.deploy')}
               </button>
               <button
                 className={`settings-submode-btn ${formOpenclawSubMode === 'selfhosted' ? 'active' : ''}`}
@@ -439,6 +441,88 @@ export function SettingsPanel({ onClose }: Props) {
                 {t('settings.selfhosted')}
               </button>
             </div>
+
+            {/* ── 一键部署 ── */}
+            {formOpenclawSubMode === 'deploy' && (
+              <>
+                <div className="settings-submode-row" style={{ marginTop: '8px' }}>
+                  <button
+                    className={`settings-submode-btn ${formDeployType === 'cloud' ? 'active' : ''}`}
+                    onClick={() => setFormDeployType('cloud')}
+                  >
+                    {t('settings.deployCloud')}
+                  </button>
+                  <button
+                    className={`settings-submode-btn ${formDeployType === 'local' ? 'active' : ''}`}
+                    onClick={() => setFormDeployType('local')}
+                  >
+                    {t('settings.deployLocal')}
+                  </button>
+                </div>
+
+                {/* 云托管 — 现有 hosted 逻辑 */}
+                {formDeployType === 'cloud' && (
+                  <div className="settings-hosted-section">
+                    {!auth.isLoggedIn ? (
+                      <p className="settings-hosted-note">{t('settings.hostedNeedLogin')}</p>
+                    ) : !store.hostedActivated ? (
+                      <>
+                        <p className="settings-hosted-note">{t('settings.hostedNote')}</p>
+                        <div className="settings-field">
+                          <label className="settings-label">{t('settings.inviteCode')}</label>
+                          <input
+                            className="settings-input"
+                            value={inviteCode}
+                            onChange={(e) => setInviteCode(e.target.value)}
+                            placeholder={t('settings.inviteCodePlaceholder')}
+                          />
+                        </div>
+                        {activateError && <p className="settings-auth-error">{activateError}</p>}
+                        <button
+                          className="settings-auth-btn"
+                          onClick={handleActivate}
+                          disabled={activateLoading}
+                        >
+                          {activateLoading ? t('settings.activating') : t('settings.activate')}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="settings-hosted-status">
+                        {store.hostedInstanceStatus === 'provisioning' && (
+                          <p className="settings-hosted-note">{t('settings.instanceProvisioning')}</p>
+                        )}
+                        {store.hostedInstanceStatus === 'ready' && (
+                          <p className="settings-hosted-ready">
+                            {t('settings.instanceReady')} — {t('settings.quotaLabel')}: {store.hostedQuotaUsed}/{store.hostedQuotaTotal}
+                          </p>
+                        )}
+                        {store.hostedInstanceStatus === 'error' && (
+                          <p className="settings-auth-error">{t('settings.instanceError')}</p>
+                        )}
+                        {store.hostedInstanceStatus !== 'ready' && (
+                          <button className="settings-auth-btn" onClick={handleRefreshHostedStatus}>
+                            Refresh
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 部署到本地 — 新功能 */}
+                {formDeployType === 'local' && (
+                  <>
+                    {store.localOpenclawInstalled ? (
+                      <LocalOpenclawStatus />
+                    ) : (
+                      <LocalOpenclawSetup onInstalled={() => store.setLocalOpenclawInstalled(true)} />
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── 自建直连（完全不动） ── */}
             {formOpenclawSubMode === 'selfhosted' && (
               <>
                 <div className="settings-submode-row" style={{ marginTop: '8px' }}>
@@ -484,61 +568,33 @@ export function SettingsPanel({ onClose }: Props) {
                 {formSelfhostedType === 'local' && (
                   <>
                     <span className="settings-hint">{t('settings.localHint')}</span>
-                    {store.localOpenclawInstalled ? (
-                      <LocalOpenclawStatus />
+                    <div className="settings-field">
+                      <label className="settings-label">{t('settings.accessToken')}</label>
+                      <input
+                        className="settings-input"
+                        type="password"
+                        value={formOpenclawToken}
+                        onChange={(e) => setFormOpenclawToken(e.target.value)}
+                        placeholder={t('settings.accessTokenPlaceholder')}
+                      />
+                      <span className="settings-hint">{t('settings.openclawTokenHint')}</span>
+                    </div>
+                    {!auth.isLoggedIn ? (
+                      <p className="settings-hosted-note">{t('bridge.needLogin')}</p>
                     ) : (
-                      <LocalOpenclawSetup onInstalled={() => store.setLocalOpenclawInstalled(true)} />
+                      <>
+                        <button
+                          className={`settings-auth-btn ${store.bridgeEnabled ? 'settings-bridge-active' : ''}`}
+                          onClick={() => store.setBridgeEnabled(!store.bridgeEnabled)}
+                        >
+                          {store.bridgeEnabled ? t('bridge.disable') : t('bridge.enable')}
+                        </button>
+                        <span className="settings-hint">{t('settings.localBridgeHint')}</span>
+                      </>
                     )}
                   </>
                 )}
               </>
-            )}
-            {formOpenclawSubMode === 'hosted' && (
-              <div className="settings-hosted-section">
-                {!auth.isLoggedIn ? (
-                  <p className="settings-hosted-note">{t('settings.hostedNeedLogin')}</p>
-                ) : !store.hostedActivated ? (
-                  <>
-                    <p className="settings-hosted-note">{t('settings.hostedNote')}</p>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.inviteCode')}</label>
-                      <input
-                        className="settings-input"
-                        value={inviteCode}
-                        onChange={(e) => setInviteCode(e.target.value)}
-                        placeholder={t('settings.inviteCodePlaceholder')}
-                      />
-                    </div>
-                    {activateError && <p className="settings-auth-error">{activateError}</p>}
-                    <button
-                      className="settings-auth-btn"
-                      onClick={handleActivate}
-                      disabled={activateLoading}
-                    >
-                      {activateLoading ? t('settings.activating') : t('settings.activate')}
-                    </button>
-                  </>
-                ) : (
-                  <div className="settings-hosted-status">
-                    {store.hostedInstanceStatus === 'provisioning' && (
-                      <p className="settings-hosted-note">{t('settings.instanceProvisioning')}</p>
-                    )}
-                    {store.hostedInstanceStatus === 'ready' && (
-                      <p className="settings-hosted-ready">
-                        {t('settings.instanceReady')} — {t('settings.quotaLabel')}: {store.hostedQuotaUsed}/{store.hostedQuotaTotal}
-                      </p>
-                    )}
-                    {store.hostedInstanceStatus === 'error' && (
-                      <p className="settings-auth-error">{t('settings.instanceError')}</p>
-                    )}
-                    {store.hostedInstanceStatus !== 'ready' && (
-                      <button className="settings-auth-btn" onClick={handleRefreshHostedStatus}>
-                        Refresh
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
             )}
           </div>
         )}

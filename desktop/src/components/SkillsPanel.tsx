@@ -114,9 +114,9 @@ function getCacheKey(mode: AgentMode, openclawSubMode?: string): string {
   return 'builtin';
 }
 
-function canManageSkills(mode: AgentMode, openclawSubMode?: string): boolean {
+function canManageSkills(mode: AgentMode, openclawSubMode?: string, deployType?: string): boolean {
   if (mode === 'builtin') return true;
-  if (mode === 'openclaw' && openclawSubMode === 'hosted') return true;
+  if (mode === 'openclaw' && openclawSubMode === 'deploy' && deployType === 'cloud') return true;
   return false;
 }
 
@@ -130,8 +130,9 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
   }), [locale]);
   const mode = useSettingsStore((s) => s.mode);
   const openclawSubMode = useSettingsStore((s) => s.openclawSubMode);
+  const deployType = useSettingsStore((s) => s.deployType);
   const cacheKey = getCacheKey(mode, openclawSubMode);
-  const manageable = canManageSkills(mode, openclawSubMode);
+  const manageable = canManageSkills(mode, openclawSubMode, deployType);
   const [activeTab, setActiveTab] = useState<TabKey>('installed');
   const [skills, setSkills] = useState<SkillManifestInfo[]>(skillsCache.get(cacheKey) || []);
   const [library, setLibrary] = useState<SkillLibraryItem[]>(libraryCache.get(cacheKey) || []);
