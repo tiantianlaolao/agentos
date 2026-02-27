@@ -1117,8 +1117,9 @@ async function handleChatSend(
     }
     llmMessages.push({ role: 'user', content });
 
-    // Bridge routing: if openclaw mode and bridge is available, route through bridge
-    if (session.mode === 'openclaw' && session.userId && hasBridgeOnline(session.userId)) {
+    // Bridge routing: if openclaw mode (non-hosted) and bridge is available, route through bridge
+    // Hosted mode uses the server's direct adapter to the hosted gateway, not the bridge.
+    if (session.mode === 'openclaw' && session.userId && !session.isHosted && hasBridgeOnline(session.userId)) {
       console.log(`[Chat] Routing through bridge for user ${session.userId}`);
       const batcher = new ChunkBatcher(ws, conversationId);
       const sessionKey = `agentos-${session.id}`;
