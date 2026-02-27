@@ -103,7 +103,7 @@ export const useSettingsStore = create<SettingsState>()(
       builtinSubMode: 'free',
       provider: 'deepseek',
       apiKey: '',
-      serverUrl: 'ws://43.154.188.177:3100/ws',
+      serverUrl: 'ws://43.155.104.45:3100/ws',
       selectedModel: 'deepseek',
       openclawUrl: '',
       openclawToken: '',

@@ -36,7 +36,9 @@ export default function RootLayout() {
         if (apiKey) store.setApiKey(apiKey);
         if (serverUrl) {
           // Migrate old server URL to new CVM
-          const migratedUrl = serverUrl.replace('150.109.157.27', '43.154.188.177');
+          const migratedUrl = serverUrl
+            .replace('150.109.157.27', '43.155.104.45')
+            .replace('43.154.188.177', '43.155.104.45');
           if (migratedUrl !== serverUrl) {
             await setSetting('serverUrl', migratedUrl);
           }

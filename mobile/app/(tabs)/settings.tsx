@@ -176,7 +176,7 @@ export default function SettingsScreen() {
         // Always fetch hosted status from server for logged-in users
         // Read token directly from DB (not from Zustand closure) to avoid stale value
         const dbAuthToken = await getSetting('auth_token');
-        const currentServerUrl = store.serverUrl || 'ws://43.154.188.177:3100/ws';
+        const currentServerUrl = store.serverUrl || 'ws://43.155.104.45:3100/ws';
         if (dbAuthToken) {
           try {
             const status = await getHostedStatus(dbAuthToken, currentServerUrl);

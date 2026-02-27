@@ -4,7 +4,7 @@
  * AgentOS Bridge CLI
  *
  * Usage:
- *   npx agentos-bridge --token <auth-token> [--gateway ws://localhost:18789] [--server ws://43.154.188.177:3100/ws]
+ *   npx agentos-bridge --token <auth-token> [--gateway ws://localhost:18789] [--server ws://43.155.104.45:3100/ws]
  *
  * This connects your local OpenClaw Gateway to the AgentOS server,
  * allowing you to control it from the AgentOS mobile app.
@@ -12,7 +12,7 @@
 
 import { OpenClawBridge } from './bridge.js';
 
-const DEFAULT_SERVER = 'ws://43.154.188.177:3100/ws';
+const DEFAULT_SERVER = 'ws://43.155.104.45:3100/ws';
 const DEFAULT_GATEWAY = 'ws://localhost:18789';
 
 function parseArgs(): { token: string; server: string; gateway: string; gatewayToken: string } {
