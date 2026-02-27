@@ -13,13 +13,7 @@
  * forwarding or NAT traversal is needed.
  */
 
-import {
-  loadOrCreateDeviceIdentity,
-  buildDeviceAuthPayload,
-  signDevicePayload,
-  getPublicKeyBase64Url,
-  type DeviceIdentity,
-} from './deviceIdentity';
+// Device identity imports removed — bridge uses token-only auth
 
 // ── Callbacks ──
 
@@ -46,8 +40,6 @@ export class OpenClawBridge {
   private gatewayConnected = false;
   private bridgeId: string | null = null;
   private autoReconnect = true;
-  private deviceIdentity: DeviceIdentity | null = null;
-  private deviceIdentityPromise: Promise<DeviceIdentity> | null = null;
 
   // Gateway request tracking
   private gatewayPendingRequests = new Map<string, {
@@ -90,20 +82,6 @@ export class OpenClawBridge {
       ...this.status,
       error: error || null,
     });
-  }
-
-  // ── Device identity (shared with OpenClaw direct client) ──
-
-  private async ensureDeviceIdentity(): Promise<DeviceIdentity> {
-    if (this.deviceIdentity) return this.deviceIdentity;
-    if (!this.deviceIdentityPromise) {
-      this.deviceIdentityPromise = loadOrCreateDeviceIdentity().then((id) => {
-        this.deviceIdentity = id;
-        this.deviceIdentityPromise = null;
-        return id;
-      });
-    }
-    return this.deviceIdentityPromise;
   }
 
   // ════════════════════════════════════════════════
