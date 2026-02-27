@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore.ts';
 import { useAuthStore } from '../stores/authStore.ts';
 import { login as apiLogin, register as apiRegister, sendCode as apiSendCode } from '../services/authApi.ts';
@@ -119,7 +120,7 @@ export function SettingsPanel({ onClose }: Props) {
     setHostedModelUpdating(false);
   }, [formDeployProvider, formDeployApiKey, formDeployModel, formServerUrl, store.serverUrl, auth.authToken]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     store.setMode(formMode);
     store.setBuiltinSubMode(formBuiltinSubMode);
     store.setProvider(formProvider);
@@ -139,10 +140,39 @@ export function SettingsPanel({ onClose }: Props) {
     store.setCopawToken(formCopawToken);
     store.setCopawSubMode(formCopawSubMode);
     store.setLocale(formLocale);
+
+    // Auto-sync model config to local openclaw.json if installed
+    if (store.localOpenclawInstalled && formMode === 'openclaw' && formOpenclawSubMode === 'deploy' && formDeployType === 'local') {
+      try {
+        const isDefault = formDeployModelMode === 'default';
+        const provider = isDefault ? 'deepseek' : formDeployProvider;
+        const apiKey = isDefault ? (auth.authToken || '') : formDeployApiKey;
+        const model = isDefault ? '' : formDeployModel;
+        const httpUrl = formServerUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
+        const baseUrl = isDefault ? `${httpUrl}/api/llm-proxy/v1` : undefined;
+
+        await invoke('update_local_openclaw_config', { provider, apiKey, model, baseUrl });
+        store.setLocalOpenclawProvider(provider);
+        store.setLocalOpenclawApiKey(apiKey);
+        store.setLocalOpenclawModel(model);
+
+        // Restart if running
+        const port = store.localOpenclawPort || 18789;
+        const status = await invoke<{ running: boolean }>('get_local_openclaw_status', { port });
+        if (status?.running) {
+          await invoke('stop_local_openclaw');
+          await new Promise((r) => setTimeout(r, 1000));
+          await invoke('start_local_openclaw', { port });
+        }
+      } catch (e) {
+        console.error('Auto-sync openclaw config failed:', e);
+      }
+    }
+
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }, [
-    store, formMode, formBuiltinSubMode, formProvider, formApiKey, formServerUrl,
+    store, auth.authToken, formMode, formBuiltinSubMode, formProvider, formApiKey, formServerUrl,
     formSelectedModel, formOpenclawUrl, formOpenclawToken,
     formOpenclawSubMode, formDeployType, formDeployModelMode, formDeployProvider, formDeployApiKey, formDeployModel,
     formSelfhostedType, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,

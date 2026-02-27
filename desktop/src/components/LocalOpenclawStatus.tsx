@@ -4,25 +4,12 @@ import { useSettingsStore } from '../stores/settingsStore.ts';
 import { useAuthStore } from '../stores/authStore.ts';
 import { useTranslation } from '../i18n/index.ts';
 
-import type { LLMProvider } from '../stores/settingsStore.ts';
-
 interface StatusInfo {
   running: boolean;
   pid: number | null;
   port: number;
   version: string;
 }
-
-const PROVIDERS: { key: LLMProvider; label: string }[] = [
-  { key: 'deepseek', label: 'DeepSeek' },
-  { key: 'openai', label: 'OpenAI' },
-  { key: 'anthropic', label: 'Anthropic' },
-  { key: 'gemini', label: 'Google Gemini' },
-  { key: 'moonshot', label: 'Moonshot (Kimi)' },
-  { key: 'qwen', label: 'Qwen (通义千问)' },
-  { key: 'zhipu', label: 'Z.AI (智谱 GLM)' },
-  { key: 'openrouter', label: 'OpenRouter' },
-];
 
 export function LocalOpenclawStatus() {
   const t = useTranslation();
@@ -31,13 +18,6 @@ export function LocalOpenclawStatus() {
 
   const [status, setStatus] = useState<StatusInfo | null>(null);
   const [loading, setLoading] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [editProvider, setEditProvider] = useState<LLMProvider>(store.localOpenclawProvider);
-  const [editApiKey, setEditApiKey] = useState(store.localOpenclawApiKey);
-  const [editModel, setEditModel] = useState(store.localOpenclawModel);
-  const [upgrading, setUpgrading] = useState(false);
-  const [upgradeMsg, setUpgradeMsg] = useState('');
-  const [logs, setLogs] = useState<string[] | null>(null);
 
   const port = store.localOpenclawPort || 18789;
 
@@ -89,67 +69,6 @@ export function LocalOpenclawStatus() {
       console.error('Restart failed:', e);
     }
     setLoading(false);
-  };
-
-  const isDefaultMode = store.deployModelMode === 'default';
-
-  /** Derive the LLM proxy URL from the AgentOS WS server URL */
-  const getLLMProxyBaseUrl = (): string => {
-    const httpUrl = store.serverUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
-    return `${httpUrl}/api/llm-proxy/v1`;
-  };
-
-  const handleSaveConfig = async () => {
-    try {
-      const provider = isDefaultMode ? 'deepseek' : editProvider;
-      const apiKey = isDefaultMode ? (auth.authToken || '') : editApiKey;
-      const model = isDefaultMode ? '' : editModel;
-      const baseUrl = isDefaultMode ? getLLMProxyBaseUrl() : undefined;
-
-      await invoke('update_local_openclaw_config', {
-        provider,
-        apiKey,
-        model,
-        baseUrl,
-      });
-      store.setLocalOpenclawProvider(provider);
-      store.setLocalOpenclawApiKey(apiKey);
-      store.setLocalOpenclawModel(model);
-      setEditing(false);
-      // Restart if running
-      if (status?.running) {
-        await handleRestart();
-      }
-    } catch (e) {
-      console.error('Config update failed:', e);
-    }
-  };
-
-  const handleUpgrade = async () => {
-    setUpgrading(true);
-    setUpgradeMsg('');
-    try {
-      const registry = store.locale === 'zh' ? 'https://registry.npmmirror.com' : undefined;
-      const newVer = await invoke<string>('upgrade_openclaw', { registry });
-      setUpgradeMsg(t('settings.localStatusUpgraded').replace('%{version}', newVer));
-      await refreshStatus();
-    } catch (e) {
-      setUpgradeMsg(e instanceof Error ? e.message : String(e));
-    }
-    setUpgrading(false);
-  };
-
-  const handleViewLogs = async () => {
-    if (logs !== null) {
-      setLogs(null);
-      return;
-    }
-    try {
-      const lines = await invoke<string[]>('get_agent_logs', { name: 'local-openclaw', lines: 50 });
-      setLogs(lines);
-    } catch {
-      setLogs(['(no logs available)']);
-    }
   };
 
   const isRunning = status?.running ?? false;
@@ -224,71 +143,6 @@ export function LocalOpenclawStatus() {
         <p className="settings-hosted-note">{t('bridge.needLogin')}</p>
       )}
 
-      {/* Config editing */}
-      {!editing ? (
-        <button
-          className="settings-auth-btn"
-          onClick={() => {
-            setEditProvider(store.localOpenclawProvider);
-            setEditApiKey(store.localOpenclawApiKey);
-            setEditModel(store.localOpenclawModel);
-            setEditing(true);
-          }}
-          style={{ marginTop: '8px' }}
-        >
-          {t('settings.localStatusEditConfig')}
-        </button>
-      ) : (
-        <div className="local-openclaw-edit-config">
-          {isDefaultMode ? (
-            <div className="settings-field">
-              <label className="settings-label">{t('settings.localSetupProvider')}</label>
-              <span className="settings-hint">{t('settings.deployModelProxy')}</span>
-            </div>
-          ) : (
-            <>
-              <div className="settings-field">
-                <label className="settings-label">{t('settings.localSetupProvider')}</label>
-                <select
-                  className="settings-select"
-                  value={editProvider}
-                  onChange={(e) => setEditProvider(e.target.value as LLMProvider)}
-                >
-                  {PROVIDERS.map((p) => (
-                    <option key={p.key} value={p.key}>{p.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="settings-field">
-                <label className="settings-label">{t('settings.localSetupApiKey')}</label>
-                <input
-                  className="settings-input"
-                  type="password"
-                  value={editApiKey}
-                  onChange={(e) => setEditApiKey(e.target.value)}
-                />
-              </div>
-              <div className="settings-field">
-                <label className="settings-label">{t('settings.localSetupModel')}</label>
-                <input
-                  className="settings-input"
-                  value={editModel}
-                  onChange={(e) => setEditModel(e.target.value)}
-                />
-              </div>
-            </>
-          )}
-          <div className="local-openclaw-actions">
-            <button className="settings-auth-btn" onClick={handleSaveConfig}>
-              {t('settings.localStatusSaveConfig')}
-            </button>
-            <button className="settings-auth-btn" onClick={() => setEditing(false)}>
-              {t('settings.localStatusCancelEdit')}
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Info */}
       <div className="local-openclaw-info">
         <span className="settings-hint">{t('settings.localStatusPort')}: {port}</span>
@@ -296,33 +150,6 @@ export function LocalOpenclawStatus() {
           <span className="settings-hint">{t('settings.localStatusVersion')}: {status.version}</span>
         )}
       </div>
-
-      {/* Upgrade */}
-      <button
-        className="settings-auth-btn"
-        onClick={handleUpgrade}
-        disabled={upgrading}
-        style={{ marginTop: '4px' }}
-      >
-        {upgrading ? t('settings.localStatusUpgrading') : t('settings.localStatusUpgrade')}
-      </button>
-      {upgradeMsg && <span className="settings-hint">{upgradeMsg}</span>}
-
-      {/* Logs */}
-      <button
-        className="settings-auth-btn"
-        onClick={handleViewLogs}
-        style={{ marginTop: '4px' }}
-      >
-        {t('settings.localStatusViewLogs')}
-      </button>
-      {logs && (
-        <div className="local-openclaw-logs">
-          {logs.map((line, i) => (
-            <div key={i} className="local-openclaw-log-line">{line}</div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
