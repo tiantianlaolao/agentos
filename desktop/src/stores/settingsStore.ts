@@ -37,6 +37,16 @@ interface SettingsState {
   // OpenClaw Bridge
   bridgeEnabled: boolean;
 
+  // Local OpenClaw
+  localOpenclawInstalled: boolean;
+  localOpenclawToken: string;
+  localOpenclawPort: number;
+  localOpenclawProvider: LLMProvider;
+  localOpenclawApiKey: string;
+  localOpenclawModel: string;
+  localOpenclawAutoStart: boolean;
+  localOpenclawAutoBridge: boolean;
+
   // App
   locale: 'zh' | 'en';
 
@@ -61,6 +71,14 @@ interface SettingsState {
   setCopawToken: (token: string) => void;
   setCopawSubMode: (mode: 'hosted' | 'selfhosted') => void;
   setBridgeEnabled: (enabled: boolean) => void;
+  setLocalOpenclawInstalled: (v: boolean) => void;
+  setLocalOpenclawToken: (token: string) => void;
+  setLocalOpenclawPort: (port: number) => void;
+  setLocalOpenclawProvider: (provider: LLMProvider) => void;
+  setLocalOpenclawApiKey: (key: string) => void;
+  setLocalOpenclawModel: (model: string) => void;
+  setLocalOpenclawAutoStart: (v: boolean) => void;
+  setLocalOpenclawAutoBridge: (v: boolean) => void;
   setLocale: (locale: 'zh' | 'en') => void;
   loadSettings: () => void;
   saveSettings: () => void;
@@ -87,6 +105,14 @@ export const useSettingsStore = create<SettingsState>()(
       copawToken: '',
       copawSubMode: 'hosted',
       bridgeEnabled: false,
+      localOpenclawInstalled: false,
+      localOpenclawToken: '',
+      localOpenclawPort: 18789,
+      localOpenclawProvider: 'deepseek',
+      localOpenclawApiKey: '',
+      localOpenclawModel: '',
+      localOpenclawAutoStart: true,
+      localOpenclawAutoBridge: true,
       locale: 'zh',
       settingsLoaded: false,
 
@@ -107,6 +133,14 @@ export const useSettingsStore = create<SettingsState>()(
       setCopawToken: (token) => set({ copawToken: token }),
       setCopawSubMode: (mode) => set({ copawSubMode: mode }),
       setBridgeEnabled: (enabled) => set({ bridgeEnabled: enabled }),
+      setLocalOpenclawInstalled: (v) => set({ localOpenclawInstalled: v }),
+      setLocalOpenclawToken: (token) => set({ localOpenclawToken: token }),
+      setLocalOpenclawPort: (port) => set({ localOpenclawPort: port }),
+      setLocalOpenclawProvider: (provider) => set({ localOpenclawProvider: provider }),
+      setLocalOpenclawApiKey: (key) => set({ localOpenclawApiKey: key }),
+      setLocalOpenclawModel: (model) => set({ localOpenclawModel: model }),
+      setLocalOpenclawAutoStart: (v) => set({ localOpenclawAutoStart: v }),
+      setLocalOpenclawAutoBridge: (v) => set({ localOpenclawAutoBridge: v }),
       setLocale: (locale) => set({ locale }),
       loadSettings: () => {
         // Persist middleware auto-loads from localStorage on creation.
@@ -140,9 +174,17 @@ export const useSettingsStore = create<SettingsState>()(
         copawToken: state.copawToken,
         copawSubMode: state.copawSubMode,
         bridgeEnabled: state.bridgeEnabled,
+        localOpenclawInstalled: state.localOpenclawInstalled,
+        localOpenclawToken: state.localOpenclawToken,
+        localOpenclawPort: state.localOpenclawPort,
+        localOpenclawProvider: state.localOpenclawProvider,
+        localOpenclawApiKey: state.localOpenclawApiKey,
+        localOpenclawModel: state.localOpenclawModel,
+        localOpenclawAutoStart: state.localOpenclawAutoStart,
+        localOpenclawAutoBridge: state.localOpenclawAutoBridge,
         locale: state.locale,
       }),
-      version: 5,
+      version: 6,
       migrate: (persisted: unknown) => {
         const state = (persisted || {}) as Record<string, unknown>;
         // v1→v3: if selfhosted was set but no URL configured, reset to hosted
@@ -162,6 +204,15 @@ export const useSettingsStore = create<SettingsState>()(
           state.selfhostedType = 'remote';
         }
         delete state.bridgeGatewayUrl;
+        // v5→v6: add local OpenClaw fields
+        if (state.localOpenclawInstalled === undefined) state.localOpenclawInstalled = false;
+        if (!state.localOpenclawToken) state.localOpenclawToken = '';
+        if (!state.localOpenclawPort) state.localOpenclawPort = 18789;
+        if (!state.localOpenclawProvider) state.localOpenclawProvider = 'deepseek';
+        if (!state.localOpenclawApiKey) state.localOpenclawApiKey = '';
+        if (!state.localOpenclawModel) state.localOpenclawModel = '';
+        if (state.localOpenclawAutoStart === undefined) state.localOpenclawAutoStart = true;
+        if (state.localOpenclawAutoBridge === undefined) state.localOpenclawAutoBridge = true;
         return state;
       },
       onRehydrateStorage: () => {

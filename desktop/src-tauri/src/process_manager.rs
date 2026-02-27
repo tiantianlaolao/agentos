@@ -46,16 +46,31 @@ impl ProcessManager {
         command: &str,
         args: &[String],
     ) -> Result<u32, Box<dyn std::error::Error + Send + Sync>> {
+        self.spawn_with_env(name, command, args, None)
+    }
+
+    pub fn spawn_with_env(
+        &mut self,
+        name: &str,
+        command: &str,
+        args: &[String],
+        envs: Option<&HashMap<String, String>>,
+    ) -> Result<u32, Box<dyn std::error::Error + Send + Sync>> {
         // Kill existing process with the same name
         if self.processes.contains_key(name) {
             self.kill(name)?;
         }
 
-        let mut child = Command::new(command)
-            .args(args)
+        let mut cmd = Command::new(command);
+        cmd.args(args)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+        if let Some(env_map) = envs {
+            for (k, v) in env_map {
+                cmd.env(k, v);
+            }
+        }
+        let mut child = cmd.spawn()?;
 
         let pid = child.id();
         let logs = Arc::new(StdMutex::new(Vec::new()));
@@ -104,6 +119,10 @@ impl ProcessManager {
         );
 
         Ok(pid)
+    }
+
+    pub fn is_running(&self, name: &str) -> bool {
+        self.processes.contains_key(name)
     }
 
     pub fn kill(&mut self, name: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

@@ -4,6 +4,8 @@ import { useAuthStore } from '../stores/authStore.ts';
 import { login as apiLogin, register as apiRegister, sendCode as apiSendCode } from '../services/authApi.ts';
 import { activateHostedAccess, getHostedStatus } from '../services/hostedApi.ts';
 import { useTranslation } from '../i18n/index.ts';
+import { LocalOpenclawSetup } from './LocalOpenclawSetup.tsx';
+import { LocalOpenclawStatus } from './LocalOpenclawStatus.tsx';
 import type { AgentMode } from '../types/index.ts';
 
 type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
@@ -482,29 +484,10 @@ export function SettingsPanel({ onClose }: Props) {
                 {formSelfhostedType === 'local' && (
                   <>
                     <span className="settings-hint">{t('settings.localHint')}</span>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.accessToken')}</label>
-                      <input
-                        className="settings-input"
-                        type="password"
-                        value={formOpenclawToken}
-                        onChange={(e) => setFormOpenclawToken(e.target.value)}
-                        placeholder={t('settings.accessTokenPlaceholder')}
-                      />
-                      <span className="settings-hint">{t('settings.openclawTokenHint')}</span>
-                    </div>
-                    {!auth.isLoggedIn ? (
-                      <p className="settings-hosted-note">{t('bridge.needLogin')}</p>
+                    {store.localOpenclawInstalled ? (
+                      <LocalOpenclawStatus />
                     ) : (
-                      <>
-                        <button
-                          className={`settings-auth-btn ${store.bridgeEnabled ? 'settings-bridge-active' : ''}`}
-                          onClick={() => store.setBridgeEnabled(!store.bridgeEnabled)}
-                        >
-                          {store.bridgeEnabled ? t('bridge.disable') : t('bridge.enable')}
-                        </button>
-                        <span className="settings-hint">{t('settings.localBridgeHint')}</span>
-                      </>
+                      <LocalOpenclawSetup onInstalled={() => store.setLocalOpenclawInstalled(true)} />
                     )}
                   </>
                 )}

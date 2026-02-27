@@ -71,6 +71,12 @@ function App() {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const bridgeEnabled = useSettingsStore((s) => s.bridgeEnabled);
   const openclawToken = useSettingsStore((s) => s.openclawToken);
+  const localOpenclawInstalled = useSettingsStore((s) => s.localOpenclawInstalled);
+  const localOpenclawAutoStart = useSettingsStore((s) => s.localOpenclawAutoStart);
+  const localOpenclawAutoBridge = useSettingsStore((s) => s.localOpenclawAutoBridge);
+  const localOpenclawToken = useSettingsStore((s) => s.localOpenclawToken);
+  const localOpenclawPort = useSettingsStore((s) => s.localOpenclawPort);
+  const selfhostedType = useSettingsStore((s) => s.selfhostedType);
 
   const ws = useWebSocket();
   const phone = useAuthStore((s) => s.phone);
@@ -163,11 +169,14 @@ function App() {
       return;
     }
 
+    const { selfhostedType: shType, localOpenclawInstalled: localInstalled, localOpenclawToken: localToken } = useSettingsStore.getState();
+    const isLocal = shType === 'local' && localInstalled;
+    const gatewayToken = isLocal ? localToken : (openclawToken || '');
     const bridge = new OpenClawBridge(
       serverUrl,
       authToken,
       OPENCLAW_LOCAL_GATEWAY,
-      openclawToken || '',
+      gatewayToken,
     );
     bridge.onStatusChange = (status) => {
       setBridgeStatus({ ...status });
@@ -209,6 +218,30 @@ function App() {
     migrateToSingleConversation();
   }, []);
 
+  // Auto-start local OpenClaw on mount if configured
+  useEffect(() => {
+    if (
+      localOpenclawInstalled &&
+      localOpenclawAutoStart &&
+      mode === 'openclaw' &&
+      openclawSubMode === 'selfhosted' &&
+      selfhostedType === 'local'
+    ) {
+      invoke('start_local_openclaw', { port: localOpenclawPort || 18789 })
+        .then((result) => {
+          console.log('[App] Auto-started local OpenClaw:', result);
+          // Auto-enable bridge if configured
+          if (localOpenclawAutoBridge && isLoggedIn && !bridgeEnabled) {
+            useSettingsStore.getState().setBridgeEnabled(true);
+          }
+        })
+        .catch((err) => {
+          console.warn('[App] Auto-start local OpenClaw failed:', err);
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Load single conversation for current mode/user
   useEffect(() => {
     const conv = getOrCreateSingleConversation(mode, userId || undefined);
@@ -227,14 +260,16 @@ function App() {
   }, [mode, userId]);
 
   const getOrCreateOpenClawClient = useCallback(() => {
-    const { openclawUrl, openclawToken, selfhostedType: shType } = useSettingsStore.getState();
-    const url = shType === 'local' ? OPENCLAW_LOCAL_GATEWAY : openclawUrl;
+    const { openclawUrl, openclawToken, selfhostedType: shType, localOpenclawInstalled: localInstalled, localOpenclawToken: localToken } = useSettingsStore.getState();
+    const isLocal = shType === 'local' && localInstalled;
+    const url = isLocal ? OPENCLAW_LOCAL_GATEWAY : openclawUrl;
+    const token = isLocal ? localToken : openclawToken;
     if (!url) {
       setOpenclawError('OpenClaw URL not configured. Set it in Settings.');
       return null;
     }
     if (openclawClientRef.current) return openclawClientRef.current;
-    const client = new OpenClawDirectClient(url, openclawToken);
+    const client = new OpenClawDirectClient(url, token);
     client.onConnectionChange = (connected) => {
       setOpenclawConnected(connected);
       if (!connected) setOpenclawError(null);

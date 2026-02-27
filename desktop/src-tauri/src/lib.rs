@@ -4,6 +4,7 @@ mod skill_executor;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{
     ipc::Channel, Manager,
@@ -210,6 +211,443 @@ async fn set_skill_config(
         .send_skill_config_set(&skill_name, &config)
         .await
         .map_err(|e| e.to_string())
+}
+
+// ── Local OpenClaw management commands ──
+
+const OPENCLAW_PROCESS_NAME: &str = "local-openclaw";
+
+#[derive(Serialize)]
+struct PrerequisiteStatus {
+    node_installed: bool,
+    node_version: String,
+    npm_installed: bool,
+    openclaw_installed: bool,
+    openclaw_version: String,
+}
+
+#[tauri::command]
+async fn check_openclaw_prerequisites() -> Result<PrerequisiteStatus, String> {
+    let node_output = std::process::Command::new("node")
+        .arg("--version")
+        .output();
+    let (node_installed, node_version) = match node_output {
+        Ok(out) if out.status.success() => {
+            let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            // Check >= 18: parse "v18.x.y"
+            let major: u32 = ver
+                .trim_start_matches('v')
+                .split('.')
+                .next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            (major >= 18, ver)
+        }
+        _ => (false, String::new()),
+    };
+
+    let npm_output = std::process::Command::new("npm")
+        .arg("--version")
+        .output();
+    let npm_installed = npm_output.map(|o| o.status.success()).unwrap_or(false);
+
+    let oc_output = std::process::Command::new("openclaw")
+        .arg("--version")
+        .output();
+    let (openclaw_installed, openclaw_version) = match oc_output {
+        Ok(out) if out.status.success() => {
+            let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            (true, ver)
+        }
+        _ => (false, String::new()),
+    };
+
+    Ok(PrerequisiteStatus {
+        node_installed,
+        node_version,
+        npm_installed,
+        openclaw_installed,
+        openclaw_version,
+    })
+}
+
+#[derive(Serialize)]
+struct InstallResult {
+    success: bool,
+    token: String,
+    config_dir: String,
+    error: String,
+}
+
+#[tauri::command]
+async fn install_openclaw(
+    provider: String,
+    api_key: String,
+    model: String,
+    port: Option<u16>,
+    registry: Option<String>,
+) -> Result<InstallResult, String> {
+    let port = port.unwrap_or(18789);
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let config_dir = home.join(".agentos").join("openclaw");
+
+    // Step 1: npm install -g openclaw (skip if already installed)
+    let oc_check = std::process::Command::new("openclaw")
+        .arg("--version")
+        .output();
+    let already_installed = oc_check.map(|o| o.status.success()).unwrap_or(false);
+
+    if !already_installed {
+        let mut npm_args = vec!["install".to_string(), "-g".to_string(), "openclaw".to_string()];
+        if let Some(ref reg) = registry {
+            npm_args.push(format!("--registry={}", reg));
+        }
+        let npm_result = std::process::Command::new("npm")
+            .args(&npm_args)
+            .output()
+            .map_err(|e| format!("Failed to run npm: {}", e))?;
+        if !npm_result.status.success() {
+            let stderr = String::from_utf8_lossy(&npm_result.stderr);
+            return Ok(InstallResult {
+                success: false,
+                token: String::new(),
+                config_dir: String::new(),
+                error: format!("npm install failed: {}", stderr),
+            });
+        }
+    }
+
+    // Step 2: Create directory structure
+    let state_dir = config_dir.join("state");
+    let agent_auth_dir = state_dir.join("agents").join("main").join("agent");
+    let workspace_dir = config_dir.join("workspace");
+    std::fs::create_dir_all(&agent_auth_dir)
+        .map_err(|e| format!("Failed to create config dirs: {}", e))?;
+    std::fs::create_dir_all(&workspace_dir)
+        .map_err(|e| format!("Failed to create workspace: {}", e))?;
+
+    // Step 3: Generate random token
+    let token: String = (0..48)
+        .map(|_| {
+            let idx = (rand::random::<u8>() % 16) as usize;
+            "0123456789abcdef".chars().nth(idx).unwrap()
+        })
+        .collect();
+
+    // Step 4: Write auth-profiles.json
+    let auth_profile_key = format!("{}:default", provider);
+    let auth_profiles = serde_json::json!({
+        "version": 1,
+        "profiles": {
+            &auth_profile_key: {
+                "type": "api_key",
+                "provider": &provider,
+                "key": &api_key,
+            }
+        },
+        "lastGood": {
+            &provider: &auth_profile_key,
+        }
+    });
+    std::fs::write(
+        agent_auth_dir.join("auth-profiles.json"),
+        serde_json::to_string_pretty(&auth_profiles).unwrap(),
+    ).map_err(|e| format!("Failed to write auth-profiles: {}", e))?;
+
+    // Step 5: Write openclaw.json
+    let base_url = match provider.as_str() {
+        "deepseek" => "https://api.deepseek.com/v1",
+        "openai" => "https://api.openai.com/v1",
+        "anthropic" => "https://api.anthropic.com",
+        "moonshot" => "https://api.moonshot.cn/v1",
+        _ => "https://api.deepseek.com/v1",
+    };
+    let api_type = if provider == "anthropic" { "anthropic" } else { "openai-completions" };
+    let model_id = if model.is_empty() {
+        match provider.as_str() {
+            "deepseek" => "deepseek-chat",
+            "openai" => "gpt-4o",
+            "anthropic" => "claude-sonnet-4-20250514",
+            "moonshot" => "moonshot-v1-auto",
+            _ => "deepseek-chat",
+        }
+    } else {
+        &model
+    };
+
+    let config = serde_json::json!({
+        "meta": { "lastTouchedVersion": "agentos-local-install" },
+        "auth": {
+            "profiles": {
+                &auth_profile_key: { "provider": &provider, "mode": "api_key" }
+            }
+        },
+        "models": {
+            "mode": "merge",
+            "providers": {
+                &provider: {
+                    "baseUrl": base_url,
+                    "api": api_type,
+                    "models": [{
+                        "id": model_id,
+                        "name": model_id,
+                        "reasoning": false,
+                        "input": ["text"],
+                        "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+                        "contextWindow": 128000,
+                        "maxTokens": 8192,
+                    }]
+                }
+            }
+        },
+        "agents": {
+            "defaults": {
+                "model": { "primary": format!("{}/{}", provider, model_id) },
+                "workspace": workspace_dir.to_string_lossy(),
+                "maxConcurrent": 2,
+                "subagents": { "maxConcurrent": 4 },
+            }
+        },
+        "commands": { "native": "auto", "nativeSkills": "auto" },
+        "gateway": {
+            "port": port,
+            "mode": "local",
+            "bind": "loopback",
+            "auth": { "mode": "token", "token": &token },
+        },
+        "skills": { "install": { "nodeManager": "npm" } },
+    });
+    std::fs::write(
+        config_dir.join("openclaw.json"),
+        serde_json::to_string_pretty(&config).unwrap(),
+    ).map_err(|e| format!("Failed to write openclaw.json: {}", e))?;
+
+    Ok(InstallResult {
+        success: true,
+        token: token.clone(),
+        config_dir: config_dir.to_string_lossy().to_string(),
+        error: String::new(),
+    })
+}
+
+#[tauri::command]
+async fn start_local_openclaw(
+    state: tauri::State<'_, AppState>,
+    port: Option<u16>,
+) -> Result<String, String> {
+    let port = port.unwrap_or(18789);
+    let mut pm = state.process_manager.lock().await;
+
+    if pm.is_running(OPENCLAW_PROCESS_NAME) {
+        return Ok("already_running".to_string());
+    }
+
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let config_dir = home.join(".agentos").join("openclaw");
+    let config_path = config_dir.join("openclaw.json");
+    let state_dir = config_dir.join("state");
+
+    if !config_path.exists() {
+        return Err("OpenClaw not installed. Run install first.".to_string());
+    }
+
+    let mut envs = HashMap::new();
+    envs.insert("OPENCLAW_CONFIG_PATH".to_string(), config_path.to_string_lossy().to_string());
+    envs.insert("OPENCLAW_STATE_DIR".to_string(), state_dir.to_string_lossy().to_string());
+
+    let _pid = pm.spawn_with_env(
+        OPENCLAW_PROCESS_NAME,
+        "openclaw",
+        &["gateway".to_string()],
+        Some(&envs),
+    ).map_err(|e| format!("Failed to start OpenClaw: {}", e))?;
+
+    // Drop the lock before polling
+    drop(pm);
+
+    // Health check: poll until ready
+    let url = format!("http://127.0.0.1:{}/health", port);
+    let client = reqwest::Client::new();
+    for _ in 0..30 {
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        if let Ok(resp) = client.get(&url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                println!("[Tauri] Local OpenClaw started on port {}", port);
+                return Ok("started".to_string());
+            }
+        }
+    }
+
+    // Timed out — check if process still alive
+    let pm = state.process_manager.lock().await;
+    if pm.is_running(OPENCLAW_PROCESS_NAME) {
+        // Process alive but health check failed
+        Ok("started_no_health".to_string())
+    } else {
+        Err("OpenClaw process exited before becoming ready".to_string())
+    }
+}
+
+#[tauri::command]
+async fn stop_local_openclaw(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let mut pm = state.process_manager.lock().await;
+    pm.kill(OPENCLAW_PROCESS_NAME).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+struct LocalOpenclawStatus {
+    running: bool,
+    pid: Option<u32>,
+    port: u16,
+    version: String,
+}
+
+#[tauri::command]
+async fn get_local_openclaw_status(
+    state: tauri::State<'_, AppState>,
+    port: Option<u16>,
+) -> Result<LocalOpenclawStatus, String> {
+    let port = port.unwrap_or(18789);
+    let pm = state.process_manager.lock().await;
+    let running = pm.is_running(OPENCLAW_PROCESS_NAME);
+    let pid = if running {
+        pm.list().into_iter().find(|(n, _)| n == OPENCLAW_PROCESS_NAME).and_then(|(_, info)| info.1)
+    } else {
+        None
+    };
+
+    let oc_output = std::process::Command::new("openclaw")
+        .arg("--version")
+        .output();
+    let version = match oc_output {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        _ => String::new(),
+    };
+
+    Ok(LocalOpenclawStatus { running, pid, port, version })
+}
+
+#[tauri::command]
+async fn update_local_openclaw_config(
+    provider: String,
+    api_key: String,
+    model: String,
+) -> Result<(), String> {
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let config_dir = home.join(".agentos").join("openclaw");
+    let config_path = config_dir.join("openclaw.json");
+    let agent_auth_dir = config_dir.join("state").join("agents").join("main").join("agent");
+
+    if !config_path.exists() {
+        return Err("OpenClaw not installed".to_string());
+    }
+
+    // Read existing config to preserve token/port
+    let existing_str = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config: {}", e))?;
+    let mut config: serde_json::Value = serde_json::from_str(&existing_str)
+        .map_err(|e| format!("Failed to parse config: {}", e))?;
+
+    // Update model/provider in config
+    let base_url = match provider.as_str() {
+        "deepseek" => "https://api.deepseek.com/v1",
+        "openai" => "https://api.openai.com/v1",
+        "anthropic" => "https://api.anthropic.com",
+        "moonshot" => "https://api.moonshot.cn/v1",
+        _ => "https://api.deepseek.com/v1",
+    };
+    let api_type = if provider == "anthropic" { "anthropic" } else { "openai-completions" };
+    let model_id = if model.is_empty() {
+        match provider.as_str() {
+            "deepseek" => "deepseek-chat",
+            "openai" => "gpt-4o",
+            "anthropic" => "claude-sonnet-4-20250514",
+            "moonshot" => "moonshot-v1-auto",
+            _ => "deepseek-chat",
+        }
+    } else {
+        &model
+    };
+    let auth_profile_key = format!("{}:default", provider);
+
+    config["auth"]["profiles"] = serde_json::json!({
+        &auth_profile_key: { "provider": &provider, "mode": "api_key" }
+    });
+    config["models"]["providers"] = serde_json::json!({
+        &provider: {
+            "baseUrl": base_url,
+            "api": api_type,
+            "models": [{
+                "id": model_id,
+                "name": model_id,
+                "reasoning": false,
+                "input": ["text"],
+                "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+                "contextWindow": 128000,
+                "maxTokens": 8192,
+            }]
+        }
+    });
+    config["agents"]["defaults"]["model"]["primary"] = serde_json::json!(format!("{}/{}", provider, model_id));
+
+    std::fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&config).unwrap(),
+    ).map_err(|e| format!("Failed to write config: {}", e))?;
+
+    // Update auth-profiles.json
+    let auth_profiles = serde_json::json!({
+        "version": 1,
+        "profiles": {
+            &auth_profile_key: {
+                "type": "api_key",
+                "provider": &provider,
+                "key": &api_key,
+            }
+        },
+        "lastGood": {
+            &provider: &auth_profile_key,
+        }
+    });
+    std::fs::write(
+        agent_auth_dir.join("auth-profiles.json"),
+        serde_json::to_string_pretty(&auth_profiles).unwrap(),
+    ).map_err(|e| format!("Failed to write auth-profiles: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn upgrade_openclaw(registry: Option<String>) -> Result<String, String> {
+    let mut args = vec!["update".to_string(), "-g".to_string(), "openclaw".to_string()];
+    if let Some(ref reg) = registry {
+        args.push(format!("--registry={}", reg));
+    }
+    let output = std::process::Command::new("npm")
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to run npm: {}", e))?;
+
+    if output.status.success() {
+        // Get new version
+        let ver_output = std::process::Command::new("openclaw")
+            .arg("--version")
+            .output();
+        let ver = match ver_output {
+            Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            _ => "unknown".to_string(),
+        };
+        Ok(ver)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("npm update failed: {}", stderr))
+    }
 }
 
 #[tauri::command]
@@ -452,6 +890,13 @@ pub fn run() {
             set_skill_config,
             start_mcp_bridge,
             stop_mcp_bridge,
+            check_openclaw_prerequisites,
+            install_openclaw,
+            start_local_openclaw,
+            stop_local_openclaw,
+            get_local_openclaw_status,
+            update_local_openclaw_config,
+            upgrade_openclaw,
         ])
         .on_window_event(|window, event| {
             // Minimize to tray instead of closing

@@ -2698,3 +2698,111 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* ── Local OpenClaw ── */
+
+.local-openclaw-setup,
+.local-openclaw-status {
+  margin-top: 8px;
+}
+
+.settings-section-subtitle {
+  color: #ccc;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.local-openclaw-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #bbb;
+  font-size: 13px;
+  cursor: pointer;
+  margin: 6px 0;
+}
+
+.local-openclaw-checkbox input[type="checkbox"] {
+  accent-color: #6c63ff;
+  width: 16px;
+  height: 16px;
+}
+
+.local-openclaw-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #2a2a4a;
+  border-top-color: #6c63ff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin: 12px 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.local-openclaw-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.local-openclaw-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.local-openclaw-status-text {
+  color: #ccc;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.local-openclaw-actions {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.local-openclaw-actions .settings-auth-btn {
+  margin-top: 0;
+}
+
+.local-openclaw-edit-config {
+  margin-top: 8px;
+  padding: 12px;
+  background: #16213e;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+}
+
+.local-openclaw-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.local-openclaw-logs {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #0f0f23;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.local-openclaw-log-line {
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
+  color: #d4d4d4;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
