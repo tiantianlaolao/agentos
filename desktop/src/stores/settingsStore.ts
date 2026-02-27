@@ -251,6 +251,12 @@ export const useSettingsStore = create<SettingsState>()(
         if (!state.deployProvider) state.deployProvider = 'deepseek';
         if (!state.deployApiKey) state.deployApiKey = '';
         if (!state.deployModel) state.deployModel = '';
+        // Migrate old server IPs
+        if (typeof state.serverUrl === 'string') {
+          state.serverUrl = state.serverUrl
+            .replace('150.109.157.27', '43.155.104.45')
+            .replace('43.154.188.177', '43.155.104.45');
+        }
         return state;
       },
       onRehydrateStorage: () => {
