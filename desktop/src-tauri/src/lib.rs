@@ -226,10 +226,39 @@ struct PrerequisiteStatus {
     openclaw_version: String,
 }
 
+/// Build an extended PATH that includes common Node.js install locations (nvm, Homebrew, Volta, fnm).
+fn extended_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut path = std::env::var("PATH").unwrap_or_default();
+    // For nvm, find the latest installed version directory
+    if let Ok(entries) = std::fs::read_dir(format!("{}/.nvm/versions/node", home)) {
+        let mut versions: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+        versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+        if let Some(latest) = versions.first() {
+            path = format!("{}/bin:{}", latest.path().display(), path);
+        }
+    }
+    let extra = [
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        &format!("{}/.volta/bin", home),
+        &format!("{}/.fnm/aliases/default/bin", home),
+    ];
+    for p in extra {
+        if !path.contains(p) {
+            path = format!("{}:{}", p, path);
+        }
+    }
+    path
+}
+
 #[tauri::command]
 async fn check_openclaw_prerequisites() -> Result<PrerequisiteStatus, String> {
+    let path = extended_path();
+
     let node_output = std::process::Command::new("node")
         .arg("--version")
+        .env("PATH", &path)
         .output();
     let (node_installed, node_version) = match node_output {
         Ok(out) if out.status.success() => {
@@ -248,11 +277,13 @@ async fn check_openclaw_prerequisites() -> Result<PrerequisiteStatus, String> {
 
     let npm_output = std::process::Command::new("npm")
         .arg("--version")
+        .env("PATH", &path)
         .output();
     let npm_installed = npm_output.map(|o| o.status.success()).unwrap_or(false);
 
     let oc_output = std::process::Command::new("openclaw")
         .arg("--version")
+        .env("PATH", &path)
         .output();
     let (openclaw_installed, openclaw_version) = match oc_output {
         Ok(out) if out.status.success() => {
@@ -291,10 +322,12 @@ async fn install_openclaw(
     let port = port.unwrap_or(18789);
     let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
     let config_dir = home.join(".agentos").join("openclaw");
+    let path = extended_path();
 
     // Step 1: npm install -g openclaw (skip if already installed)
     let oc_check = std::process::Command::new("openclaw")
         .arg("--version")
+        .env("PATH", &path)
         .output();
     let already_installed = oc_check.map(|o| o.status.success()).unwrap_or(false);
 
@@ -305,6 +338,7 @@ async fn install_openclaw(
         }
         let npm_result = std::process::Command::new("npm")
             .args(&npm_args)
+            .env("PATH", &path)
             .output()
             .map_err(|e| format!("Failed to run npm: {}", e))?;
         if !npm_result.status.success() {
@@ -464,6 +498,7 @@ async fn start_local_openclaw(
     let mut envs = HashMap::new();
     envs.insert("OPENCLAW_CONFIG_PATH".to_string(), config_path.to_string_lossy().to_string());
     envs.insert("OPENCLAW_STATE_DIR".to_string(), state_dir.to_string_lossy().to_string());
+    envs.insert("PATH".to_string(), extended_path());
 
     let _pid = pm.spawn_with_env(
         OPENCLAW_PROCESS_NAME,
@@ -534,6 +569,7 @@ async fn get_local_openclaw_status(
 
     let oc_output = std::process::Command::new("openclaw")
         .arg("--version")
+        .env("PATH", &extended_path())
         .output();
     let version = match oc_output {
         Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
@@ -645,12 +681,14 @@ async fn update_local_openclaw_config(
 
 #[tauri::command]
 async fn upgrade_openclaw(registry: Option<String>) -> Result<String, String> {
+    let path = extended_path();
     let mut args = vec!["update".to_string(), "-g".to_string(), "openclaw".to_string()];
     if let Some(ref reg) = registry {
         args.push(format!("--registry={}", reg));
     }
     let output = std::process::Command::new("npm")
         .args(&args)
+        .env("PATH", &path)
         .output()
         .map_err(|e| format!("Failed to run npm: {}", e))?;
 
@@ -658,6 +696,7 @@ async fn upgrade_openclaw(registry: Option<String>) -> Result<String, String> {
         // Get new version
         let ver_output = std::process::Command::new("openclaw")
             .arg("--version")
+            .env("PATH", &path)
             .output();
         let ver = match ver_output {
             Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
@@ -723,13 +762,16 @@ async fn start_mcp_bridge(
     }
 
     // Spawn the bridge process
-    let _pid = pm.spawn(
+    let mut envs = HashMap::new();
+    envs.insert("PATH".to_string(), extended_path());
+    let _pid = pm.spawn_with_env(
         "mcp-bridge",
         "node",
         &[
             script_path.to_string_lossy().to_string(),
             config_path.to_string_lossy().to_string(),
         ],
+        Some(&envs),
     ).map_err(|e| format!("Failed to start MCP bridge: {}", e))?;
 
     // Wait for the bridge to print its port (poll logs)
