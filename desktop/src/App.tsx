@@ -74,7 +74,6 @@ function App() {
   const localOpenclawInstalled = useSettingsStore((s) => s.localOpenclawInstalled);
   const localOpenclawAutoStart = useSettingsStore((s) => s.localOpenclawAutoStart);
   const localOpenclawAutoBridge = useSettingsStore((s) => s.localOpenclawAutoBridge);
-  const localOpenclawToken = useSettingsStore((s) => s.localOpenclawToken);
   const localOpenclawPort = useSettingsStore((s) => s.localOpenclawPort);
   const selfhostedType = useSettingsStore((s) => s.selfhostedType);
 
