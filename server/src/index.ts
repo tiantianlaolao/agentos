@@ -12,6 +12,7 @@ import hostedRoutes from './auth/hostedRoutes.js';
 import memoryRoutes from './memory/routes.js';
 import skillRoutes from './skills/routes.js';
 import skillMdRoutes from './skills/skillmd/routes.js';
+import llmProxyRoutes from './auth/llmProxy.js';
 
 const PORT = parseInt(process.env.PORT || '3100', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -49,6 +50,9 @@ app.use('/skills', skillRoutes);
 
 // MCP server management routes
 app.use('/mcp', mcpRoutes);
+
+// LLM proxy (for local OpenClaw default mode)
+app.use('/api/llm-proxy', llmProxyRoutes);
 
 // Health check endpoint
 app.get('/health', (_req, res) => {

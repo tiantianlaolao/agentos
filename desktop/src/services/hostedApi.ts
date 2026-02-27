@@ -33,6 +33,23 @@ export async function activateHostedAccess(
   return JSON.parse(raw);
 }
 
+export async function updateHostedModel(
+  provider: string,
+  apiKey: string,
+  model: string | undefined,
+  authToken: string,
+  serverUrl: string
+): Promise<{ success?: boolean; error?: string }> {
+  const baseUrl = deriveHttpBaseUrl(serverUrl);
+  const raw = await invoke<string>('http_fetch', {
+    url: `${baseUrl}/hosted/update-model`,
+    method: 'POST',
+    body: JSON.stringify({ provider, apiKey, model: model || undefined }),
+    authToken,
+  });
+  return JSON.parse(raw);
+}
+
 export async function getHostedStatus(
   authToken: string,
   serverUrl: string

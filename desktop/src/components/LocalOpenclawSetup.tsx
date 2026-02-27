@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore.ts';
+import { useAuthStore } from '../stores/authStore.ts';
 import { useTranslation } from '../i18n/index.ts';
-
-type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
 
 interface PrerequisiteStatus {
   node_installed: boolean;
@@ -20,12 +19,11 @@ interface InstallResult {
   error: string;
 }
 
-const PROVIDERS: { key: LLMProvider; label: string }[] = [
-  { key: 'deepseek', label: 'DeepSeek' },
-  { key: 'openai', label: 'OpenAI' },
-  { key: 'anthropic', label: 'Anthropic' },
-  { key: 'moonshot', label: 'Moonshot (Kimi)' },
-];
+/** Derive the LLM proxy URL from the AgentOS WS server URL */
+function getLLMProxyBaseUrl(serverUrl: string): string {
+  const httpUrl = serverUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
+  return `${httpUrl}/api/llm-proxy/v1`;
+}
 
 interface Props {
   onInstalled: () => void;
@@ -34,12 +32,10 @@ interface Props {
 export function LocalOpenclawSetup({ onInstalled }: Props) {
   const t = useTranslation();
   const store = useSettingsStore();
+  const auth = useAuthStore();
 
   const [checking, setChecking] = useState(true);
   const [prereqs, setPrereqs] = useState<PrerequisiteStatus | null>(null);
-  const [provider, setProvider] = useState<LLMProvider>('deepseek');
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('');
   const [useMirror, setUseMirror] = useState(store.locale === 'zh');
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState('');
@@ -65,22 +61,40 @@ export function LocalOpenclawSetup({ onInstalled }: Props) {
   };
 
   const handleInstall = async () => {
-    if (!apiKey.trim()) {
+    const isDefault = store.deployModelMode === 'default';
+
+    // For custom mode, validate API key
+    if (!isDefault && !store.deployApiKey.trim()) {
       setInstallError(t('settings.localSetupApiKeyPlaceholder'));
       return;
     }
+
+    // For default mode, validate login
+    if (isDefault && !auth.isLoggedIn) {
+      setInstallError(t('settings.hostedNeedLogin'));
+      return;
+    }
+
     setInstalling(true);
     setInstallError('');
     setPhase('installing');
 
     try {
       const registry = useMirror ? 'https://registry.npmmirror.com' : undefined;
+
+      // Determine provider, apiKey, model, baseUrl based on mode
+      const provider = isDefault ? 'deepseek' : store.deployProvider;
+      const apiKey = isDefault ? (auth.authToken || '') : store.deployApiKey.trim();
+      const model = isDefault ? '' : store.deployModel.trim();
+      const baseUrl = isDefault ? getLLMProxyBaseUrl(store.serverUrl) : undefined;
+
       const result = await invoke<InstallResult>('install_openclaw', {
         provider,
-        apiKey: apiKey.trim(),
-        model: model.trim(),
+        apiKey,
+        model,
         port: store.localOpenclawPort || 18789,
         registry,
+        baseUrl,
       });
 
       if (!result.success) {
@@ -93,8 +107,8 @@ export function LocalOpenclawSetup({ onInstalled }: Props) {
       // Save to store
       store.setLocalOpenclawToken(result.token);
       store.setLocalOpenclawProvider(provider);
-      store.setLocalOpenclawApiKey(apiKey.trim());
-      store.setLocalOpenclawModel(model.trim());
+      store.setLocalOpenclawApiKey(apiKey);
+      store.setLocalOpenclawModel(model);
       store.setLocalOpenclawInstalled(true);
 
       // Auto-start
@@ -159,7 +173,12 @@ export function LocalOpenclawSetup({ onInstalled }: Props) {
     );
   }
 
-  // Phase: config form
+  const isDefault = store.deployModelMode === 'default';
+  const canInstall = isDefault
+    ? auth.isLoggedIn
+    : !!store.deployApiKey.trim();
+
+  // Phase: config form (provider/apiKey/model now in SettingsPanel)
   return (
     <div className="local-openclaw-setup">
       <h4 className="settings-section-subtitle">{t('settings.localSetupTitle')}</h4>
@@ -172,39 +191,9 @@ export function LocalOpenclawSetup({ onInstalled }: Props) {
         </p>
       )}
 
-      <div className="settings-field">
-        <label className="settings-label">{t('settings.localSetupProvider')}</label>
-        <select
-          className="settings-select"
-          value={provider}
-          onChange={(e) => setProvider(e.target.value as LLMProvider)}
-        >
-          {PROVIDERS.map((p) => (
-            <option key={p.key} value={p.key}>{p.label}</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="settings-field">
-        <label className="settings-label">{t('settings.localSetupApiKey')}</label>
-        <input
-          className="settings-input"
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder={t('settings.localSetupApiKeyPlaceholder')}
-        />
-      </div>
-
-      <div className="settings-field">
-        <label className="settings-label">{t('settings.localSetupModel')}</label>
-        <input
-          className="settings-input"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder={t('settings.localSetupModelPlaceholder')}
-        />
-      </div>
+      {isDefault && !auth.isLoggedIn && (
+        <p className="settings-hosted-note">{t('settings.hostedNeedLogin')}</p>
+      )}
 
       <label className="local-openclaw-checkbox">
         <input
@@ -224,7 +213,7 @@ export function LocalOpenclawSetup({ onInstalled }: Props) {
       <button
         className="settings-auth-btn"
         onClick={handleInstall}
-        disabled={installing || !apiKey.trim()}
+        disabled={installing || !canInstall}
         style={{ marginTop: '8px' }}
       >
         {t('settings.localSetupInstallBtn')}

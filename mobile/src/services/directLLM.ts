@@ -18,13 +18,17 @@ export interface StreamCallbacks {
   onError: (error: string) => void;
 }
 
-type Provider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
+type Provider = 'deepseek' | 'openai' | 'anthropic' | 'gemini' | 'moonshot' | 'qwen' | 'zhipu' | 'openrouter';
 
 const PROVIDER_CONFIG: Record<string, { baseUrl: string; defaultModel: string }> = {
   deepseek: { baseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-chat' },
   openai: { baseUrl: 'https://api.openai.com', defaultModel: 'gpt-4o' },
+  anthropic: { baseUrl: 'https://api.anthropic.com', defaultModel: 'claude-sonnet-4-20250514' },
+  gemini: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', defaultModel: 'gemini-2.5-flash' },
   moonshot: { baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-auto' },
-  anthropic: { baseUrl: 'https://api.anthropic.com', defaultModel: 'claude-sonnet-4-5-20250929' },
+  qwen: { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-max' },
+  zhipu: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', defaultModel: 'auto' },
 };
 
 const SYSTEM_PROMPT =

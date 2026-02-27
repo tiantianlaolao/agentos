@@ -6,6 +6,7 @@ import {
   getHostedAccount,
   listInvitationCodes,
   provisionHostedInstance,
+  updateHostedProvider,
 } from './hosted.js';
 
 const router = Router();
@@ -79,6 +80,40 @@ router.get('/status', (req: Request, res: Response) => {
 
   const account = getHostedAccount(decoded.userId);
   res.json({ activated: !!account, account });
+});
+
+// POST /hosted/update-model — JWT auth, update hosted instance model/provider
+router.post('/update-model', (req: Request, res: Response) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    res.status(401).json({ error: '请先登录' });
+    return;
+  }
+
+  const decoded = verifyToken(token);
+  if (!decoded) {
+    res.status(401).json({ error: '登录已过期' });
+    return;
+  }
+
+  const { provider, apiKey, model } = req.body as {
+    provider?: string;
+    apiKey?: string;
+    model?: string;
+  };
+
+  if (!provider || !apiKey) {
+    res.status(400).json({ error: 'provider and apiKey are required' });
+    return;
+  }
+
+  const result = updateHostedProvider(decoded.userId, provider, apiKey, model);
+  if (!result.success) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+
+  res.json({ success: true });
 });
 
 // GET /hosted/codes — Admin only, list codes

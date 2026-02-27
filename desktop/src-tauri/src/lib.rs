@@ -286,6 +286,7 @@ async fn install_openclaw(
     model: String,
     port: Option<u16>,
     registry: Option<String>,
+    base_url: Option<String>,
 ) -> Result<InstallResult, String> {
     let port = port.unwrap_or(18789);
     let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
@@ -355,20 +356,29 @@ async fn install_openclaw(
     ).map_err(|e| format!("Failed to write auth-profiles: {}", e))?;
 
     // Step 5: Write openclaw.json
-    let base_url = match provider.as_str() {
+    let default_base_url = match provider.as_str() {
         "deepseek" => "https://api.deepseek.com/v1",
         "openai" => "https://api.openai.com/v1",
         "anthropic" => "https://api.anthropic.com",
+        "gemini" => "https://generativelanguage.googleapis.com/v1beta/openai",
         "moonshot" => "https://api.moonshot.cn/v1",
+        "qwen" => "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "zhipu" => "https://open.bigmodel.cn/api/paas/v4",
+        "openrouter" => "https://openrouter.ai/api/v1",
         _ => "https://api.deepseek.com/v1",
     };
+    let effective_base_url = base_url.as_deref().unwrap_or(default_base_url);
     let api_type = if provider == "anthropic" { "anthropic" } else { "openai-completions" };
     let model_id = if model.is_empty() {
         match provider.as_str() {
             "deepseek" => "deepseek-chat",
             "openai" => "gpt-4o",
             "anthropic" => "claude-sonnet-4-20250514",
+            "gemini" => "gemini-2.5-flash",
             "moonshot" => "moonshot-v1-auto",
+            "qwen" => "qwen-max",
+            "zhipu" => "glm-4",
+            "openrouter" => "auto",
             _ => "deepseek-chat",
         }
     } else {
@@ -386,7 +396,7 @@ async fn install_openclaw(
             "mode": "merge",
             "providers": {
                 &provider: {
-                    "baseUrl": base_url,
+                    "baseUrl": effective_base_url,
                     "api": api_type,
                     "models": [{
                         "id": model_id,
@@ -538,6 +548,7 @@ async fn update_local_openclaw_config(
     provider: String,
     api_key: String,
     model: String,
+    base_url: Option<String>,
 ) -> Result<(), String> {
     let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
     let config_dir = home.join(".agentos").join("openclaw");
@@ -555,20 +566,29 @@ async fn update_local_openclaw_config(
         .map_err(|e| format!("Failed to parse config: {}", e))?;
 
     // Update model/provider in config
-    let base_url = match provider.as_str() {
+    let default_base_url = match provider.as_str() {
         "deepseek" => "https://api.deepseek.com/v1",
         "openai" => "https://api.openai.com/v1",
         "anthropic" => "https://api.anthropic.com",
+        "gemini" => "https://generativelanguage.googleapis.com/v1beta/openai",
         "moonshot" => "https://api.moonshot.cn/v1",
+        "qwen" => "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "zhipu" => "https://open.bigmodel.cn/api/paas/v4",
+        "openrouter" => "https://openrouter.ai/api/v1",
         _ => "https://api.deepseek.com/v1",
     };
+    let effective_base_url = base_url.as_deref().unwrap_or(default_base_url);
     let api_type = if provider == "anthropic" { "anthropic" } else { "openai-completions" };
     let model_id = if model.is_empty() {
         match provider.as_str() {
             "deepseek" => "deepseek-chat",
             "openai" => "gpt-4o",
             "anthropic" => "claude-sonnet-4-20250514",
+            "gemini" => "gemini-2.5-flash",
             "moonshot" => "moonshot-v1-auto",
+            "qwen" => "qwen-max",
+            "zhipu" => "glm-4",
+            "openrouter" => "auto",
             _ => "deepseek-chat",
         }
     } else {
@@ -581,7 +601,7 @@ async fn update_local_openclaw_config(
     });
     config["models"]["providers"] = serde_json::json!({
         &provider: {
-            "baseUrl": base_url,
+            "baseUrl": effective_base_url,
             "api": api_type,
             "models": [{
                 "id": model_id,

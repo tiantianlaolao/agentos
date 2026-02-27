@@ -40,9 +40,9 @@ export enum MessageType {
 
 export type ConnectionMode = 'builtin' | 'openclaw' | 'copaw' | 'byok' | 'desktop';
 
-export type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
+export type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'gemini' | 'moonshot' | 'qwen' | 'zhipu' | 'openrouter';
 
-export type LLMModel = 'deepseek' | 'moonshot' | 'anthropic' | 'openai';
+export type LLMModel = 'deepseek' | 'moonshot' | 'anthropic' | 'openai' | 'gemini' | 'qwen' | 'zhipu' | 'openrouter';
 
 export enum ErrorCode {
   INVALID_MESSAGE = 'INVALID_MESSAGE',

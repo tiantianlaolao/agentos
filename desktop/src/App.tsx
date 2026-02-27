@@ -138,6 +138,20 @@ function App() {
     // Conversation will be reloaded via the useEffect watching [mode, userId]
     setStreamingContent(null);
     setConnectError(null);
+
+    // In proxy mode, update local OpenClaw config with new JWT token as API key
+    if (authToken && useSettingsStore.getState().deployModelMode === 'default' && useSettingsStore.getState().localOpenclawInstalled) {
+      const sUrl = useSettingsStore.getState().serverUrl;
+      const proxyBaseUrl = sUrl.replace(/^ws/, 'http').replace(/\/ws$/, '') + '/api/llm-proxy/v1';
+      invoke('update_local_openclaw_config', {
+        provider: 'deepseek',
+        apiKey: authToken,
+        model: '',
+        baseUrl: proxyBaseUrl,
+      }).catch((err) => {
+        console.warn('[App] Failed to update proxy config with new token:', err);
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken]);
 

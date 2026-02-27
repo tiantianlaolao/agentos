@@ -42,7 +42,11 @@ const PROVIDERS: { key: LLMProvider; label: string }[] = [
   { key: 'deepseek', label: 'DeepSeek' },
   { key: 'openai', label: 'OpenAI' },
   { key: 'anthropic', label: 'Anthropic' },
-  { key: 'moonshot', label: 'Kimi' },
+  { key: 'gemini', label: 'Google Gemini' },
+  { key: 'moonshot', label: 'Moonshot (Kimi)' },
+  { key: 'qwen', label: 'Qwen (通义千问)' },
+  { key: 'zhipu', label: 'Z.AI (智谱 GLM)' },
+  { key: 'openrouter', label: 'OpenRouter' },
 ];
 
 const LANGUAGES = [

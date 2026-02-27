@@ -4,7 +4,7 @@ import { useSettingsStore } from '../stores/settingsStore.ts';
 import { useAuthStore } from '../stores/authStore.ts';
 import { useTranslation } from '../i18n/index.ts';
 
-type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
+import type { LLMProvider } from '../stores/settingsStore.ts';
 
 interface StatusInfo {
   running: boolean;
@@ -17,7 +17,11 @@ const PROVIDERS: { key: LLMProvider; label: string }[] = [
   { key: 'deepseek', label: 'DeepSeek' },
   { key: 'openai', label: 'OpenAI' },
   { key: 'anthropic', label: 'Anthropic' },
+  { key: 'gemini', label: 'Google Gemini' },
   { key: 'moonshot', label: 'Moonshot (Kimi)' },
+  { key: 'qwen', label: 'Qwen (通义千问)' },
+  { key: 'zhipu', label: 'Z.AI (智谱 GLM)' },
+  { key: 'openrouter', label: 'OpenRouter' },
 ];
 
 export function LocalOpenclawStatus() {
@@ -87,16 +91,30 @@ export function LocalOpenclawStatus() {
     setLoading(false);
   };
 
+  const isDefaultMode = store.deployModelMode === 'default';
+
+  /** Derive the LLM proxy URL from the AgentOS WS server URL */
+  const getLLMProxyBaseUrl = (): string => {
+    const httpUrl = store.serverUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
+    return `${httpUrl}/api/llm-proxy/v1`;
+  };
+
   const handleSaveConfig = async () => {
     try {
+      const provider = isDefaultMode ? 'deepseek' : editProvider;
+      const apiKey = isDefaultMode ? (auth.authToken || '') : editApiKey;
+      const model = isDefaultMode ? '' : editModel;
+      const baseUrl = isDefaultMode ? getLLMProxyBaseUrl() : undefined;
+
       await invoke('update_local_openclaw_config', {
-        provider: editProvider,
-        apiKey: editApiKey,
-        model: editModel,
+        provider,
+        apiKey,
+        model,
+        baseUrl,
       });
-      store.setLocalOpenclawProvider(editProvider);
-      store.setLocalOpenclawApiKey(editApiKey);
-      store.setLocalOpenclawModel(editModel);
+      store.setLocalOpenclawProvider(provider);
+      store.setLocalOpenclawApiKey(apiKey);
+      store.setLocalOpenclawModel(model);
       setEditing(false);
       // Restart if running
       if (status?.running) {
@@ -222,35 +240,44 @@ export function LocalOpenclawStatus() {
         </button>
       ) : (
         <div className="local-openclaw-edit-config">
-          <div className="settings-field">
-            <label className="settings-label">{t('settings.localSetupProvider')}</label>
-            <select
-              className="settings-select"
-              value={editProvider}
-              onChange={(e) => setEditProvider(e.target.value as LLMProvider)}
-            >
-              {PROVIDERS.map((p) => (
-                <option key={p.key} value={p.key}>{p.label}</option>
-              ))}
-            </select>
-          </div>
-          <div className="settings-field">
-            <label className="settings-label">{t('settings.localSetupApiKey')}</label>
-            <input
-              className="settings-input"
-              type="password"
-              value={editApiKey}
-              onChange={(e) => setEditApiKey(e.target.value)}
-            />
-          </div>
-          <div className="settings-field">
-            <label className="settings-label">{t('settings.localSetupModel')}</label>
-            <input
-              className="settings-input"
-              value={editModel}
-              onChange={(e) => setEditModel(e.target.value)}
-            />
-          </div>
+          {isDefaultMode ? (
+            <div className="settings-field">
+              <label className="settings-label">{t('settings.localSetupProvider')}</label>
+              <span className="settings-hint">{t('settings.deployModelProxy')}</span>
+            </div>
+          ) : (
+            <>
+              <div className="settings-field">
+                <label className="settings-label">{t('settings.localSetupProvider')}</label>
+                <select
+                  className="settings-select"
+                  value={editProvider}
+                  onChange={(e) => setEditProvider(e.target.value as LLMProvider)}
+                >
+                  {PROVIDERS.map((p) => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="settings-field">
+                <label className="settings-label">{t('settings.localSetupApiKey')}</label>
+                <input
+                  className="settings-input"
+                  type="password"
+                  value={editApiKey}
+                  onChange={(e) => setEditApiKey(e.target.value)}
+                />
+              </div>
+              <div className="settings-field">
+                <label className="settings-label">{t('settings.localSetupModel')}</label>
+                <input
+                  className="settings-input"
+                  value={editModel}
+                  onChange={(e) => setEditModel(e.target.value)}
+                />
+              </div>
+            </>
+          )}
           <div className="local-openclaw-actions">
             <button className="settings-auth-btn" onClick={handleSaveConfig}>
               {t('settings.localStatusSaveConfig')}

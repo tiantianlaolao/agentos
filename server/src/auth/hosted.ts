@@ -278,3 +278,112 @@ export function provisionHostedInstance(userId: string): { port: number; instanc
 
   return { port, instanceToken };
 }
+
+// ── Provider config maps (shared by provisioning and update) ──
+
+const PROVIDER_BASE_URLS: Record<string, string> = {
+  deepseek: 'https://api.deepseek.com/v1',
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  moonshot: 'https://api.moonshot.cn/v1',
+  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+  openrouter: 'https://openrouter.ai/api/v1',
+};
+
+const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
+  deepseek: 'deepseek-chat',
+  openai: 'gpt-4o',
+  anthropic: 'claude-sonnet-4-20250514',
+  gemini: 'gemini-2.5-flash',
+  moonshot: 'moonshot-v1-auto',
+  qwen: 'qwen-max',
+  zhipu: 'glm-4',
+  openrouter: 'auto',
+};
+
+/**
+ * Update a hosted instance's model provider/config and restart.
+ */
+export function updateHostedProvider(
+  userId: string,
+  provider: string,
+  apiKey: string,
+  model?: string,
+): { success: boolean; error?: string } {
+  const account = getHostedAccount(userId);
+  if (!account || !account.port) {
+    return { success: false, error: 'No hosted instance found' };
+  }
+
+  const shortId = userId.slice(0, 8);
+  const baseDir = process.env.HOSTED_BASE_DIR || '/opt/openclaw-hosted';
+  const instanceDir = path.join(baseDir, `user-${shortId}`);
+  const configPath = path.join(instanceDir, 'openclaw.json');
+  const statePath = path.join(instanceDir, 'state');
+  const agentAuthDir = path.join(statePath, 'agents', 'main', 'agent');
+
+  if (!fs.existsSync(configPath)) {
+    return { success: false, error: 'Instance config not found' };
+  }
+
+  const baseUrl = PROVIDER_BASE_URLS[provider] || PROVIDER_BASE_URLS.deepseek;
+  const apiType = provider === 'anthropic' ? 'anthropic' : 'openai-completions';
+  const modelId = model || PROVIDER_DEFAULT_MODELS[provider] || 'deepseek-chat';
+  const authProfileKey = `${provider}:default`;
+
+  // Update openclaw.json
+  const existing = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  existing.auth.profiles = { [authProfileKey]: { provider, mode: 'api_key' } };
+  existing.models.providers = {
+    [provider]: {
+      baseUrl,
+      api: apiType,
+      models: [{
+        id: modelId,
+        name: modelId,
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 8192,
+      }],
+    },
+  };
+  existing.agents.defaults.model.primary = `${provider}/${modelId}`;
+  fs.writeFileSync(configPath, JSON.stringify(existing, null, 2));
+
+  // Update auth-profiles.json
+  const authProfiles = {
+    version: 1,
+    profiles: { [authProfileKey]: { type: 'api_key', provider, key: apiKey } },
+    lastGood: { [provider]: authProfileKey },
+  };
+  fs.writeFileSync(
+    path.join(agentAuthDir, 'auth-profiles.json'),
+    JSON.stringify(authProfiles, null, 2),
+    { mode: 0o600 },
+  );
+
+  // Update start script env var
+  const startScript = path.join(instanceDir, 'start.sh');
+  if (fs.existsSync(startScript)) {
+    let script = fs.readFileSync(startScript, 'utf-8');
+    // Replace the API key env var line
+    script = script.replace(/export DEEPSEEK_API_KEY=.*/, `export ${provider.toUpperCase()}_API_KEY=${apiKey}`);
+    fs.writeFileSync(startScript, script, { mode: 0o755 });
+  }
+
+  // Restart PM2 process
+  const pmName = `openclaw-user-${shortId}`;
+  exec(`pm2 restart ${pmName}`, { timeout: 15000 }, (err) => {
+    if (err) {
+      console.error(`[Hosted] Failed to restart instance for ${shortId}:`, err.message);
+    } else {
+      console.log(`[Hosted] Restarted instance for ${shortId} with provider ${provider}`);
+    }
+  });
+
+  return { success: true };
+}

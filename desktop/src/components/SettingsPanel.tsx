@@ -2,13 +2,13 @@ import { useState, useCallback } from 'react';
 import { useSettingsStore } from '../stores/settingsStore.ts';
 import { useAuthStore } from '../stores/authStore.ts';
 import { login as apiLogin, register as apiRegister, sendCode as apiSendCode } from '../services/authApi.ts';
-import { activateHostedAccess, getHostedStatus } from '../services/hostedApi.ts';
+import { activateHostedAccess, getHostedStatus, updateHostedModel } from '../services/hostedApi.ts';
 import { useTranslation } from '../i18n/index.ts';
 import { LocalOpenclawSetup } from './LocalOpenclawSetup.tsx';
 import { LocalOpenclawStatus } from './LocalOpenclawStatus.tsx';
 import type { AgentMode } from '../types/index.ts';
 
-type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
+import type { LLMProvider } from '../stores/settingsStore.ts';
 
 const MODE_COLORS: Record<AgentMode, string> = {
   builtin: '#2d7d46',
@@ -32,7 +32,11 @@ const PROVIDERS: { key: LLMProvider; label: string }[] = [
   { key: 'deepseek', label: 'DeepSeek' },
   { key: 'openai', label: 'OpenAI' },
   { key: 'anthropic', label: 'Anthropic' },
-  { key: 'moonshot', label: 'Moonshot' },
+  { key: 'gemini', label: 'Google Gemini' },
+  { key: 'moonshot', label: 'Moonshot (Kimi)' },
+  { key: 'qwen', label: 'Qwen (通义千问)' },
+  { key: 'zhipu', label: 'Z.AI (智谱 GLM)' },
+  { key: 'openrouter', label: 'OpenRouter' },
 ];
 
 const LANGUAGES: { key: 'zh' | 'en'; label: string }[] = [
@@ -59,6 +63,10 @@ export function SettingsPanel({ onClose }: Props) {
   const [formOpenclawToken, setFormOpenclawToken] = useState(store.openclawToken);
   const [formOpenclawSubMode, setFormOpenclawSubMode] = useState(store.openclawSubMode);
   const [formDeployType, setFormDeployType] = useState(store.deployType);
+  const [formDeployModelMode, setFormDeployModelMode] = useState(store.deployModelMode);
+  const [formDeployProvider, setFormDeployProvider] = useState<LLMProvider>(store.deployProvider);
+  const [formDeployApiKey, setFormDeployApiKey] = useState(store.deployApiKey);
+  const [formDeployModel, setFormDeployModel] = useState(store.deployModel);
   const [formSelfhostedType, setFormSelfhostedType] = useState(store.selfhostedType);
   const [formCopawUrl, setFormCopawUrl] = useState(store.copawUrl);
   const [formCopawToken, setFormCopawToken] = useState(store.copawToken);
@@ -82,6 +90,35 @@ export function SettingsPanel({ onClose }: Props) {
   const [activateLoading, setActivateLoading] = useState(false);
   const [activateError, setActivateError] = useState('');
 
+  // Hosted model update state
+  const [hostedModelUpdating, setHostedModelUpdating] = useState(false);
+  const [hostedModelMsg, setHostedModelMsg] = useState('');
+
+  const handleUpdateHostedModel = useCallback(async () => {
+    if (!formDeployApiKey.trim()) return;
+    setHostedModelUpdating(true);
+    setHostedModelMsg('');
+    try {
+      const serverUrl = formServerUrl || store.serverUrl;
+      const result = await updateHostedModel(
+        formDeployProvider,
+        formDeployApiKey,
+        formDeployModel || undefined,
+        auth.authToken,
+        serverUrl,
+      );
+      if (result.success) {
+        setHostedModelMsg('OK');
+        setTimeout(() => setHostedModelMsg(''), 2000);
+      } else {
+        setHostedModelMsg(result.error || 'Failed');
+      }
+    } catch (e) {
+      setHostedModelMsg(e instanceof Error ? e.message : String(e));
+    }
+    setHostedModelUpdating(false);
+  }, [formDeployProvider, formDeployApiKey, formDeployModel, formServerUrl, store.serverUrl, auth.authToken]);
+
   const handleSave = useCallback(() => {
     store.setMode(formMode);
     store.setBuiltinSubMode(formBuiltinSubMode);
@@ -93,6 +130,10 @@ export function SettingsPanel({ onClose }: Props) {
     store.setOpenclawToken(formOpenclawToken);
     store.setOpenclawSubMode(formOpenclawSubMode);
     store.setDeployType(formDeployType);
+    store.setDeployModelMode(formDeployModelMode);
+    store.setDeployProvider(formDeployProvider);
+    store.setDeployApiKey(formDeployApiKey);
+    store.setDeployModel(formDeployModel);
     store.setSelfhostedType(formSelfhostedType);
     store.setCopawUrl(formCopawUrl);
     store.setCopawToken(formCopawToken);
@@ -103,7 +144,8 @@ export function SettingsPanel({ onClose }: Props) {
   }, [
     store, formMode, formBuiltinSubMode, formProvider, formApiKey, formServerUrl,
     formSelectedModel, formOpenclawUrl, formOpenclawToken,
-    formOpenclawSubMode, formDeployType, formSelfhostedType, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,
+    formOpenclawSubMode, formDeployType, formDeployModelMode, formDeployProvider, formDeployApiKey, formDeployModel,
+    formSelfhostedType, formCopawUrl, formCopawToken, formCopawSubMode, formLocale,
   ]);
 
   const handleSendCode = useCallback(async () => {
@@ -445,6 +487,66 @@ export function SettingsPanel({ onClose }: Props) {
             {/* ── 一键部署 ── */}
             {formOpenclawSubMode === 'deploy' && (
               <>
+                {/* Model selection — shared by cloud + local */}
+                <div className="settings-field" style={{ marginTop: '8px' }}>
+                  <label className="settings-label">{t('settings.deployModel')}</label>
+                  <div className="settings-submode-row">
+                    <button
+                      className={`settings-submode-btn ${formDeployModelMode === 'default' ? 'active' : ''}`}
+                      onClick={() => setFormDeployModelMode('default')}
+                    >
+                      {t('settings.deployModelDefault')}
+                    </button>
+                    <button
+                      className={`settings-submode-btn ${formDeployModelMode === 'custom' ? 'active' : ''}`}
+                      onClick={() => setFormDeployModelMode('custom')}
+                    >
+                      {t('settings.deployModelCustom')}
+                    </button>
+                  </div>
+                  <span className="settings-hint">
+                    {formDeployModelMode === 'default'
+                      ? t('settings.deployModelDefaultHint')
+                      : t('settings.deployModelCustomHint')}
+                  </span>
+                </div>
+
+                {formDeployModelMode === 'custom' && (
+                  <>
+                    <div className="settings-field">
+                      <label className="settings-label">{t('settings.localSetupProvider')}</label>
+                      <select
+                        className="settings-select"
+                        value={formDeployProvider}
+                        onChange={(e) => setFormDeployProvider(e.target.value as LLMProvider)}
+                      >
+                        {PROVIDERS.map((p) => (
+                          <option key={p.key} value={p.key}>{p.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="settings-field">
+                      <label className="settings-label">{t('settings.localSetupApiKey')}</label>
+                      <input
+                        className="settings-input"
+                        type="password"
+                        value={formDeployApiKey}
+                        onChange={(e) => setFormDeployApiKey(e.target.value)}
+                        placeholder={t('settings.localSetupApiKeyPlaceholder')}
+                      />
+                    </div>
+                    <div className="settings-field">
+                      <label className="settings-label">{t('settings.localSetupModel')}</label>
+                      <input
+                        className="settings-input"
+                        value={formDeployModel}
+                        onChange={(e) => setFormDeployModel(e.target.value)}
+                        placeholder={t('settings.localSetupModelPlaceholder')}
+                      />
+                    </div>
+                  </>
+                )}
+
                 <div className="settings-submode-row" style={{ marginTop: '8px' }}>
                   <button
                     className={`settings-submode-btn ${formDeployType === 'cloud' ? 'active' : ''}`}
@@ -503,6 +605,19 @@ export function SettingsPanel({ onClose }: Props) {
                           <button className="settings-auth-btn" onClick={handleRefreshHostedStatus}>
                             Refresh
                           </button>
+                        )}
+                        {store.hostedInstanceStatus === 'ready' && formDeployModelMode === 'custom' && (
+                          <>
+                            <button
+                              className="settings-auth-btn"
+                              onClick={handleUpdateHostedModel}
+                              disabled={hostedModelUpdating || !formDeployApiKey.trim()}
+                              style={{ marginTop: '4px' }}
+                            >
+                              {hostedModelUpdating ? '...' : t('settings.save')}
+                            </button>
+                            {hostedModelMsg && <span className="settings-hint">{hostedModelMsg}</span>}
+                          </>
                         )}
                       </div>
                     )}

@@ -4,7 +4,7 @@ import type { AgentMode } from '../types/index.ts';
 
 export const OPENCLAW_LOCAL_GATEWAY = 'ws://localhost:18789';
 
-type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'moonshot';
+export type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'gemini' | 'moonshot' | 'qwen' | 'zhipu' | 'openrouter';
 
 type BuiltinSubMode = 'free' | 'byok';
 
@@ -34,6 +34,12 @@ interface SettingsState {
   copawUrl: string;
   copawToken: string;
   copawSubMode: 'hosted' | 'selfhosted';
+
+  // Deploy model mode
+  deployModelMode: 'default' | 'custom';
+  deployProvider: LLMProvider;
+  deployApiKey: string;
+  deployModel: string;
 
   // OpenClaw Bridge
   bridgeEnabled: boolean;
@@ -72,6 +78,10 @@ interface SettingsState {
   setCopawUrl: (url: string) => void;
   setCopawToken: (token: string) => void;
   setCopawSubMode: (mode: 'hosted' | 'selfhosted') => void;
+  setDeployModelMode: (mode: 'default' | 'custom') => void;
+  setDeployProvider: (provider: LLMProvider) => void;
+  setDeployApiKey: (key: string) => void;
+  setDeployModel: (model: string) => void;
   setBridgeEnabled: (enabled: boolean) => void;
   setLocalOpenclawInstalled: (v: boolean) => void;
   setLocalOpenclawToken: (token: string) => void;
@@ -107,6 +117,10 @@ export const useSettingsStore = create<SettingsState>()(
       copawUrl: '',
       copawToken: '',
       copawSubMode: 'hosted',
+      deployModelMode: 'default',
+      deployProvider: 'deepseek',
+      deployApiKey: '',
+      deployModel: '',
       bridgeEnabled: false,
       localOpenclawInstalled: false,
       localOpenclawToken: '',
@@ -136,6 +150,10 @@ export const useSettingsStore = create<SettingsState>()(
       setCopawUrl: (url) => set({ copawUrl: url }),
       setCopawToken: (token) => set({ copawToken: token }),
       setCopawSubMode: (mode) => set({ copawSubMode: mode }),
+      setDeployModelMode: (mode) => set({ deployModelMode: mode }),
+      setDeployProvider: (provider) => set({ deployProvider: provider }),
+      setDeployApiKey: (key) => set({ deployApiKey: key }),
+      setDeployModel: (model) => set({ deployModel: model }),
       setBridgeEnabled: (enabled) => set({ bridgeEnabled: enabled }),
       setLocalOpenclawInstalled: (v) => set({ localOpenclawInstalled: v }),
       setLocalOpenclawToken: (token) => set({ localOpenclawToken: token }),
@@ -178,6 +196,10 @@ export const useSettingsStore = create<SettingsState>()(
         copawUrl: state.copawUrl,
         copawToken: state.copawToken,
         copawSubMode: state.copawSubMode,
+        deployModelMode: state.deployModelMode,
+        deployProvider: state.deployProvider,
+        deployApiKey: state.deployApiKey,
+        deployModel: state.deployModel,
         bridgeEnabled: state.bridgeEnabled,
         localOpenclawInstalled: state.localOpenclawInstalled,
         localOpenclawToken: state.localOpenclawToken,
@@ -189,7 +211,7 @@ export const useSettingsStore = create<SettingsState>()(
         localOpenclawAutoBridge: state.localOpenclawAutoBridge,
         locale: state.locale,
       }),
-      version: 6,
+      version: 7,
       migrate: (persisted: unknown) => {
         const state = (persisted || {}) as Record<string, unknown>;
         // v1→v3: if selfhosted was set but no URL configured, reset to hosted
@@ -224,6 +246,11 @@ export const useSettingsStore = create<SettingsState>()(
         if (!state.localOpenclawModel) state.localOpenclawModel = '';
         if (state.localOpenclawAutoStart === undefined) state.localOpenclawAutoStart = true;
         if (state.localOpenclawAutoBridge === undefined) state.localOpenclawAutoBridge = true;
+        // v6→v7: deploy model mode fields
+        if (!state.deployModelMode) state.deployModelMode = 'default';
+        if (!state.deployProvider) state.deployProvider = 'deepseek';
+        if (!state.deployApiKey) state.deployApiKey = '';
+        if (!state.deployModel) state.deployModel = '';
         return state;
       },
       onRehydrateStorage: () => {
