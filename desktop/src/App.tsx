@@ -230,6 +230,17 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, isDirect, authToken, builtinSubMode, copawSubMode, openclawSubMode, deployType, hostedActivated, ws.connected, ws.connecting]);
 
+  // Auto-connect for direct OpenClaw mode (local deploy / selfhosted local)
+  useEffect(() => {
+    if (!isDirectOpenClaw) return;
+    if (openclawConnected) return;
+    const timer = setTimeout(() => {
+      handleConnect();
+    }, 1000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirectOpenClaw, openclawConnected]);
+
   // Run migration once on mount
   useEffect(() => {
     migrateToSingleConversation();
