@@ -1122,7 +1122,7 @@ async function handleChatSend(
     if (session.mode === 'openclaw' && session.userId && !session.isHosted && hasBridgeOnline(session.userId)) {
       console.log(`[Chat] Routing through bridge for user ${session.userId}`);
       const batcher = new ChunkBatcher(ws, conversationId);
-      const sessionKey = `agentos-${session.id}`;
+      const sessionKey = `agentos-${session.userId}`;
 
       await new Promise<void>((resolveChat, rejectChat) => {
         sendChatViaBridge(session.userId!, conversationId, content, sessionKey, {
@@ -1172,12 +1172,11 @@ async function handleChatSend(
     } else
     // Set up agent adapter session key and tool event forwarding
     if ((session.mode === 'openclaw' || session.mode === 'copaw' || session.isHosted) && session.provider && isAgentAdapter(session.provider)) {
-      // CoPaw: stable per-user sessionKey so CoPaw retains conversation context across reconnects
-      // OpenClaw: per-session key (OpenClaw manages its own session persistence)
+      // Stable per-user sessionKey so agent retains conversation context across reconnects and devices
       if (session.mode === 'copaw') {
         session.provider.sessionKey = `agentos-copaw-${session.userId || session.deviceId}`;
       } else {
-        session.provider.sessionKey = `agentos-${session.id}`;
+        session.provider.sessionKey = `agentos-${session.userId || session.deviceId}`;
       }
       session.provider.onToolEvent = (event) => {
         if (event.phase === 'start') {
