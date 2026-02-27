@@ -26,6 +26,9 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Install dependencies
         working-directory: mobile
         run: npm ci
@@ -33,6 +36,10 @@ jobs:
       - name: Expo prebuild
         working-directory: mobile
         run: npx expo prebuild --platform android
+
+      - name: Increase Gradle download timeout
+        working-directory: mobile/android
+        run: sed -i 's/networkTimeout=10000/networkTimeout=60000/' gradle/wrapper/gradle-wrapper.properties
 
       - name: Build APK
         working-directory: mobile/android
