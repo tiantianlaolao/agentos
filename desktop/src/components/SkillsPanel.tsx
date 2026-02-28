@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore.ts';
-import { useAuthStore } from '../stores/authStore.ts';
 import type { AgentMode, SkillManifestInfo } from '../types/index.ts';
 import type { OpenClawDirectClient } from '../services/openclawDirect.ts';
 import type { useWebSocket } from '../hooks/useWebSocket.ts';
@@ -131,7 +129,6 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
   const mode = useSettingsStore((s) => s.mode);
   const agentSubMode = useSettingsStore((s) => s.agentSubMode);
   const agentId = useSettingsStore((s) => s.agentId);
-  const isDeployMode = mode !== 'builtin' && agentSubMode === 'deploy';
   const cacheKey = getCacheKey(mode, agentSubMode, agentId);
   const manageable = canManageSkills(mode, agentSubMode);
   const [activeTab, setActiveTab] = useState<TabKey>('installed');
@@ -201,7 +198,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     ws.requestSkillList().catch(() => setLoading(false));
   }, [cacheKey, ws]);
 
-  // Request library via WS (builtin mode) or ClawHub (deploy mode)
+  // Request library via WS (both builtin and deploy modes use WS)
   const requestLibrary = useCallback(async (force = false) => {
     if (!force && libraryCache.has(cacheKey)) {
       setLibrary(libraryCache.get(cacheKey)!);
@@ -210,39 +207,6 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     }
     setLibraryLoading(true);
 
-    if (isDeployMode) {
-      // Deploy mode: search ClawHub via Tauri command
-      try {
-        const userId = useAuthStore.getState().userId || 'default';
-        const results = await invoke<Array<{ name: string; slug: string; description: string; author: string; version: string }>>('clawhub_search', { query: searchQuery || '', userId });
-        const items: SkillLibraryItem[] = results.map((r) => ({
-          name: r.slug || r.name,
-          version: r.version || '1.0.0',
-          description: r.description || '',
-          author: r.author || 'ClawHub',
-          category: 'tools',
-          environments: ['cloud'],
-          permissions: [],
-          audit: 'ecosystem',
-          auditSource: 'ClawHub',
-          visibility: 'public',
-          installed: skills.some((s) => s.name === r.slug || s.name === r.name),
-          isDefault: false,
-          installCount: 0,
-          featured: false,
-          functions: [],
-        }));
-        libraryCache.set(cacheKey, items);
-        setLibrary(items);
-      } catch (err) {
-        console.error('[SkillsPanel] clawhub_search failed:', err);
-      } finally {
-        setLibraryLoading(false);
-      }
-      return;
-    }
-
-    // Builtin mode: request via WS
     if (!ws) {
       setLibraryLoading(false);
       return;
@@ -253,36 +217,11 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
       setLibraryLoading(false);
     });
     ws.requestSkillLibrary?.().catch(() => setLibraryLoading(false));
-  }, [cacheKey, ws, isDeployMode, searchQuery, skills]);
+  }, [cacheKey, ws]);
 
-  // Install skill
+  // Install skill (both modes use WS)
   const HIGH_RISK_PERMISSIONS = ['filesystem', 'exec', 'system', 'browser'];
   const installSkill = useCallback(async (skillName: string) => {
-    if (isDeployMode) {
-      // Deploy mode: install via Tauri command
-      try {
-        const userId = useAuthStore.getState().userId || 'default';
-        await invoke('clawhub_install', { slug: skillName, userId });
-        // Optimistic update
-        setLibrary((prev) => {
-          const updated = prev.map((s) =>
-            s.name === skillName ? { ...s, installed: true } : s
-          );
-          libraryCache.set(cacheKey, updated);
-          return updated;
-        });
-        // Refresh installed list after a brief delay for gateway hot-reload
-        setTimeout(() => {
-          skillsCache.delete(cacheKey);
-          if (openclawClient) fetchDirectSkills(true);
-        }, 2000);
-      } catch (err) {
-        console.error('[SkillsPanel] clawhub_install failed:', err);
-        alert(`Install failed: ${err}`);
-      }
-      return;
-    }
-    // Builtin mode: install via WS
     if (!ws) return;
     const skill = library.find((s) => s.name === skillName);
     const riskyPerms = skill?.permissions?.filter((p: string) => HIGH_RISK_PERMISSIONS.includes(p)) || [];
@@ -301,35 +240,10 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
       libraryCache.set(cacheKey, updated);
       return updated;
     });
-  }, [ws, cacheKey, library, isDeployMode, openclawClient, fetchDirectSkills]);
+  }, [ws, cacheKey, library]);
 
-  // Uninstall skill
+  // Uninstall skill (both modes use WS)
   const uninstallSkill = useCallback(async (skillName: string) => {
-    if (isDeployMode) {
-      // Deploy mode: uninstall via Tauri command
-      try {
-        const userId = useAuthStore.getState().userId || 'default';
-        await invoke('clawhub_uninstall', { slug: skillName, userId });
-        // Optimistic update
-        setSkills((prev) => {
-          const updated = prev.filter((s) => s.name !== skillName);
-          skillsCache.set(cacheKey, updated);
-          return updated;
-        });
-        setLibrary((prev) => {
-          const updated = prev.map((s) =>
-            s.name === skillName ? { ...s, installed: false } : s
-          );
-          libraryCache.set(cacheKey, updated);
-          return updated;
-        });
-      } catch (err) {
-        console.error('[SkillsPanel] clawhub_uninstall failed:', err);
-        alert(`Uninstall failed: ${err}`);
-      }
-      return;
-    }
-    // Builtin mode: uninstall via WS
     if (!ws) return;
     ws.uninstallSkill?.(skillName).catch(() => {});
     // Optimistic update
@@ -345,26 +259,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
       libraryCache.set(cacheKey, updated);
       return updated;
     });
-  }, [ws, cacheKey, isDeployMode]);
-
-  // Import skill from local directory (deploy mode only)
-  const handleImportSkill = useCallback(async () => {
-    try {
-      const selected = window.prompt('Enter path to skill directory (containing SKILL.md):');
-      if (!selected?.trim()) return;
-      const userId = useAuthStore.getState().userId || 'default';
-      const skillName = await invoke<string>('import_skill_local', { sourcePath: selected.trim(), userId });
-      console.log('[SkillsPanel] Imported skill:', skillName);
-      // Refresh installed list
-      skillsCache.delete(cacheKey);
-      if (openclawClient) {
-        setTimeout(() => fetchDirectSkills(true), 1000);
-      }
-    } catch (err) {
-      console.error('[SkillsPanel] import_skill_local failed:', err);
-      alert(`Import failed: ${err}`);
-    }
-  }, [cacheKey, openclawClient, fetchDirectSkills]);
+  }, [ws, cacheKey]);
 
   const handleRefresh = useCallback(() => {
     skillsCache.delete(cacheKey);
@@ -408,17 +303,6 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
       requestLibrary();
     }
   }, [activeTab, cacheKey, manageable, requestLibrary]);
-
-  // Deploy mode: debounced search when query changes
-  useEffect(() => {
-    if (!isDeployMode || activeTab !== 'library') return;
-    const timer = setTimeout(() => {
-      libraryCache.delete(cacheKey);
-      requestLibrary(true);
-    }, 500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, isDeployMode, activeTab]);
 
   // Filter and group library items
   const filteredLibrary = useMemo(() => {
@@ -789,19 +673,12 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
         )}
       </div>
 
-      {/* Add Skill Button (builtin mode or deploy mode) */}
-      {manageable && (
-        <div className="skills-register-bar" style={{ display: 'flex', gap: '8px' }}>
-          {mode === 'builtin' && authToken && serverUrl && (
-            <button className="skills-register-btn" onClick={() => setAddSkillMode('menu')}>
-              {t('skills.addSkill')}
-            </button>
-          )}
-          {isDeployMode && (
-            <button className="skills-register-btn" onClick={handleImportSkill}>
-              Import Skill
-            </button>
-          )}
+      {/* Add Skill Button */}
+      {manageable && authToken && serverUrl && (
+        <div className="skills-register-bar">
+          <button className="skills-register-btn" onClick={() => setAddSkillMode('menu')}>
+            {t('skills.addSkill')}
+          </button>
         </div>
       )}
 
