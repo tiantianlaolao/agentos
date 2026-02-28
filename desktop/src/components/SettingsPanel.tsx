@@ -72,10 +72,10 @@ export function SettingsPanel({ onClose }: Props) {
   const [formDeployModel, setFormDeployModel] = useState(store.deployModel);
   const [formSelfhostedType, setFormSelfhostedType] = useState(store.selfhostedType);
   const [formCopawUrl, setFormCopawUrl] = useState(store.copawUrl);
-  const [formCopawToken, setFormCopawToken] = useState(store.copawToken);
+  const [formCopawToken] = useState(store.copawToken);
   const [formCopawSubMode, setFormCopawSubMode] = useState(store.copawSubMode);
-  const [formCopawDeployType, setFormCopawDeployType] = useState(store.copawDeployType);
-  const [formCopawSelfhostedType, setFormCopawSelfhostedType] = useState(store.copawSelfhostedType);
+  const [formCopawDeployType] = useState(store.copawDeployType);
+  const [formCopawSelfhostedType] = useState(store.copawSelfhostedType);
   const [formCopawDeployModelMode, setFormCopawDeployModelMode] = useState(store.copawDeployModelMode);
   const [formCopawDeployProvider, setFormCopawDeployProvider] = useState<LLMProvider>(store.copawDeployProvider);
   const [formCopawDeployApiKey, setFormCopawDeployApiKey] = useState(store.copawDeployApiKey);

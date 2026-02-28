@@ -55,7 +55,7 @@ function App() {
   const [hasMore, setHasMore] = useState(true);
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
   const [copawConnected, setCopawConnected] = useState(false);
-  const [copawBridgeStatus, setCopawBridgeStatus] = useState<CoPawBridgeStatus | null>(null);
+  const [, setCopawBridgeStatus] = useState<CoPawBridgeStatus | null>(null);
   const conversationId = useRef(generateId());
   const abortRef = useRef<AbortController | null>(null);
   const openclawClientRef = useRef<OpenClawDirectClient | null>(null);

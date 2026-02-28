@@ -4,8 +4,6 @@ import { useSettingsStore } from '../stores/settingsStore.ts';
 import { useAuthStore } from '../stores/authStore.ts';
 import { useTranslation } from '../i18n/index.ts';
 
-import type { LLMProvider } from '../stores/settingsStore.ts';
-
 interface CopawPrerequisiteStatus {
   python_installed: boolean;
   python_version: string;
@@ -23,16 +21,6 @@ function getLLMProxyBaseUrl(serverUrl: string): string {
   const httpUrl = serverUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
   return `${httpUrl}/api/llm-proxy/v1`;
 }
-
-const PROVIDERS: { key: LLMProvider; label: string }[] = [
-  { key: 'deepseek', label: 'DeepSeek' },
-  { key: 'openai', label: 'OpenAI' },
-  { key: 'gemini', label: 'Google Gemini' },
-  { key: 'moonshot', label: 'Moonshot (Kimi)' },
-  { key: 'qwen', label: 'Qwen (通义千问)' },
-  { key: 'zhipu', label: 'Z.AI (智谱 GLM)' },
-  { key: 'openrouter', label: 'OpenRouter' },
-];
 
 interface Props {
   onInstalled: () => void;
