@@ -202,7 +202,7 @@ export async function setSetting(key: string, value: string): Promise<void> {
 
 /** Get the single conversation for a (mode, userId) pair, creating one if it doesn't exist. */
 export async function getOrCreateSingleConversation(
-  mode: 'builtin' | 'openclaw' | 'copaw',
+  mode: 'builtin' | 'openclaw' | 'copaw' | 'agent',
   userId: string
 ): Promise<Conversation> {
   if (!db) throw new Error('Database not initialized');

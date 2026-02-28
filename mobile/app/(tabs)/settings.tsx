@@ -104,7 +104,10 @@ export default function SettingsScreen() {
   const authStore = useAuthStore();
   const router = useRouter();
   // Local form state
-  const [formMode, setFormMode] = useState<ConnectionMode>(store.mode);
+  // Map openclaw/copaw to 'agent' for UI display (they share the agent visual group)
+  const [formMode, setFormMode] = useState<ConnectionMode>(
+    store.mode === 'openclaw' || store.mode === 'copaw' ? 'agent' : store.mode
+  );
   const [formBuiltinSubMode, setFormBuiltinSubMode] = useState<'free' | 'byok'>(store.builtinSubMode);
   const [formProvider, setFormProvider] = useState<LLMProvider>(store.provider);
   const [formApiKey, setFormApiKey] = useState(store.apiKey);
@@ -233,27 +236,22 @@ export default function SettingsScreen() {
         if (agentUrl) { store.setAgentUrl(agentUrl); setFormAgentUrl(agentUrl); }
         if (agentToken) { store.setAgentToken(agentToken); setFormAgentToken(agentToken); }
 
-        // Migration: old 'openclaw'/'copaw' top-level mode → 'agent' mode
+        // Populate unified agent fields from legacy openclaw/copaw modes (without changing mode)
+        // The runtime mode stays as 'openclaw' or 'copaw' for conversation isolation & skills routing.
+        // Only the UI formMode is set to 'agent' for visual grouping.
         if (mode === 'openclaw') {
-          store.setMode('agent'); setFormMode('agent');
+          setFormMode('agent'); // UI display only
           store.setAgentId('openclaw'); setFormAgentId('openclaw');
           store.setAgentSubMode('direct'); setFormAgentSubMode('direct');
-          // Migrate URL/token if available
-          if (openclawUrl) { store.setAgentUrl(openclawUrl); setFormAgentUrl(openclawUrl); }
-          if (openclawToken) { store.setAgentToken(openclawToken); setFormAgentToken(openclawToken); }
-          setSetting(uk('mode'), 'agent');
-          setSetting(uk('agentId'), 'openclaw');
-          setSetting(uk('agentSubMode'), 'direct');
+          if (openclawUrl && !agentUrl) { store.setAgentUrl(openclawUrl); setFormAgentUrl(openclawUrl); }
+          if (openclawToken && !agentToken) { store.setAgentToken(openclawToken); setFormAgentToken(openclawToken); }
         } else if (mode === 'copaw') {
-          store.setMode('agent'); setFormMode('agent');
+          setFormMode('agent'); // UI display only
           store.setAgentId('copaw'); setFormAgentId('copaw');
           const csm = copawSubMode === 'deploy' ? 'deploy' : 'direct';
           store.setAgentSubMode(csm as 'direct' | 'deploy'); setFormAgentSubMode(csm as 'direct' | 'deploy');
-          if (copawUrl) { store.setAgentUrl(copawUrl); setFormAgentUrl(copawUrl); }
-          if (copawToken) { store.setAgentToken(copawToken); setFormAgentToken(copawToken); }
-          setSetting(uk('mode'), 'agent');
-          setSetting(uk('agentId'), 'copaw');
-          setSetting(uk('agentSubMode'), csm);
+          if (copawUrl && !agentUrl) { store.setAgentUrl(copawUrl); setFormAgentUrl(copawUrl); }
+          if (copawToken && !agentToken) { store.setAgentToken(copawToken); setFormAgentToken(copawToken); }
         }
         if (serverUrl) { store.setServerUrl(serverUrl); }
         if (locale) { store.setLocale(locale); setFormLocale(locale); setI18nLocale(locale); }
@@ -325,8 +323,13 @@ export default function SettingsScreen() {
     const uid = authStore.userId || '';
     const uk = (k: string) => userKey(uid, k);
 
+    // Map formMode 'agent' back to actual runtime mode based on agentId
+    const actualMode: ConnectionMode = formMode === 'agent'
+      ? (formAgentId === 'openclaw' ? 'openclaw' : formAgentId === 'copaw' ? 'copaw' : 'agent')
+      : formMode;
+
     // Update Zustand store
-    store.setMode(formMode);
+    store.setMode(actualMode);
     store.setBuiltinSubMode(formBuiltinSubMode);
     store.setProvider(formProvider);
     store.setApiKey(formApiKey);
@@ -353,7 +356,7 @@ export default function SettingsScreen() {
     // Persist to SQLite
     try {
       await Promise.all([
-        setSetting(uk('mode'), formMode),
+        setSetting(uk('mode'), actualMode),
         setSetting(uk('builtinSubMode'), formBuiltinSubMode),
         setSetting(uk('provider'), formProvider),
         setSetting(uk('apiKey'), formApiKey),
@@ -391,7 +394,9 @@ export default function SettingsScreen() {
   const appVersion = Constants.expoConfig?.version || '0.1.0';
 
   // Determine the actual active mode (from store, not form)
-  const activeModeInfo = MODES.find((m) => m.key === store.mode);
+  // openclaw/copaw map to the 'agent' visual group
+  const displayMode = (store.mode === 'openclaw' || store.mode === 'copaw') ? 'agent' : store.mode;
+  const activeModeInfo = MODES.find((m) => m.key === displayMode);
   const activeModeColor = MODE_COLORS[store.mode] || '#2d7d46';
 
   return (
@@ -403,7 +408,7 @@ export default function SettingsScreen() {
         <Text style={[styles.currentModeValue, { color: activeModeColor }]}>
           {activeModeInfo ? t(activeModeInfo.titleKey) : store.mode}
           {store.mode === 'builtin' && store.builtinSubMode === 'byok' ? ` (${t('settings.builtinByok')})` : ''}
-          {store.mode === 'agent' ? ` (${store.agentId === 'openclaw' ? 'OpenClaw' : store.agentId === 'copaw' ? 'CoPaw' : store.agentId})` : ''}
+          {(store.mode === 'openclaw' || store.mode === 'copaw' || store.mode === 'agent') ? ` (${store.mode === 'openclaw' ? 'OpenClaw' : store.mode === 'copaw' ? 'CoPaw' : store.agentId})` : ''}
         </Text>
       </View>
 

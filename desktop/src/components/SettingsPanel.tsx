@@ -132,7 +132,14 @@ export function SettingsPanel({ onClose }: Props) {
   }, [formDeployProvider, formDeployApiKey, formDeployModel, formServerUrl, store.serverUrl, auth.authToken]);
 
   const handleSave = useCallback(async () => {
-    store.setMode(formMode);
+    // Map UI 'agent' grouping to actual runtime mode based on agentId
+    if (formMode === 'agent') {
+      if (formAgentId === 'openclaw') store.setMode('openclaw');
+      else if (formAgentId === 'copaw') store.setMode('copaw');
+      else store.setMode('agent'); // truly custom agents only
+    } else {
+      store.setMode(formMode);
+    }
     store.setBuiltinSubMode(formBuiltinSubMode);
     store.setProvider(formProvider);
     store.setApiKey(formApiKey);

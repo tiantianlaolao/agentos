@@ -37,6 +37,11 @@ const MODES: { value: AgentMode; label: string; description: string }[] = [
   { value: 'agent', label: 'External Agent', description: 'Connect external agents' },
 ];
 
+// Map runtime mode to sidebar display group
+function sidebarGroup(mode: AgentMode): AgentMode {
+  return (mode === 'openclaw' || mode === 'copaw') ? 'agent' : mode;
+}
+
 export function Sidebar({
   connected,
   connecting,
@@ -67,10 +72,10 @@ export function Sidebar({
           {MODES.map((m) => (
             <button
               key={m.value}
-              className={`mode-item ${currentMode === m.value ? 'active' : ''}`}
+              className={`mode-item ${sidebarGroup(currentMode) === m.value ? 'active' : ''}`}
               onClick={() => onModeChange(m.value)}
               disabled={false}
-              style={currentMode === m.value ? { borderColor: MODE_COLORS[m.value] } : undefined}
+              style={sidebarGroup(currentMode) === m.value ? { borderColor: MODE_COLORS[m.value] } : undefined}
             >
               <div className="mode-item-header">
                 <span

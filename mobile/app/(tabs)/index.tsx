@@ -76,7 +76,12 @@ interface SkillInfo {
   description: string;
 }
 
-/** builtin & byok share the same agent — agent mode needs isolation */
+/** Returns true for external agent modes (openclaw, copaw, agent) */
+function isExternalAgent(m: ConnectionMode): boolean {
+  return m === 'openclaw' || m === 'copaw' || m === 'agent';
+}
+
+/** builtin & byok share the same agent — openclaw/copaw/agent each get separate isolation */
 function conversationMode(m: ConnectionMode): 'builtin' | 'openclaw' | 'copaw' | 'agent' {
   if (m === 'openclaw') return 'openclaw';
   if (m === 'copaw') return 'copaw';
@@ -293,12 +298,14 @@ export default function ChatScreen() {
     };
 
     const connectWithDeviceId = (deviceId: string) => {
-      // ── Agent mode: direct connect for OpenClaw ──
-      if (mode === 'agent' && agentSubMode === 'direct' && agentId === 'openclaw' && agentUrl) {
+      // ── OpenClaw mode: direct connect via agentUrl (or legacy openclawUrl) ──
+      const openclawDirectUrl = agentUrl || openclawUrl;
+      const openclawDirectToken = agentToken || openclawToken;
+      if (mode === 'openclaw' && openclawDirectUrl) {
         // Clean up old WS client if switching modes
         if (wsClient) { wsClient.disconnect(); wsClient = null; }
 
-        const client = getOpenClawClient(agentUrl, agentToken);
+        const client = getOpenClawClient(openclawDirectUrl, openclawDirectToken);
         client.sessionKey = `agentos-${randomUUID().slice(0, 8)}`;
 
         client.onConnectionChange = (c) => setConnected(c);
@@ -323,45 +330,15 @@ export default function ChatScreen() {
         return;
       }
 
-      // ── Agent mode: direct connect for CoPaw — use WS to server with agent params ──
-      if (mode === 'agent' && agentSubMode === 'direct' && agentId === 'copaw') {
+      // ── CoPaw mode: direct connect — use WS to server with agent params ──
+      if (mode === 'copaw' && agentSubMode === 'direct') {
         if (openclawClient) { openclawClient.disconnect(); openclawClient = null; }
         // Falls through to WS client below with agent mode params
       }
 
-      // ── Agent mode: custom — not supported yet ──
-      if (mode === 'agent' && agentSubMode === 'direct' && agentId === 'custom') {
+      // ── Agent mode (truly custom): not supported yet ──
+      if (mode === 'agent' && agentId === 'custom') {
         // Do nothing, show error in UI
-        return;
-      }
-
-      // ── Legacy: OpenClaw self-hosted mode with user-provided URL: direct connect ──
-      if (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawUrl) {
-        // Clean up old WS client if switching modes
-        if (wsClient) { wsClient.disconnect(); wsClient = null; }
-
-        const client = getOpenClawClient(openclawUrl, openclawToken);
-        client.sessionKey = `agentos-${randomUUID().slice(0, 8)}`;
-
-        client.onConnectionChange = (c) => setConnected(c);
-        client.onPush = (content) => handlePushMessage(content, 'openclaw');
-        client.onPairingError = (message) => {
-          Alert.alert(
-            'Device Pairing Required',
-            message,
-            [{ text: 'OK' }],
-          );
-        };
-
-        client.ensureConnected()
-          .then(() => setConnected(true))
-          .catch(() => setConnected(false));
-
-        cleanupRef.current = () => {
-          client.onConnectionChange = null;
-          client.onPush = null;
-          client.onPairingError = null;
-        };
         return;
       }
 
@@ -484,7 +461,7 @@ export default function ChatScreen() {
       const isOpenclawHosted = mode === 'openclaw' && openclawSubMode === 'hosted';
       const isCopawDeploy = mode === 'copaw' && copawSubMode === 'deploy';
       const isByok = mode === 'builtin' && builtinSubMode === 'byok';
-      const isAgentMode = mode === 'agent';
+      const isAgentMode = isExternalAgent(mode);
       const byokApiKey = isByok ? apiKey || undefined : undefined;
       const byokModel = isByok ? (selectedModel || provider) : (selectedModel || undefined);
       const connectParams: Record<string, string | boolean | undefined> = {
@@ -499,11 +476,11 @@ export default function ChatScreen() {
         copawUrl: isCopawDeploy ? undefined : (copawUrl || undefined),
         copawToken: isCopawDeploy ? undefined : (copawToken || undefined),
       };
-      // Agent mode: pass agent-specific params
+      // External agent modes: pass agent-specific params
       if (isAgentMode) {
         connectParams.agentUrl = agentUrl || undefined;
         connectParams.agentToken = agentToken || undefined;
-        if (agentId === 'copaw') {
+        if (mode === 'copaw' || (mode === 'agent' && agentId === 'copaw')) {
           connectParams.agentProtocol = 'ag-ui';
         }
       }
@@ -636,22 +613,19 @@ export default function ChatScreen() {
   }, [currentConversationId, loadingMore, hasMore, messages, prependMessages]);
 
   const handleSelectAgent = useCallback((targetMode: ConnectionMode) => {
-    // Agent mode with OpenClaw requires login
-    if (targetMode === 'agent' || targetMode === 'openclaw') {
-      const { isLoggedIn } = useAuthStore.getState();
+    // Resolve the actual runtime mode: 'agent' tab maps to openclaw/copaw/agent based on agentId
+    let resolvedMode = targetMode;
+    if (targetMode === 'agent') {
       const currentAgentId = useSettingsStore.getState().agentId;
-      if (targetMode === 'agent' && currentAgentId === 'openclaw' && !isLoggedIn) {
-        Alert.alert(
-          t('chat.openclawNeedLogin'),
-          t('chat.openclawNeedLoginDesc'),
-          [
-            { text: t('chat.cancel'), style: 'cancel' },
-            { text: t('settings.loginOrRegister'), onPress: () => router.push('/login') },
-          ],
-        );
-        return;
-      }
-      if (targetMode === 'openclaw' && !isLoggedIn) {
+      resolvedMode = currentAgentId === 'openclaw' ? 'openclaw'
+        : currentAgentId === 'copaw' ? 'copaw'
+        : 'agent';
+    }
+
+    // OpenClaw requires login
+    if (resolvedMode === 'openclaw') {
+      const { isLoggedIn } = useAuthStore.getState();
+      if (!isLoggedIn) {
         Alert.alert(
           t('chat.openclawNeedLogin'),
           t('chat.openclawNeedLoginDesc'),
@@ -663,9 +637,10 @@ export default function ChatScreen() {
         return;
       }
     }
-    if (targetMode !== mode) {
-      setMode(targetMode);
-      setSetting('mode', targetMode).catch(() => {});
+
+    if (resolvedMode !== mode) {
+      setMode(resolvedMode);
+      setSetting('mode', resolvedMode).catch(() => {});
       // Reset generating state so input isn't stuck from previous agent
       setGenerating(false);
       setActiveSkill(null);
@@ -729,7 +704,7 @@ export default function ChatScreen() {
 
     // ── Route by mode ──
 
-    if ((mode === 'agent' && agentSubMode === 'direct' && agentId === 'openclaw' && openclawClient) || (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawClient)) {
+    if (mode === 'openclaw' && openclawClient) {
       // OpenClaw direct: send via Gateway WS
       const ac = new AbortController();
       abortControllerRef.current = ac;
@@ -988,7 +963,7 @@ export default function ChatScreen() {
 
   // ── Hub view: Agent selection ──
   if (showHub) {
-    const activeTab = AGENT_TABS.find((t) => conversationMode(t.mode) === conversationMode(mode));
+    const activeTab = AGENT_TABS.find((t) => t.mode === 'agent' ? isExternalAgent(mode) : t.mode === mode);
     return (
       <View style={styles.container}>
         <View style={styles.hubContainer}>
@@ -997,7 +972,7 @@ export default function ChatScreen() {
           <Text style={styles.hubSubtitle}>{t('chat.hubSubtitle')}</Text>
           <View style={styles.hubButtons}>
             {AGENT_TABS.map((tab) => {
-              const isCurrent = conversationMode(mode) === conversationMode(tab.mode);
+              const isCurrent = tab.mode === 'agent' ? isExternalAgent(mode) : tab.mode === mode;
               return (
                 <TouchableOpacity
                   key={tab.mode}
@@ -1034,7 +1009,7 @@ export default function ChatScreen() {
   }
 
   // ── Chat view ──
-  const activeColor = AGENT_TABS.find((t) => conversationMode(t.mode) === conversationMode(mode))?.color || '#6c63ff';
+  const activeColor = AGENT_TABS.find((t) => t.mode === 'agent' ? isExternalAgent(mode) : t.mode === mode)?.color || '#6c63ff';
 
   return (
     <KeyboardAvoidingView

@@ -465,25 +465,22 @@ export const useSettingsStore = create<SettingsState>()(
             const ocSub = state.openclawSubMode as string;
             const shType = state.selfhostedType as string;
 
+            // Keep mode='openclaw' — unified fields are supplementary, not replacing mode
+            state.agentId = 'openclaw';
             if (ocSub === 'selfhosted') {
-              state.mode = 'agent';
               state.agentSubMode = 'direct';
-              state.agentId = 'openclaw';
               if (shType === 'local') {
-                // Local selfhosted: construct URL from port
                 const port = state.localOpenclawPort || 18789;
                 state.agentUrl = `ws://localhost:${port}`;
                 state.agentToken = state.openclawToken || '';
                 state.agentBridgeEnabled = state.bridgeEnabled || false;
               } else {
-                // Remote selfhosted
                 state.agentUrl = state.openclawUrl || '';
                 state.agentToken = state.openclawToken || '';
               }
             } else if (ocSub === 'deploy') {
               const depType = state.deployType as string;
               if (depType === 'local') {
-                state.mode = 'agent';
                 state.agentSubMode = 'deploy';
                 state.deployTemplateId = 'openclaw';
                 state.localAgentInstalled = state.localOpenclawInstalled || false;
@@ -492,11 +489,8 @@ export const useSettingsStore = create<SettingsState>()(
                 state.localAgentAutoBridge = state.localOpenclawAutoBridge !== false;
                 state.agentBridgeEnabled = state.bridgeEnabled || false;
               } else {
-                // Cloud deploy (hosted) — keep as builtin for now since hosted is legacy
-                // Users can re-select agent mode manually
-                state.mode = 'agent';
+                // Cloud deploy (hosted)
                 state.agentSubMode = 'direct';
-                state.agentId = 'openclaw';
                 state.agentUrl = state.openclawUrl || '';
                 state.agentToken = state.openclawToken || '';
               }
@@ -504,14 +498,13 @@ export const useSettingsStore = create<SettingsState>()(
           } else if (oldMode === 'copaw') {
             const cSub = state.copawSubMode as string;
 
+            // Keep mode='copaw' — unified fields are supplementary
+            state.agentId = 'copaw';
             if (cSub === 'selfhosted') {
-              state.mode = 'agent';
               state.agentSubMode = 'direct';
-              state.agentId = 'copaw';
               state.agentUrl = state.copawUrl || '';
               state.agentToken = state.copawToken || '';
             } else if (cSub === 'deploy') {
-              state.mode = 'agent';
               state.agentSubMode = 'deploy';
               state.deployTemplateId = 'copaw';
               state.localAgentInstalled = state.localCopawInstalled || false;
@@ -519,7 +512,6 @@ export const useSettingsStore = create<SettingsState>()(
               state.localAgentAutoStart = state.localCopawAutoStart !== false;
               state.localAgentAutoBridge = state.localCopawAutoBridge !== false;
               state.agentBridgeEnabled = state.copawBridgeEnabled || false;
-              // Migrate CoPaw deploy model settings if active
               if (state.copawDeployModelMode && state.copawDeployModelMode !== 'default') {
                 state.deployModelMode = state.copawDeployModelMode;
                 state.deployProvider = state.copawDeployProvider || 'deepseek';

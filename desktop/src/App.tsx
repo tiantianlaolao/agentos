@@ -9,7 +9,7 @@ import { SkillsPanel } from './components/SkillsPanel.tsx';
 import { MemoryPanel } from './components/MemoryPanel.tsx';
 import { ProcessPanel } from './components/ProcessPanel.tsx';
 import { useWebSocket } from './hooks/useWebSocket.ts';
-import { useSettingsStore, OPENCLAW_LOCAL_GATEWAY, KNOWN_AGENTS } from './stores/settingsStore.ts';
+import { useSettingsStore, OPENCLAW_LOCAL_GATEWAY } from './stores/settingsStore.ts';
 import { useAuthStore } from './stores/authStore.ts';
 import { OpenClawDirectClient } from './services/openclawDirect.ts';
 import { OpenClawBridge, type BridgeStatus } from './services/openclawBridge.ts';
@@ -107,14 +107,13 @@ function App() {
   const deployType = useSettingsStore((s) => s.deployType);
 
   // ── Determine direct mode ──
-  // Unified agent mode: direct connect based on agentId
-  const isAgentDirectOpenClaw = mode === 'agent' && agentSubMode === 'direct' && agentId === 'openclaw' && !!agentUrl;
-  const isAgentDirectCoPaw = mode === 'agent' && agentSubMode === 'direct' && agentId === 'copaw' && !!agentUrl;
-  const isAgentDeployOpenClaw = mode === 'agent' && agentSubMode === 'deploy' && deployTemplateId === 'openclaw' && localAgentInstalled;
-  const isAgentDeployCoPaw = mode === 'agent' && agentSubMode === 'deploy' && deployTemplateId === 'copaw' && localAgentInstalled;
-
-  // Legacy mode detection (backward compat)
+  // agentSubMode='direct' uses direct client; agentSubMode='deploy' uses locally installed agent
   const isDeployLocal = mode === 'openclaw' && openclawSubMode === 'deploy' && deployType === 'local' && localOpenclawInstalled;
+  const isAgentDeployOpenClaw = mode === 'openclaw' && agentSubMode === 'deploy' && deployTemplateId === 'openclaw' && localAgentInstalled;
+  const isAgentDeployCoPaw = mode === 'copaw' && agentSubMode === 'deploy' && deployTemplateId === 'copaw' && localAgentInstalled;
+  const isAgentDirectOpenClaw = mode === 'openclaw' && agentSubMode === 'direct' && !!agentUrl;
+  const isAgentDirectCoPaw = mode === 'copaw' && agentSubMode === 'direct' && !!agentUrl;
+
   const isDirectOpenClaw = (mode === 'openclaw' && openclawSubMode === 'selfhosted' && !isAdmin) || isDeployLocal || isAgentDirectOpenClaw || isAgentDeployOpenClaw;
   const isDirectCoPaw = (mode === 'copaw' && copawSubMode === 'deploy' && localCopawInstalled) || isAgentDeployCoPaw;
   const isCopawSelfhosted = (mode === 'copaw' && copawSubMode === 'selfhosted' && !!copawUrl) || isAgentDirectCoPaw;
@@ -128,11 +127,19 @@ function App() {
 
   // Handle mode changes
   const setMode = useCallback((newMode: AgentMode) => {
+    // Map sidebar 'agent' group to actual runtime mode based on agentId
+    let actualMode = newMode;
+    if (newMode === 'agent') {
+      const { agentId: aid } = useSettingsStore.getState();
+      if (aid === 'openclaw') actualMode = 'openclaw';
+      else if (aid === 'copaw') actualMode = 'copaw';
+      // else keep 'agent' for truly custom agents
+    }
     const prevMode = useSettingsStore.getState().mode;
-    if (prevMode === newMode) return;
+    if (prevMode === actualMode) return;
 
-    invoke('frontend_log', { msg: `setMode called: ${prevMode} -> ${newMode}, ws.connected=${ws.connected}` }).catch(() => {});
-    setModeStore(newMode);
+    invoke('frontend_log', { msg: `setMode called: ${prevMode} -> ${actualMode}, ws.connected=${ws.connected}` }).catch(() => {});
+    setModeStore(actualMode);
 
     if (ws.connected) {
       invoke('frontend_log', { msg: 'setMode: disconnecting WS due to mode change' }).catch(() => {});
@@ -220,8 +227,7 @@ function App() {
     if (!shouldBridge) return;
 
     // Determine if we're bridging OpenClaw
-    const isOpenClawBridge = (mode === 'agent' && (agentId === 'openclaw' || deployTemplateId === 'openclaw'))
-      || mode === 'openclaw';
+    const isOpenClawBridge = mode === 'openclaw';
     if (!isOpenClawBridge) return;
 
     const { localOpenclawToken: localToken } = useSettingsStore.getState();
@@ -266,8 +272,7 @@ function App() {
     const shouldBridge = (agentBridgeEnabled || copawBridgeEnabled) && isLoggedIn && authToken;
     if (!shouldBridge) return;
 
-    const isCoPawBridge = (mode === 'agent' && (agentId === 'copaw' || deployTemplateId === 'copaw'))
-      || mode === 'copaw';
+    const isCoPawBridge = mode === 'copaw';
     if (!isCoPawBridge) return;
 
     const copPort = localAgentPort || localCopawPort || 8088;
@@ -363,8 +368,8 @@ function App() {
   // Auto-start local agent on mount
   useEffect(() => {
     // Unified agent deploy auto-start
-    if (mode === 'agent' && agentSubMode === 'deploy' && localAgentInstalled && localAgentAutoStart) {
-      if (deployTemplateId === 'openclaw') {
+    if (agentSubMode === 'deploy' && localAgentInstalled && localAgentAutoStart) {
+      if (deployTemplateId === 'openclaw' && mode === 'openclaw') {
         invoke('start_local_openclaw', { port: localAgentPort || 18789, userId: useAuthStore.getState().userId || undefined })
           .then((result) => {
             console.log('[App] Auto-started local OpenClaw:', result);
@@ -373,7 +378,7 @@ function App() {
             }
           })
           .catch((err) => console.warn('[App] Auto-start local OpenClaw failed:', err));
-      } else if (deployTemplateId === 'copaw') {
+      } else if (deployTemplateId === 'copaw' && mode === 'copaw') {
         invoke('start_local_copaw', { port: localAgentPort || 8088 })
           .then((result) => {
             console.log('[App] Auto-started local CoPaw:', result);
@@ -439,8 +444,8 @@ function App() {
   }, [mode, userId]);
 
   const getOrCreateOpenClawClient = useCallback(() => {
-    // Unified agent mode: use agentUrl/agentToken
-    if (mode === 'agent') {
+    // Unified agent fields: use agentUrl/agentToken when set
+    if (mode === 'openclaw' && agentId === 'openclaw' && (agentSubMode === 'direct' || agentSubMode === 'deploy')) {
       const url = agentSubMode === 'deploy'
         ? OPENCLAW_LOCAL_GATEWAY
         : agentUrl;
@@ -493,7 +498,7 @@ function App() {
     if (copawClientRef.current) return copawClientRef.current;
 
     let baseUrl = '';
-    if (mode === 'agent') {
+    if (mode === 'copaw' && agentId === 'copaw' && (agentSubMode === 'direct' || agentSubMode === 'deploy')) {
       if (agentSubMode === 'deploy') {
         baseUrl = `http://127.0.0.1:${localAgentPort || 8088}`;
       } else {
@@ -539,31 +544,6 @@ function App() {
     }
 
     setConnectError(null);
-
-    // Agent mode via WS (deploy without local install, or custom agent)
-    if (mode === 'agent') {
-      const selectedAgent = KNOWN_AGENTS.find(a => a.id === agentId);
-      if (agentId === 'custom') {
-        setConnectError('Custom agent support coming soon');
-        return;
-      }
-
-      ws.connect(
-        serverUrl,
-        'agent',
-        authToken || undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        agentUrl || undefined,
-        agentToken || undefined,
-        selectedAgent?.protocol || 'openclaw-ws',
-      );
-      return;
-    }
 
     // OpenClaw mode requires login
     if (mode === 'openclaw' && !isLoggedIn) {
