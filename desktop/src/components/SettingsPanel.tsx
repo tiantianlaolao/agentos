@@ -80,6 +80,10 @@ export function SettingsPanel({ onClose }: Props) {
   const [formAgentId, setFormAgentId] = useState(store.agentId);
   const [formAgentUrl, setFormAgentUrl] = useState(store.agentUrl);
   const [formAgentToken, setFormAgentToken] = useState(store.agentToken);
+  // Direct target: local computer vs remote server (derived from URL on init)
+  const [formDirectTarget, setFormDirectTarget] = useState<'local' | 'remote'>(
+    isLocalUrl(store.agentUrl) || !store.agentUrl ? 'local' : 'remote'
+  );
   const [formDeployTemplateId, setFormDeployTemplateId] = useState(store.deployTemplateId);
   const [formDeployModelMode, setFormDeployModelMode] = useState(store.deployModelMode);
   const [formDeployProvider, setFormDeployProvider] = useState<LLMProvider>(store.deployProvider);
@@ -577,34 +581,51 @@ export function SettingsPanel({ onClose }: Props) {
                   </div>
                 ) : (
                   <>
-                    <div className="settings-field">
-                      <label className="settings-label">
-                        {selectedAgent?.transport === 'ws' ? 'WebSocket URL' : 'HTTP URL'}
-                      </label>
-                      <input
-                        className="settings-input"
-                        value={formAgentUrl}
-                        onChange={(e) => setFormAgentUrl(e.target.value)}
-                        placeholder={selectedAgent?.urlPlaceholder || ''}
-                      />
-                      <span className="settings-hint">{selectedAgent?.urlHint || ''}</span>
+                    {/* Direct target: local computer vs remote server */}
+                    <div className="settings-submode-toggle" style={{ marginTop: '8px' }}>
+                      <button
+                        className={`settings-submode-btn ${formDirectTarget === 'local' ? 'active' : ''}`}
+                        onClick={() => {
+                          setFormDirectTarget('local');
+                          // Auto-fill localhost URL
+                          const port = selectedAgent?.defaultPort || 18789;
+                          const prefix = selectedAgent?.transport === 'ws' ? 'ws' : 'http';
+                          setFormAgentUrl(`${prefix}://localhost:${port}`);
+                        }}
+                      >
+                        {t('settings.directLocalComputer')}
+                      </button>
+                      <button
+                        className={`settings-submode-btn ${formDirectTarget === 'remote' ? 'active' : ''}`}
+                        onClick={() => {
+                          setFormDirectTarget('remote');
+                          // Clear auto-filled localhost URL
+                          if (isLocalUrl(formAgentUrl)) setFormAgentUrl('');
+                        }}
+                      >
+                        {t('settings.directRemoteServer')}
+                      </button>
                     </div>
-                    <div className="settings-field">
-                      <label className="settings-label">
-                        Token {selectedAgent?.tokenRequired ? '' : `(${t('settings.optional')})`}
-                      </label>
-                      <input
-                        className="settings-input"
-                        type="password"
-                        value={formAgentToken}
-                        onChange={(e) => setFormAgentToken(e.target.value)}
-                        placeholder={t('settings.accessTokenPlaceholder')}
-                      />
-                    </div>
+                    <span className="settings-hint">
+                      {formDirectTarget === 'local' ? t('settings.directLocalHint') : t('settings.directRemoteHint')}
+                    </span>
 
-                    {/* Bridge toggle — only when URL is localhost and user is logged in */}
-                    {isLocalUrl(formAgentUrl) && (
+                    {formDirectTarget === 'local' ? (
                       <>
+                        {/* Local: OpenClaw needs token, CoPaw doesn't */}
+                        {selectedAgent?.tokenRequired && (
+                          <div className="settings-field">
+                            <label className="settings-label">Token</label>
+                            <input
+                              className="settings-input"
+                              type="password"
+                              value={formAgentToken}
+                              onChange={(e) => setFormAgentToken(e.target.value)}
+                              placeholder={t('settings.accessTokenPlaceholder')}
+                            />
+                          </div>
+                        )}
+                        {/* Bridge toggle */}
                         {!auth.isLoggedIn ? (
                           <p className="settings-hosted-note">{t('bridge.needLogin')}</p>
                         ) : (
@@ -618,6 +639,33 @@ export function SettingsPanel({ onClose }: Props) {
                             <span className="settings-hint">{t('settings.localBridgeHint')}</span>
                           </>
                         )}
+                      </>
+                    ) : (
+                      <>
+                        {/* Remote: URL + Token */}
+                        <div className="settings-field">
+                          <label className="settings-label">
+                            {selectedAgent?.transport === 'ws' ? 'WebSocket URL' : 'HTTP URL'}
+                          </label>
+                          <input
+                            className="settings-input"
+                            value={formAgentUrl}
+                            onChange={(e) => setFormAgentUrl(e.target.value)}
+                            placeholder={selectedAgent?.urlPlaceholder || ''}
+                          />
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-label">
+                            Token {selectedAgent?.tokenRequired ? '' : `(${t('settings.optional')})`}
+                          </label>
+                          <input
+                            className="settings-input"
+                            type="password"
+                            value={formAgentToken}
+                            onChange={(e) => setFormAgentToken(e.target.value)}
+                            placeholder={t('settings.accessTokenPlaceholder')}
+                          />
+                        </div>
                       </>
                     )}
                   </>

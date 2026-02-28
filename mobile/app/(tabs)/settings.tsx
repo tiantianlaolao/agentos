@@ -129,6 +129,9 @@ export default function SettingsScreen() {
   const [formAgentId, setFormAgentId] = useState<'openclaw' | 'copaw' | 'custom'>(store.agentId);
   const [formAgentUrl, setFormAgentUrl] = useState(store.agentUrl);
   const [formAgentToken, setFormAgentToken] = useState(store.agentToken);
+  const [formDirectTarget, setFormDirectTarget] = useState<'local' | 'remote'>(
+    !store.agentUrl || store.agentUrl.includes('localhost') || store.agentUrl.includes('127.0.0.1') ? 'local' : 'remote'
+  );
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load persisted settings on mount
@@ -570,79 +573,74 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* OpenClaw: WS URL + Token (required) */}
-              {formAgentId === 'openclaw' && (
-                <>
-                  <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>{t('settings.agentUrl')}</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={formAgentUrl}
-                      onChangeText={setFormAgentUrl}
-                      placeholder={t('settings.agentOpenClawUrlPlaceholder')}
-                      placeholderTextColor="#888888"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      keyboardType="url"
-                    />
-                    <Text style={styles.fieldHint}>{t('settings.agentOpenClawUrlHint')}</Text>
-                  </View>
-                  <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>{t('settings.agentToken')}</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={formAgentToken}
-                      onChangeText={setFormAgentToken}
-                      placeholder={t('settings.agentOpenClawTokenPlaceholder')}
-                      placeholderTextColor="#888888"
-                      secureTextEntry
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    <Text style={styles.fieldHint}>{t('settings.agentOpenClawTokenHint')}</Text>
-                  </View>
-                </>
-              )}
-
-              {/* CoPaw: HTTP URL + Token (optional) */}
-              {formAgentId === 'copaw' && (
-                <>
-                  <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>{t('settings.agentUrl')}</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={formAgentUrl}
-                      onChangeText={setFormAgentUrl}
-                      placeholder={t('settings.agentCoPawUrlPlaceholder')}
-                      placeholderTextColor="#888888"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      keyboardType="url"
-                    />
-                    <Text style={styles.fieldHint}>{t('settings.agentCoPawUrlHint')}</Text>
-                  </View>
-                  <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>{t('settings.agentToken')}</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={formAgentToken}
-                      onChangeText={setFormAgentToken}
-                      placeholder={t('settings.agentCoPawTokenPlaceholder')}
-                      placeholderTextColor="#888888"
-                      secureTextEntry
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    <Text style={styles.fieldHint}>{t('settings.agentCoPawTokenHint')}</Text>
-                  </View>
-                </>
-              )}
-
               {/* Custom: coming soon */}
-              {formAgentId === 'custom' && (
+              {formAgentId === 'custom' ? (
                 <View style={{ marginTop: 8, marginBottom: 8 }}>
                   <Text style={styles.disabledHint}>{t('settings.agentCustomComingSoon')}</Text>
                 </View>
+              ) : (
+                <>
+                  {/* Direct target: local computer vs remote server */}
+                  <View style={[styles.providerRow, { marginTop: 8 }]}>
+                    <TouchableOpacity
+                      style={[styles.providerChip, formDirectTarget === 'local' && styles.providerChipSelected]}
+                      onPress={() => setFormDirectTarget('local')}
+                    >
+                      <Text style={[styles.providerChipText, formDirectTarget === 'local' && styles.providerChipTextSelected]}>
+                        {t('settings.directLocalComputer')}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.providerChip, formDirectTarget === 'remote' && styles.providerChipSelected]}
+                      onPress={() => setFormDirectTarget('remote')}
+                    >
+                      <Text style={[styles.providerChipText, formDirectTarget === 'remote' && styles.providerChipTextSelected]}>
+                        {t('settings.directRemoteServer')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {formDirectTarget === 'local' ? (
+                    <View style={{ marginTop: 8, marginBottom: 8, padding: 12, backgroundColor: '#1a1a2e', borderRadius: 8 }}>
+                      <Text style={[styles.fieldHint, { color: '#aaa', fontSize: 14, lineHeight: 20 }]}>
+                        {t('settings.directLocalMobileHint')}
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.fieldContainer}>
+                        <Text style={styles.fieldLabel}>
+                          {formAgentId === 'openclaw' ? 'WebSocket URL' : 'HTTP URL'}
+                        </Text>
+                        <TextInput
+                          style={styles.textInput}
+                          value={formAgentUrl}
+                          onChangeText={setFormAgentUrl}
+                          placeholder={formAgentId === 'openclaw' ? t('settings.agentOpenClawUrlPlaceholder') : t('settings.agentCoPawUrlPlaceholder')}
+                          placeholderTextColor="#888888"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="url"
+                        />
+                      </View>
+                      <View style={styles.fieldContainer}>
+                        <Text style={styles.fieldLabel}>
+                          Token {formAgentId === 'openclaw' ? '' : `(${t('settings.optional')})`}
+                        </Text>
+                        <TextInput
+                          style={styles.textInput}
+                          value={formAgentToken}
+                          onChangeText={setFormAgentToken}
+                          placeholder={t('settings.accessTokenPlaceholder')}
+                          placeholderTextColor="#888888"
+                          secureTextEntry
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                      </View>
+                    </>
+                  )}
+                </>
               )}
             </>
           )}
