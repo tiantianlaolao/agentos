@@ -29,12 +29,12 @@ const MODE_COLORS: Record<AgentMode, string> = {
   builtin: '#2d7d46',
   openclaw: '#c26a1b',
   copaw: '#1b6bc2',
+  agent: '#8b5cf6',
 };
 
 const MODES: { value: AgentMode; label: string; description: string }[] = [
   { value: 'builtin', label: 'Built-in', description: 'Server-hosted DeepSeek' },
-  { value: 'openclaw', label: 'OpenClaw', description: 'Full agent mode' },
-  { value: 'copaw', label: 'CoPaw', description: 'Personal AI agent' },
+  { value: 'agent', label: 'External Agent', description: 'Connect external agents' },
 ];
 
 export function Sidebar({

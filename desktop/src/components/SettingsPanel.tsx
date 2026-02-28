@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore, KNOWN_AGENTS } from '../stores/settingsStore.ts';
 import { useAuthStore } from '../stores/authStore.ts';
 import { login as apiLogin, register as apiRegister, sendCode as apiSendCode } from '../services/authApi.ts';
-import { activateHostedAccess, getHostedStatus, updateHostedModel } from '../services/hostedApi.ts';
+import { getHostedStatus, updateHostedModel } from '../services/hostedApi.ts';
 import { useTranslation } from '../i18n/index.ts';
 import { LocalOpenclawSetup } from './LocalOpenclawSetup.tsx';
 import { LocalOpenclawStatus } from './LocalOpenclawStatus.tsx';
@@ -97,17 +97,14 @@ export function SettingsPanel({ onClose }: Props) {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // Hosted activation state
-  const [inviteCode, setInviteCode] = useState('');
-  const [activateLoading, setActivateLoading] = useState(false);
-  const [activateError, setActivateError] = useState('');
+
 
   // Hosted model update state
   const [hostedModelUpdating, setHostedModelUpdating] = useState(false);
   const [hostedModelMsg, setHostedModelMsg] = useState('');
 
   const selectedAgent = KNOWN_AGENTS.find(a => a.id === formAgentId);
-  const deployAgent = KNOWN_AGENTS.find(a => a.id === formDeployTemplateId);
+
 
   const handleUpdateHostedModel = useCallback(async () => {
     if (!formDeployApiKey.trim()) return;
@@ -285,27 +282,6 @@ export function SettingsPanel({ onClose }: Props) {
     store.setLocalOpenclawInstalled(false);
     store.setLocalAgentInstalled(false);
   }, [auth, store]);
-
-  const handleActivate = useCallback(async () => {
-    if (!inviteCode.trim()) return;
-    setActivateError('');
-    setActivateLoading(true);
-    try {
-      const serverUrl = formServerUrl || store.serverUrl;
-      const result = await activateHostedAccess(inviteCode, auth.authToken, serverUrl);
-      if (result.success && result.account) {
-        store.setHostedActivated(true);
-        store.setHostedQuota(result.account.quotaUsed, result.account.quotaTotal);
-        store.setHostedInstanceStatus(result.account.instanceStatus);
-        setInviteCode('');
-      } else {
-        setActivateError(result.error || 'Activation failed');
-      }
-    } catch (e) {
-      setActivateError(e instanceof Error ? e.message : String(e));
-    }
-    setActivateLoading(false);
-  }, [inviteCode, auth.authToken, formServerUrl, store]);
 
   const handleRefreshHostedStatus = useCallback(async () => {
     try {
