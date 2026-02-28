@@ -13,6 +13,8 @@ import { useSettingsStore, OPENCLAW_LOCAL_GATEWAY } from './stores/settingsStore
 import { useAuthStore } from './stores/authStore.ts';
 import { OpenClawDirectClient } from './services/openclawDirect.ts';
 import { OpenClawBridge, type BridgeStatus } from './services/openclawBridge.ts';
+import { CoPawDirectClient } from './services/copawDirect.ts';
+import { CoPawBridge, type CoPawBridgeStatus } from './services/copawBridge.ts';
 import { getHostedStatus } from './services/hostedApi.ts';
 import {
   getOrCreateSingleConversation,
@@ -52,10 +54,14 @@ function App() {
   const [quotedText, setQuotedText] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
+  const [copawConnected, setCopawConnected] = useState(false);
+  const [copawBridgeStatus, setCopawBridgeStatus] = useState<CoPawBridgeStatus | null>(null);
   const conversationId = useRef(generateId());
   const abortRef = useRef<AbortController | null>(null);
   const openclawClientRef = useRef<OpenClawDirectClient | null>(null);
   const bridgeRef = useRef<OpenClawBridge | null>(null);
+  const copawClientRef = useRef<CoPawDirectClient | null>(null);
+  const copawBridgeRef = useRef<CoPawBridge | null>(null);
 
   const mode = useSettingsStore((s) => s.mode);
   const builtinSubMode = useSettingsStore((s) => s.builtinSubMode);
@@ -75,6 +81,11 @@ function App() {
   const localOpenclawAutoStart = useSettingsStore((s) => s.localOpenclawAutoStart);
   const localOpenclawAutoBridge = useSettingsStore((s) => s.localOpenclawAutoBridge);
   const localOpenclawPort = useSettingsStore((s) => s.localOpenclawPort);
+  const localCopawInstalled = useSettingsStore((s) => s.localCopawInstalled);
+  const localCopawAutoStart = useSettingsStore((s) => s.localCopawAutoStart);
+  const localCopawAutoBridge = useSettingsStore((s) => s.localCopawAutoBridge);
+  const localCopawPort = useSettingsStore((s) => s.localCopawPort);
+  const copawBridgeEnabled = useSettingsStore((s) => s.copawBridgeEnabled);
   const ws = useWebSocket();
   const phone = useAuthStore((s) => s.phone);
   const userId = useAuthStore((s) => s.userId);
@@ -87,10 +98,14 @@ function App() {
   // deploy+local+installed = one-click local install, also connect directly
   const isDeployLocal = mode === 'openclaw' && openclawSubMode === 'deploy' && deployType === 'local' && localOpenclawInstalled;
   const isDirectOpenClaw = (mode === 'openclaw' && openclawSubMode === 'selfhosted' && !isAdmin) || isDeployLocal;
-  const isDirect = isDirectOpenClaw;
+  // CoPaw deploy+installed = direct HTTP to local CoPaw
+  const isDirectCoPaw = mode === 'copaw' && copawSubMode === 'deploy' && localCopawInstalled;
+  // CoPaw selfhosted = direct HTTP to user's CoPaw URL
+  const isCopawSelfhosted = mode === 'copaw' && copawSubMode === 'selfhosted' && !!copawUrl;
+  const isDirect = isDirectOpenClaw || isDirectCoPaw || isCopawSelfhosted;
 
   // OpenClaw selfhosted tracks its own connection state; all others use WS
-  const effectiveConnected = isDirect ? openclawConnected : ws.connected;
+  const effectiveConnected = isDirectOpenClaw ? openclawConnected : (isDirectCoPaw || isCopawSelfhosted) ? copawConnected : ws.connected;
   const effectiveStreaming = isDirect ? directStreaming : ws.streaming;
   const effectiveConnecting = isDirect ? false : ws.connecting;
   const effectiveError = connectError || (isDirectOpenClaw ? openclawError : ws.error);
@@ -123,6 +138,14 @@ function App() {
       setOpenclawError(null);
     }
   }, [isDirectOpenClaw]);
+
+  // Clean up CoPaw client when mode changes away from direct CoPaw
+  useEffect(() => {
+    if (!isDirectCoPaw && !isCopawSelfhosted) {
+      copawClientRef.current = null;
+      setCopawConnected(false);
+    }
+  }, [isDirectCoPaw, isCopawSelfhosted]);
 
   // Auto-disconnect and reset when user switches account (authToken changes)
   useEffect(() => {
@@ -219,6 +242,48 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridgeEnabled, isLoggedIn, authToken, serverUrl, openclawToken]);
 
+  // CoPaw Bridge lifecycle: start/stop based on settings
+  useEffect(() => {
+    // Clean up existing copaw bridge
+    if (copawBridgeRef.current) {
+      copawBridgeRef.current.stop();
+      copawBridgeRef.current = null;
+      setCopawBridgeStatus(null);
+    }
+
+    if (!copawBridgeEnabled || !isLoggedIn || !authToken || !localCopawInstalled) {
+      return;
+    }
+
+    const copawPort = useSettingsStore.getState().localCopawPort || 8088;
+    const copawBridge = new CoPawBridge(
+      serverUrl,
+      authToken,
+      `http://127.0.0.1:${copawPort}`,
+    );
+    copawBridge.onStatusChange = (status) => {
+      setCopawBridgeStatus({ ...status });
+    };
+    copawBridgeRef.current = copawBridge;
+
+    copawBridge.start().catch((err) => {
+      console.error('[CoPaw Bridge] Failed to start:', err);
+      setCopawBridgeStatus({
+        serverConnected: false,
+        copawReachable: false,
+        bridgeId: null,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
+    return () => {
+      copawBridge.stop();
+      copawBridgeRef.current = null;
+      setCopawBridgeStatus(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [copawBridgeEnabled, isLoggedIn, authToken, serverUrl, localCopawInstalled]);
+
   // Auto-connect for WS modes (builtin, openclaw-hosted, copaw)
   // Watches ws.connected so it auto-reconnects when connection drops
   useEffect(() => {
@@ -242,6 +307,17 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDirectOpenClaw, openclawConnected]);
 
+  // Auto-connect for direct CoPaw mode (local deploy / selfhosted)
+  useEffect(() => {
+    if (!isDirectCoPaw && !isCopawSelfhosted) return;
+    if (copawConnected) return;
+    const timer = setTimeout(() => {
+      handleConnect();
+    }, 1000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirectCoPaw, isCopawSelfhosted, copawConnected]);
+
   // Run migration once on mount
   useEffect(() => {
     migrateToSingleConversation();
@@ -255,6 +331,13 @@ function App() {
         useSettingsStore.getState().setLocalOpenclawInstalled(installed);
       }).catch(() => { /* ignore */ });
     }
+  }, []);
+
+  // Verify local CoPaw installation status on mount
+  useEffect(() => {
+    invoke<boolean>('check_local_copaw_installed').then((installed) => {
+      useSettingsStore.getState().setLocalCopawInstalled(installed);
+    }).catch(() => { /* ignore */ });
   }, []);
 
   // Auto-start local OpenClaw on mount if configured
@@ -275,6 +358,27 @@ function App() {
         })
         .catch((err) => {
           console.warn('[App] Auto-start local OpenClaw failed:', err);
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-start local CoPaw on mount if configured
+  useEffect(() => {
+    const { copawSubMode: cSub } = useSettingsStore.getState();
+    const shouldAutoStart = localCopawInstalled && localCopawAutoStart && mode === 'copaw' && cSub === 'deploy';
+    if (shouldAutoStart) {
+      invoke('start_local_copaw', { port: localCopawPort || 8088 })
+        .then((result) => {
+          console.log('[App] Auto-started local CoPaw:', result);
+          setCopawConnected(true);
+          // Auto-enable CoPaw bridge if configured
+          if (localCopawAutoBridge && isLoggedIn && !copawBridgeEnabled) {
+            useSettingsStore.getState().setCopawBridgeEnabled(true);
+          }
+        })
+        .catch((err) => {
+          console.warn('[App] Auto-start local CoPaw failed:', err);
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -322,6 +426,18 @@ function App() {
     return client;
   }, []);
 
+  const getOrCreateCoPawClient = useCallback(() => {
+    if (copawClientRef.current) return copawClientRef.current;
+    const { copawUrl: selfUrl, copawSubMode: cSub, localCopawPort: cPort, localCopawInstalled: cInstalled } = useSettingsStore.getState();
+    const baseUrl = (cSub === 'deploy' && cInstalled)
+      ? `http://127.0.0.1:${cPort || 8088}`
+      : selfUrl || '';
+    if (!baseUrl) return null;
+    const client = new CoPawDirectClient(baseUrl);
+    copawClientRef.current = client;
+    return client;
+  }, []);
+
   const handleConnect = useCallback(() => {
     if (isDirectOpenClaw) {
       const client = getOrCreateOpenClawClient();
@@ -330,6 +446,20 @@ function App() {
         client.ensureConnected().catch((err) => {
           setOpenclawError(err instanceof Error ? err.message : String(err));
         });
+      }
+      return;
+    }
+
+    // CoPaw direct mode: check health and mark connected
+    if (isDirectCoPaw || isCopawSelfhosted) {
+      const client = getOrCreateCoPawClient();
+      if (client) {
+        client.checkHealth().then((ok) => {
+          setCopawConnected(ok);
+          if (!ok) setConnectError('CoPaw not reachable');
+        });
+      } else {
+        setConnectError('CoPaw URL not configured');
       }
       return;
     }
@@ -345,7 +475,7 @@ function App() {
     // Admin users: no openclawHosted flag → server ADMIN_PHONES check → built-in OpenClaw
     // Normal users with hosted activated: pass openclawHosted flag
     const useHosted = mode === 'openclaw' && !isAdmin && openclawSubMode === 'deploy' && deployType === 'cloud' && hostedActivated;
-    const useCopawHosted = mode === 'copaw' && (copawSubMode === 'hosted' || copawSubMode === 'deploy');
+    const useCopawHosted = false; // Hosted mode removed
 
     // BYOK: pass apiKey and provider/model to server (server already supports this from mobile Sprint 3.5)
     const isByok = mode === 'builtin' && builtinSubMode === 'byok';
@@ -368,7 +498,7 @@ function App() {
       useHosted ? true : undefined,
       useCopawHosted ? true : undefined,
     );
-  }, [ws, serverUrl, mode, builtinSubMode, copawUrl, copawToken, copawSubMode, isDirectOpenClaw, getOrCreateOpenClawClient, authToken, isLoggedIn, openclawSubMode, deployType, hostedActivated, isAdmin]);
+  }, [ws, serverUrl, mode, builtinSubMode, copawUrl, copawToken, copawSubMode, isDirectOpenClaw, isDirectCoPaw, isCopawSelfhosted, getOrCreateOpenClawClient, getOrCreateCoPawClient, authToken, isLoggedIn, openclawSubMode, deployType, hostedActivated, isAdmin]);
 
   const handleDisconnect = useCallback(() => {
     if (isDirectOpenClaw && openclawClientRef.current) {
@@ -377,8 +507,13 @@ function App() {
       setOpenclawConnected(false);
       return;
     }
+    if ((isDirectCoPaw || isCopawSelfhosted) && copawClientRef.current) {
+      copawClientRef.current = null;
+      setCopawConnected(false);
+      return;
+    }
     ws.disconnect();
-  }, [ws, isDirectOpenClaw]);
+  }, [ws, isDirectOpenClaw, isDirectCoPaw, isCopawSelfhosted]);
 
   // Load more (older) messages
   const handleLoadMore = useCallback(() => {
@@ -594,7 +729,52 @@ function App() {
         return;
       }
 
-      // --- WS mode (builtin, openclaw-hosted, copaw) ---
+      // --- CoPaw direct mode (deploy or selfhosted) ---
+      if (isDirectCoPaw || isCopawSelfhosted) {
+        const client = getOrCreateCoPawClient();
+        if (!client) {
+          const errorMsg: ChatMessageItem = {
+            id: generateId(),
+            role: 'assistant',
+            content: 'Error: CoPaw not configured.',
+            timestamp: Date.now(),
+          };
+          setMessages((prev) => [...prev, errorMsg]);
+          setStreamingContent(null);
+          return;
+        }
+        const abort = new AbortController();
+        abortRef.current = abort;
+        setDirectStreaming(true);
+        let accumulated = '';
+        const sessionKey = `agentos-copaw-${userId || 'local'}`;
+        client.sendChat(content, sessionKey, {
+          onChunk: (delta) => {
+            accumulated += delta;
+            setStreamingContent(accumulated);
+          },
+          onDone: (fullContent) => {
+            setDirectStreaming(false);
+            abortRef.current = null;
+            persistAssistantMessage(fullContent);
+          },
+          onError: (error) => {
+            setDirectStreaming(false);
+            abortRef.current = null;
+            const errorMsg: ChatMessageItem = {
+              id: generateId(),
+              role: 'assistant',
+              content: `Error: ${error}`,
+              timestamp: Date.now(),
+            };
+            setMessages((prev) => [...prev, errorMsg]);
+            setStreamingContent(null);
+          },
+        }, { signal: abort.signal }).catch(() => {});
+        return;
+      }
+
+      // --- WS mode (builtin, openclaw-hosted) ---
       ws.sendMessage(conversationId.current, content, history, {
         onChunk: (accumulated) => {
           setStreamingContent(accumulated);
@@ -614,7 +794,7 @@ function App() {
         },
       });
     },
-    [ws, messages, ensureConversation, isDirectOpenClaw, getOrCreateOpenClawClient, persistAssistantMessage]
+    [ws, messages, ensureConversation, isDirectOpenClaw, isDirectCoPaw, isCopawSelfhosted, getOrCreateOpenClawClient, getOrCreateCoPawClient, persistAssistantMessage, userId]
   );
 
   const handleRetry = useCallback(() => {

@@ -90,6 +90,7 @@ export default {
     copawSelfhostedDesc: 'Connect to your own CoPaw / AgentScope instance',
     copawDeploy: 'One-Click Deploy',
     copawDeployDesc: 'One-click deploy CoPaw runtime',
+    copawDeployDesktopHint: 'Please deploy CoPaw on the desktop app first and enable Bridge. The mobile app will connect to your desktop CoPaw via Bridge.',
     copawDeployCloud: 'Cloud Hosted',
     copawDeployLocal: 'Deploy Local',
     copawCloudNotAvailable: 'Cloud hosting is not yet available',

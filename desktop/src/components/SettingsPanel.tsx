@@ -7,6 +7,8 @@ import { activateHostedAccess, getHostedStatus, updateHostedModel } from '../ser
 import { useTranslation } from '../i18n/index.ts';
 import { LocalOpenclawSetup } from './LocalOpenclawSetup.tsx';
 import { LocalOpenclawStatus } from './LocalOpenclawStatus.tsx';
+import { LocalCopawSetup } from './LocalCopawSetup.tsx';
+import { LocalCopawStatus } from './LocalCopawStatus.tsx';
 import type { AgentMode } from '../types/index.ts';
 
 import type { LLMProvider } from '../stores/settingsStore.ts';
@@ -859,27 +861,14 @@ export function SettingsPanel({ onClose }: Props) {
                   </>
                 )}
 
-                <div className="settings-submode-row" style={{ marginTop: '8px' }}>
-                  <button
-                    className={`settings-submode-btn ${formCopawDeployType === 'cloud' ? 'active' : ''}`}
-                    style={{ opacity: 0.4, pointerEvents: 'none', cursor: 'not-allowed' }}
-                    onClick={() => setFormCopawDeployType('cloud')}
-                  >
-                    {t('settings.deployCloud')}
-                  </button>
-                  <button
-                    className={`settings-submode-btn ${formCopawDeployType === 'local' ? 'active' : ''}`}
-                    onClick={() => setFormCopawDeployType('local')}
-                  >
-                    {t('settings.deployLocal')}
-                  </button>
-                </div>
-                {formCopawDeployType === 'cloud' && (
-                  <span className="settings-hint" style={{ color: '#999' }}>云托管功能暂未开放</span>
-                )}
-
-                {formCopawDeployType === 'local' && (
-                  <p className="settings-hosted-note">{t('settings.copawHostedDesc')}</p>
+                {/* Local CoPaw setup / status */}
+                {!store.localCopawInstalled ? (
+                  <LocalCopawSetup onInstalled={() => {
+                    store.setLocalCopawInstalled(true);
+                    store.setCopawDeployType('local');
+                  }} />
+                ) : (
+                  <LocalCopawStatus />
                 )}
               </>
             )}
@@ -887,60 +876,16 @@ export function SettingsPanel({ onClose }: Props) {
             {/* ── 自建直连 ── */}
             {formCopawSubMode === 'selfhosted' && (
               <>
-                <div className="settings-submode-row" style={{ marginTop: '8px' }}>
-                  <button
-                    className={`settings-submode-btn ${formCopawSelfhostedType === 'remote' ? 'active' : ''}`}
-                    onClick={() => setFormCopawSelfhostedType('remote')}
-                  >
-                    {t('settings.selfhostedRemote')}
-                  </button>
-                  <button
-                    className={`settings-submode-btn ${formCopawSelfhostedType === 'local' ? 'active' : ''}`}
-                    onClick={() => setFormCopawSelfhostedType('local')}
-                  >
-                    {t('settings.selfhostedLocal')}
-                  </button>
+                <div className="settings-field" style={{ marginTop: '8px' }}>
+                  <label className="settings-label">{t('settings.copawUrl')}</label>
+                  <input
+                    className="settings-input"
+                    value={formCopawUrl}
+                    onChange={(e) => setFormCopawUrl(e.target.value)}
+                    placeholder={t('settings.copawUrlPlaceholder')}
+                  />
+                  <span className="settings-hint">{t('settings.copawUrlHint')}</span>
                 </div>
-                {formCopawSelfhostedType === 'remote' && (
-                  <>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.copawUrl')}</label>
-                      <input
-                        className="settings-input"
-                        value={formCopawUrl}
-                        onChange={(e) => setFormCopawUrl(e.target.value)}
-                        placeholder={t('settings.copawUrlPlaceholder')}
-                      />
-                      <span className="settings-hint">{t('settings.copawUrlHint')}</span>
-                    </div>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.accessToken')}</label>
-                      <input
-                        className="settings-input"
-                        type="password"
-                        value={formCopawToken}
-                        onChange={(e) => setFormCopawToken(e.target.value)}
-                        placeholder={t('settings.accessTokenPlaceholder')}
-                      />
-                      <span className="settings-hint">{t('settings.copawTokenHint')}</span>
-                    </div>
-                  </>
-                )}
-                {formCopawSelfhostedType === 'local' && (
-                  <>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.accessToken')}</label>
-                      <input
-                        className="settings-input"
-                        type="password"
-                        value={formCopawToken}
-                        onChange={(e) => setFormCopawToken(e.target.value)}
-                        placeholder={t('settings.accessTokenPlaceholder')}
-                      />
-                      <span className="settings-hint">{t('settings.copawTokenHint')}</span>
-                    </div>
-                  </>
-                )}
               </>
             )}
           </div>

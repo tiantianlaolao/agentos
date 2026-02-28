@@ -440,11 +440,11 @@ export default function ChatScreen() {
       });
 
       const isOpenclawHosted = mode === 'openclaw' && openclawSubMode === 'hosted';
-      const isCopawHosted = mode === 'copaw' && (copawSubMode === 'hosted' || copawSubMode === 'deploy');
+      const isCopawDeploy = mode === 'copaw' && copawSubMode === 'deploy';
       const isByok = mode === 'builtin' && builtinSubMode === 'byok';
       const byokApiKey = isByok ? apiKey || undefined : undefined;
       const byokModel = isByok ? (selectedModel || provider) : (selectedModel || undefined);
-      client.connect(mode, { provider, apiKey: byokApiKey, openclawUrl, openclawToken, authToken: authToken || undefined, model: byokModel, deviceId, openclawHosted: isOpenclawHosted || undefined, copawUrl: isCopawHosted ? undefined : (copawUrl || undefined), copawToken: isCopawHosted ? undefined : (copawToken || undefined), copawHosted: isCopawHosted || undefined });
+      client.connect(mode, { provider, apiKey: byokApiKey, openclawUrl, openclawToken, authToken: authToken || undefined, model: byokModel, deviceId, openclawHosted: isOpenclawHosted || undefined, copawUrl: isCopawDeploy ? undefined : (copawUrl || undefined), copawToken: isCopawDeploy ? undefined : (copawToken || undefined) });
 
       cleanupRef.current = () => {
         unsubConnected();

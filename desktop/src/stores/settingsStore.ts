@@ -50,6 +50,13 @@ interface SettingsState {
   // OpenClaw Bridge
   bridgeEnabled: boolean;
 
+  // Local CoPaw
+  localCopawInstalled: boolean;
+  localCopawPort: number;
+  localCopawAutoStart: boolean;
+  localCopawAutoBridge: boolean;
+  copawBridgeEnabled: boolean;
+
   // Local OpenClaw
   localOpenclawInstalled: boolean;
   localOpenclawToken: string;
@@ -96,6 +103,11 @@ interface SettingsState {
   setDeployApiKey: (key: string) => void;
   setDeployModel: (model: string) => void;
   setBridgeEnabled: (enabled: boolean) => void;
+  setLocalCopawInstalled: (v: boolean) => void;
+  setLocalCopawPort: (port: number) => void;
+  setLocalCopawAutoStart: (v: boolean) => void;
+  setLocalCopawAutoBridge: (v: boolean) => void;
+  setCopawBridgeEnabled: (enabled: boolean) => void;
   setLocalOpenclawInstalled: (v: boolean) => void;
   setLocalOpenclawToken: (token: string) => void;
   setLocalOpenclawPort: (port: number) => void;
@@ -129,7 +141,7 @@ export const useSettingsStore = create<SettingsState>()(
       hostedInstanceStatus: '',
       copawUrl: '',
       copawToken: '',
-      copawSubMode: 'hosted',
+      copawSubMode: 'deploy',
       copawDeployType: 'local',
       copawSelfhostedType: 'remote',
       copawDeployModelMode: 'default',
@@ -141,6 +153,11 @@ export const useSettingsStore = create<SettingsState>()(
       deployApiKey: '',
       deployModel: '',
       bridgeEnabled: false,
+      localCopawInstalled: false,
+      localCopawPort: 8088,
+      localCopawAutoStart: true,
+      localCopawAutoBridge: true,
+      copawBridgeEnabled: false,
       localOpenclawInstalled: false,
       localOpenclawToken: '',
       localOpenclawPort: 18789,
@@ -205,6 +222,11 @@ export const useSettingsStore = create<SettingsState>()(
       setDeployApiKey: (key) => set({ deployApiKey: key }),
       setDeployModel: (model) => set({ deployModel: model }),
       setBridgeEnabled: (enabled) => set({ bridgeEnabled: enabled }),
+      setLocalCopawInstalled: (v) => set({ localCopawInstalled: v }),
+      setLocalCopawPort: (port) => set({ localCopawPort: port }),
+      setLocalCopawAutoStart: (v) => set({ localCopawAutoStart: v }),
+      setLocalCopawAutoBridge: (v) => set({ localCopawAutoBridge: v }),
+      setCopawBridgeEnabled: (enabled) => set({ copawBridgeEnabled: enabled }),
       setLocalOpenclawInstalled: (v) => set({ localOpenclawInstalled: v }),
       setLocalOpenclawToken: (token) => set({ localOpenclawToken: token }),
       setLocalOpenclawPort: (port) => set({ localOpenclawPort: port }),
@@ -257,6 +279,11 @@ export const useSettingsStore = create<SettingsState>()(
         deployApiKey: state.deployApiKey,
         deployModel: state.deployModel,
         bridgeEnabled: state.bridgeEnabled,
+        localCopawInstalled: state.localCopawInstalled,
+        localCopawPort: state.localCopawPort,
+        localCopawAutoStart: state.localCopawAutoStart,
+        localCopawAutoBridge: state.localCopawAutoBridge,
+        copawBridgeEnabled: state.copawBridgeEnabled,
         localOpenclawInstalled: state.localOpenclawInstalled,
         localOpenclawToken: state.localOpenclawToken,
         localOpenclawPort: state.localOpenclawPort,
@@ -267,7 +294,7 @@ export const useSettingsStore = create<SettingsState>()(
         localOpenclawAutoBridge: state.localOpenclawAutoBridge,
         locale: state.locale,
       }),
-      version: 9,
+      version: 10,
       migrate: (persisted: unknown) => {
         const state = (persisted || {}) as Record<string, unknown>;
         // v1→v3: if selfhosted was set but no URL configured, reset to hosted
@@ -314,6 +341,13 @@ export const useSettingsStore = create<SettingsState>()(
         if (!state.copawDeployProvider) state.copawDeployProvider = 'deepseek';
         if (!state.copawDeployApiKey) state.copawDeployApiKey = '';
         if (!state.copawDeployModel) state.copawDeployModel = '';
+        // v9→v10: Local CoPaw fields + copawSubMode default to 'deploy'
+        if (state.localCopawInstalled === undefined) state.localCopawInstalled = false;
+        if (!state.localCopawPort) state.localCopawPort = 8088;
+        if (state.localCopawAutoStart === undefined) state.localCopawAutoStart = true;
+        if (state.localCopawAutoBridge === undefined) state.localCopawAutoBridge = true;
+        if (state.copawBridgeEnabled === undefined) state.copawBridgeEnabled = false;
+        if (state.copawSubMode === 'hosted') state.copawSubMode = 'deploy';
         // Migrate old server IPs
         if (typeof state.serverUrl === 'string') {
           state.serverUrl = state.serverUrl

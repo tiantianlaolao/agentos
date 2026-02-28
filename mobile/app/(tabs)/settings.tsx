@@ -113,7 +113,7 @@ export default function SettingsScreen() {
   const [formLocale, setFormLocale] = useState(store.locale);
   const [formModel, setFormModel] = useState(store.selectedModel);
   const [formSubMode, setFormSubMode] = useState<'hosted' | 'selfhosted'>(store.openclawSubMode);
-  const [formCopawSubMode, setFormCopawSubMode] = useState<'hosted' | 'selfhosted' | 'deploy'>(store.copawSubMode);
+  const [formCopawSubMode, setFormCopawSubMode] = useState<'deploy' | 'selfhosted'>(store.copawSubMode);
   const [formCopawUrl, setFormCopawUrl] = useState(store.copawUrl);
   const [formCopawToken, setFormCopawToken] = useState(store.copawToken);
   const [formCopawDeployType, setFormCopawDeployType] = useState<'cloud' | 'local'>(store.copawDeployType);
@@ -191,7 +191,8 @@ export default function SettingsScreen() {
         if (openclawUrl) { store.setOpenclawUrl(openclawUrl); setFormOpenclawUrl(openclawUrl); }
         if (openclawToken) { store.setOpenclawToken(openclawToken); setFormOpenclawToken(openclawToken); }
         if (copawSubMode) {
-          const csm = copawSubMode as 'hosted' | 'selfhosted' | 'deploy';
+          // Migrate 'hosted' → 'deploy' (hosted mode removed)
+          const csm = (copawSubMode === 'hosted' ? 'deploy' : copawSubMode) as 'deploy' | 'selfhosted';
           store.setCopawSubMode(csm);
           setFormCopawSubMode(csm);
         }
@@ -549,97 +550,10 @@ export default function SettingsScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* Deploy sub-options */}
+          {/* Deploy hint: deploy on desktop first */}
           {formCopawSubMode === 'deploy' && (
             <View style={{ marginLeft: 26, marginBottom: 8 }}>
-              {/* Cloud — greyed out / disabled */}
-              <View
-                style={[styles.subModeCard, { opacity: 0.4 }]}
-                pointerEvents="none"
-              >
-                <View style={styles.cardRow}>
-                  <View style={styles.subRadio}>
-                  </View>
-                  <View style={styles.cardTextContainer}>
-                    <Text style={styles.subModeTitle}>{t('settings.copawDeployCloud')}</Text>
-                  </View>
-                </View>
-                <Text style={styles.disabledHint}>{t('settings.copawCloudNotAvailable')}</Text>
-              </View>
-
-              {/* Local deploy */}
-              <TouchableOpacity
-                style={[styles.subModeCard, formCopawDeployType === 'local' && styles.subModeCardSelected]}
-                onPress={() => setFormCopawDeployType('local')}
-              >
-                <View style={styles.cardRow}>
-                  <View style={[styles.subRadio, formCopawDeployType === 'local' && styles.radioSelected]}>
-                    {formCopawDeployType === 'local' && <View style={styles.subRadioDot} />}
-                  </View>
-                  <View style={styles.cardTextContainer}>
-                    <Text style={styles.subModeTitle}>{t('settings.copawDeployLocal')}</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-
-              {/* Model selection for deploy */}
-              {formCopawDeployType === 'local' && (
-                <View style={{ marginLeft: 26, marginTop: 4 }}>
-                  <View style={styles.providerRow}>
-                    <TouchableOpacity
-                      style={[styles.providerChip, formCopawDeployModelMode === 'default' && styles.providerChipSelected]}
-                      onPress={() => setFormCopawDeployModelMode('default')}
-                    >
-                      <Text style={[styles.providerChipText, formCopawDeployModelMode === 'default' && styles.providerChipTextSelected]}>
-                        {t('settings.copawModelDefault')}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.providerChip, formCopawDeployModelMode === 'custom' && styles.providerChipSelected]}
-                      onPress={() => setFormCopawDeployModelMode('custom')}
-                    >
-                      <Text style={[styles.providerChipText, formCopawDeployModelMode === 'custom' && styles.providerChipTextSelected]}>
-                        {t('settings.copawModelCustom')}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  {formCopawDeployModelMode === 'custom' && (
-                    <>
-                      <Dropdown
-                        label={t('settings.copawDeployProvider')}
-                        options={PROVIDERS}
-                        value={formCopawDeployProvider as LLMProvider}
-                        onChange={(v) => setFormCopawDeployProvider(v)}
-                      />
-                      <View style={styles.fieldContainer}>
-                        <Text style={styles.fieldLabel}>{t('settings.copawDeployApiKey')}</Text>
-                        <TextInput
-                          style={styles.textInput}
-                          value={formCopawDeployApiKey}
-                          onChangeText={setFormCopawDeployApiKey}
-                          placeholder={t('settings.copawDeployApiKeyPlaceholder')}
-                          placeholderTextColor="#888888"
-                          secureTextEntry
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                        />
-                      </View>
-                      <View style={styles.fieldContainer}>
-                        <Text style={styles.fieldLabel}>{t('settings.copawDeployModel')}</Text>
-                        <TextInput
-                          style={styles.textInput}
-                          value={formCopawDeployModel}
-                          onChangeText={setFormCopawDeployModel}
-                          placeholder={t('settings.copawDeployModelPlaceholder')}
-                          placeholderTextColor="#888888"
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                        />
-                      </View>
-                    </>
-                  )}
-                </View>
-              )}
+              <Text style={styles.fieldHint}>{t('settings.copawDeployDesktopHint')}</Text>
             </View>
           )}
 

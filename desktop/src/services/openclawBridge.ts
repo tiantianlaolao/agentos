@@ -144,6 +144,7 @@ export class OpenClawBridge {
           payload: {
             authToken: this.authToken,
             gatewayUrl: this.gatewayUrl,
+            agentType: 'openclaw',
           },
         };
         ws.send(JSON.stringify(msg));

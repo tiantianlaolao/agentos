@@ -116,18 +116,23 @@ export function getDesktopWebSocket(userId: string): WebSocket | undefined {
   return desktopWebSockets.get(userId);
 }
 
-// ── OpenClaw Bridge WebSocket mapping: userId → bridge ws ──
+// ── Bridge WebSocket mapping: "userId:agentType" → bridge ws ──
+type BridgeAgentType = 'openclaw' | 'copaw';
 const bridgeWebSockets = new Map<string, WebSocket>();
 
-/** Check if a user has an active bridge connection */
-export function hasBridgeOnline(userId: string): boolean {
-  const ws = bridgeWebSockets.get(userId);
+function bridgeKey(userId: string, agentType: BridgeAgentType = 'openclaw'): string {
+  return `${userId}:${agentType}`;
+}
+
+/** Check if a user has an active bridge connection for a given agent type */
+export function hasBridgeOnline(userId: string, agentType: BridgeAgentType = 'openclaw'): boolean {
+  const ws = bridgeWebSockets.get(bridgeKey(userId, agentType));
   return ws !== undefined && ws.readyState === WebSocket.OPEN;
 }
 
-/** Get the bridge WebSocket for a user */
-export function getBridgeWebSocket(userId: string): WebSocket | undefined {
-  return bridgeWebSockets.get(userId);
+/** Get the bridge WebSocket for a user and agent type */
+export function getBridgeWebSocket(userId: string, agentType: BridgeAgentType = 'openclaw'): WebSocket | undefined {
+  return bridgeWebSockets.get(bridgeKey(userId, agentType));
 }
 
 // ── Bridge pending chats: conversationId → { resolve callbacks } ──
@@ -453,9 +458,11 @@ export function handleConnection(ws: WebSocket): void {
     // Clean up bridge registration if this was a bridge connection
     if ((ws as unknown as Record<string, string>).__bridgeUserId) {
       const bUserId = (ws as unknown as Record<string, string>).__bridgeUserId;
-      if (bridgeWebSockets.get(bUserId) === ws) {
-        bridgeWebSockets.delete(bUserId);
-        console.log(`[Bridge] Bridge disconnected for user ${bUserId}`);
+      const bAgentType = ((ws as unknown as Record<string, string>).__bridgeAgentType || 'openclaw') as BridgeAgentType;
+      const bKey = bridgeKey(bUserId, bAgentType);
+      if (bridgeWebSockets.get(bKey) === ws) {
+        bridgeWebSockets.delete(bKey);
+        console.log(`[Bridge] Bridge disconnected for user ${bUserId} (${bAgentType})`);
       }
     }
     if (session) {
@@ -884,7 +891,7 @@ function handleSkillConfigSet(ws: WebSocket, message: { payload: { skillName: st
 }
 
 async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Session> {
-  const { mode, provider: providerName, apiKey, openclawUrl, openclawToken, openclawHosted, copawUrl, copawToken, copawHosted, deviceId, authToken, model } = message.payload;
+  const { mode, provider: providerName, apiKey, openclawUrl, openclawToken, openclawHosted, copawUrl, copawToken, deviceId, authToken, model } = message.payload;
 
   // Verify JWT if provided
   let userId: string | null = null;
@@ -914,22 +921,11 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
     }
   }
 
-  // CoPaw access control
-  let isCopawHosted = false;
+  // CoPaw access control — hosted mode removed, only selfhosted (with URL) or bridge (deploy)
   if (mode === 'copaw') {
-    if (copawHosted) {
-      // CoPaw uses a shared instance (no per-user provisioning), no HOSTED_ENABLED gate needed
-      // Require auth
-      if (!userId) {
-        sendError(ws, ErrorCode.AUTH_FAILED, '请先登录后再使用 CoPaw 托管服务');
-        throw new Error('CoPaw hosted mode requires authentication');
-      }
-      isCopawHosted = true;
-    } else if (!copawUrl) {
-      // Self-hosted mode without URL
-      sendError(ws, ErrorCode.INVALID_MESSAGE, '请在设置中填写 CoPaw 地址');
-      throw new Error('CoPaw self-hosted mode requires URL');
-    }
+    // copaw mode via WS: either selfhosted with URL, or bridge (server checks bridge availability)
+    // If no copawUrl and no bridge, the client should use direct mode — but allow connection anyway
+    // (the chat handler will check for bridge availability)
   }
 
   // Hosted OpenClaw mode
@@ -975,9 +971,6 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
       throw new Error(`Hosted instance not ready: ${hostedInstanceStatus}`);
     }
     llmProvider = new OpenClawAdapter(`ws://127.0.0.1:${hostedPort}`, hostedInstanceToken);
-  } else if (isCopawHosted) {
-    // CoPaw hosted: use server's default CoPaw URL (shared instance, no user URL)
-    llmProvider = createProvider('copaw', { model });
   } else {
     // If client sends mode='builtin' with an apiKey, treat as BYOK (user's own key)
     const effectiveMode = (mode === 'builtin' && apiKey) ? 'byok' : mode;
@@ -999,11 +992,11 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
     userPhone,
     provider: llmProvider,
     abortController: null,
-    isHosted: isHosted || isCopawHosted,
+    isHosted,
   };
 
   // For agent adapter modes: register as push target and connect for chat
-  if ((mode === 'openclaw' || mode === 'copaw' || isHosted || isCopawHosted) && llmProvider && isAgentAdapter(llmProvider)) {
+  if ((mode === 'openclaw' || mode === 'copaw' || isHosted) && llmProvider && isAgentAdapter(llmProvider)) {
     const adapter = llmProvider;
 
     // Register as active push target and flush queued messages
@@ -1052,8 +1045,8 @@ async function handleChatSend(
 ): Promise<void> {
   const { conversationId, content, history } = message.payload;
 
-  // Hosted quota check (OpenClaw hosted only — CoPaw hosted is a shared instance, no per-user quota)
-  if (session.isHosted && session.mode !== 'copaw') {
+  // Hosted quota check (OpenClaw hosted only)
+  if (session.isHosted) {
     if (!session.userId) {
       sendError(ws, ErrorCode.AUTH_FAILED, '请先登录', conversationId);
       return;
@@ -1123,12 +1116,15 @@ async function handleChatSend(
     }
     llmMessages.push({ role: 'user', content });
 
-    // Bridge routing: if openclaw mode (non-hosted) and bridge is available, route through bridge
+    // Bridge routing: if (openclaw or copaw) mode and bridge is available, route through bridge
     // Hosted mode uses the server's direct adapter to the hosted gateway, not the bridge.
-    if (session.mode === 'openclaw' && session.userId && !session.isHosted && hasBridgeOnline(session.userId)) {
-      console.log(`[Chat] Routing through bridge for user ${session.userId}`);
+    const bridgeAgentType: BridgeAgentType = session.mode === 'copaw' ? 'copaw' : 'openclaw';
+    if ((session.mode === 'openclaw' || session.mode === 'copaw') && session.userId && !session.isHosted && hasBridgeOnline(session.userId, bridgeAgentType)) {
+      console.log(`[Chat] Routing through ${bridgeAgentType} bridge for user ${session.userId}`);
       const batcher = new ChunkBatcher(ws, conversationId);
-      const sessionKey = `agentos-${session.userId}`;
+      const sessionKey = session.mode === 'copaw'
+        ? `agentos-copaw-${session.userId}`
+        : `agentos-${session.userId}`;
 
       await new Promise<void>((resolveChat, rejectChat) => {
         sendChatViaBridge(session.userId!, conversationId, content, sessionKey, {
@@ -1173,7 +1169,7 @@ async function handleChatSend(
               });
             }
           },
-        });
+        }, 120000, bridgeAgentType);
       });
     } else
     // Set up agent adapter session key and tool event forwarding
@@ -1617,7 +1613,7 @@ function handleDesktopCommand(ws: WebSocket, session: Session, message: DesktopC
 // ── Bridge handlers ──
 
 function handleBridgeRegister(ws: WebSocket, message: BridgeRegisterMessage): void {
-  const { authToken } = message.payload;
+  const { authToken, agentType: rawAgentType } = message.payload as { authToken: string; agentType?: string };
 
   // Verify JWT to get userId
   const decoded = verifyToken(authToken);
@@ -1627,11 +1623,14 @@ function handleBridgeRegister(ws: WebSocket, message: BridgeRegisterMessage): vo
   }
 
   const userId = decoded.userId;
+  const agentType: BridgeAgentType = (rawAgentType === 'copaw') ? 'copaw' : 'openclaw';
 
   // Register bridge WebSocket
-  bridgeWebSockets.set(userId, ws);
+  const bKey = bridgeKey(userId, agentType);
+  bridgeWebSockets.set(bKey, ws);
   // Tag the WS for cleanup on disconnect
   (ws as unknown as Record<string, string>).__bridgeUserId = userId;
+  (ws as unknown as Record<string, string>).__bridgeAgentType = agentType;
 
   const bridgeId = uuidv4();
 
@@ -1642,11 +1641,11 @@ function handleBridgeRegister(ws: WebSocket, message: BridgeRegisterMessage): vo
     payload: { userId, bridgeId },
   });
 
-  console.log(`[Bridge] Registered for user ${userId} (phone: ${decoded.phone}), bridgeId=${bridgeId}`);
+  console.log(`[Bridge] Registered for user ${userId} (phone: ${decoded.phone}), agentType=${agentType}, bridgeId=${bridgeId}`);
 }
 
 /**
- * Send a chat message through the bridge to the user's local OpenClaw Gateway.
+ * Send a chat message through the bridge to the user's local gateway.
  * Returns a promise that resolves when the full response is received.
  */
 export function sendChatViaBridge(
@@ -1661,8 +1660,9 @@ export function sendChatViaBridge(
     onSkillEvent: (phase: string, skillName: string, data?: Record<string, unknown>, error?: string) => void;
   },
   timeout = 120000,
+  agentType: BridgeAgentType = 'openclaw',
 ): void {
-  const bridgeWs = bridgeWebSockets.get(userId);
+  const bridgeWs = bridgeWebSockets.get(bridgeKey(userId, agentType));
   if (!bridgeWs || bridgeWs.readyState !== WebSocket.OPEN) {
     callbacks.onError('Bridge not connected');
     return;

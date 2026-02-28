@@ -90,6 +90,7 @@ export default {
     copawSelfhostedDesc: '连接你自己的 CoPaw / AgentScope 实例',
     copawDeploy: '一键部署',
     copawDeployDesc: '一键部署 CoPaw 运行时',
+    copawDeployDesktopHint: '请先在桌面端完成 CoPaw 一键部署并启用 Bridge，手机端将通过 Bridge 连接桌面端本地 CoPaw。',
     copawDeployCloud: '云托管',
     copawDeployLocal: '部署本地',
     copawCloudNotAvailable: '云托管功能暂未开放',

@@ -22,7 +22,7 @@ interface SettingsState {
   hostedInstanceStatus: string; // 'pending' | 'provisioning' | 'ready' | 'error'
 
   // CoPaw
-  copawSubMode: 'hosted' | 'selfhosted' | 'deploy';
+  copawSubMode: 'deploy' | 'selfhosted';
   copawUrl: string;
   copawToken: string;
   copawDeployType: 'cloud' | 'local';
@@ -51,7 +51,7 @@ interface SettingsState {
   setHostedActivated: (v: boolean) => void;
   setHostedQuota: (used: number, total: number) => void;
   setHostedInstanceStatus: (status: string) => void;
-  setCopawSubMode: (mode: 'hosted' | 'selfhosted' | 'deploy') => void;
+  setCopawSubMode: (mode: 'deploy' | 'selfhosted') => void;
   setCopawUrl: (url: string) => void;
   setCopawToken: (token: string) => void;
   setCopawDeployType: (type: 'cloud' | 'local') => void;
@@ -78,7 +78,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   hostedQuotaUsed: 0,
   hostedQuotaTotal: 50,
   hostedInstanceStatus: 'pending',
-  copawSubMode: 'hosted',
+  copawSubMode: 'deploy',
   copawUrl: '',
   copawToken: '',
   copawDeployType: 'local',

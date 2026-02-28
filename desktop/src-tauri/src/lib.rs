@@ -767,6 +767,330 @@ async fn upgrade_openclaw(registry: Option<String>) -> Result<String, String> {
     }
 }
 
+// ── Local CoPaw management commands ──
+
+const COPAW_PROCESS_NAME: &str = "local-copaw";
+
+/// Build an extended PATH for Python (Homebrew, conda, pyenv, system).
+fn python_extended_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut path = extended_path(); // start with Node paths too
+    let extra = [
+        &format!("{}/miniconda3/bin", home),
+        &format!("{}/anaconda3/bin", home),
+        &format!("{}/.pyenv/shims", home),
+        &format!("{}/.local/bin", home),
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+    ];
+    for p in extra {
+        if !path.contains(p) {
+            path = format!("{}:{}", p, path);
+        }
+    }
+    path
+}
+
+#[derive(Serialize)]
+struct CopawPrerequisiteStatus {
+    python_installed: bool,
+    python_version: String,
+    pip_installed: bool,
+}
+
+#[tauri::command]
+async fn check_copaw_prerequisites() -> Result<CopawPrerequisiteStatus, String> {
+    let path = python_extended_path();
+
+    let python_output = std::process::Command::new("python3")
+        .arg("--version")
+        .env("PATH", &path)
+        .output();
+    let (python_installed, python_version) = match python_output {
+        Ok(out) if out.status.success() => {
+            // "Python 3.x.y"
+            let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let ver_str = ver.strip_prefix("Python ").unwrap_or(&ver);
+            let major_minor: Vec<u32> = ver_str
+                .split('.')
+                .take(2)
+                .filter_map(|s| s.parse().ok())
+                .collect();
+            let ok = major_minor.len() == 2 && (major_minor[0] > 3 || (major_minor[0] == 3 && major_minor[1] >= 8));
+            (ok, ver_str.to_string())
+        }
+        _ => (false, String::new()),
+    };
+
+    let pip_output = std::process::Command::new("pip3")
+        .arg("--version")
+        .env("PATH", &path)
+        .output();
+    let pip_installed = pip_output.map(|o| o.status.success()).unwrap_or(false);
+
+    Ok(CopawPrerequisiteStatus {
+        python_installed,
+        python_version,
+        pip_installed,
+    })
+}
+
+#[derive(Serialize)]
+struct CopawInstallResult {
+    success: bool,
+    config_dir: String,
+    error: String,
+}
+
+#[tauri::command]
+async fn install_copaw(
+    app_handle: tauri::AppHandle,
+    provider: String,
+    api_key: String,
+    model: String,
+    port: Option<u16>,
+    base_url: Option<String>,
+) -> Result<CopawInstallResult, String> {
+    let port = port.unwrap_or(8088);
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let config_dir = home.join(".agentos").join("copaw");
+    let path = python_extended_path();
+
+    // Step 1: Create directory
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config dir: {}", e))?;
+
+    // Step 2: Copy server.py from Tauri resources
+    let resource_path = app_handle.path()
+        .resource_dir()
+        .map_err(|e| format!("Failed to get resource dir: {}", e))?;
+    let src_server = resource_path.join("copaw").join("server.py");
+    let src_reqs = resource_path.join("copaw").join("requirements.txt");
+
+    // Fallback: check in src-tauri/resources for dev mode
+    let src_server = if src_server.exists() {
+        src_server
+    } else {
+        let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("copaw")
+            .join("server.py");
+        if dev_path.exists() { dev_path } else {
+            return Ok(CopawInstallResult {
+                success: false,
+                config_dir: String::new(),
+                error: "CoPaw server.py not found in resources".to_string(),
+            });
+        }
+    };
+    let src_reqs = if src_reqs.exists() {
+        src_reqs
+    } else {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("copaw")
+            .join("requirements.txt")
+    };
+
+    std::fs::copy(&src_server, config_dir.join("server.py"))
+        .map_err(|e| format!("Failed to copy server.py: {}", e))?;
+    if src_reqs.exists() {
+        std::fs::copy(&src_reqs, config_dir.join("requirements.txt"))
+            .map_err(|e| format!("Failed to copy requirements.txt: {}", e))?;
+    }
+
+    // Step 3: pip install requirements
+    let reqs_path = config_dir.join("requirements.txt");
+    if reqs_path.exists() {
+        let pip_result = std::process::Command::new("pip3")
+            .args(&["install", "-r", &reqs_path.to_string_lossy()])
+            .env("PATH", &path)
+            .output()
+            .map_err(|e| format!("Failed to run pip3: {}", e))?;
+        if !pip_result.status.success() {
+            let stderr = String::from_utf8_lossy(&pip_result.stderr);
+            return Ok(CopawInstallResult {
+                success: false,
+                config_dir: String::new(),
+                error: format!("pip install failed: {}", stderr),
+            });
+        }
+    }
+
+    // Step 4: Determine base URL from provider
+    let default_base_url = match provider.as_str() {
+        "deepseek" => "https://api.deepseek.com/v1",
+        "openai" => "https://api.openai.com/v1",
+        "gemini" => "https://generativelanguage.googleapis.com/v1beta/openai",
+        "moonshot" => "https://api.moonshot.cn/v1",
+        "qwen" => "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "zhipu" => "https://open.bigmodel.cn/api/paas/v4",
+        "openrouter" => "https://openrouter.ai/api/v1",
+        _ => "https://api.deepseek.com/v1",
+    };
+    let effective_base_url = base_url.as_deref().unwrap_or(default_base_url);
+
+    let default_model = match provider.as_str() {
+        "deepseek" => "deepseek-chat",
+        "openai" => "gpt-4o",
+        "gemini" => "gemini-2.5-flash",
+        "moonshot" => "kimi-k2.5",
+        "qwen" => "qwen-max",
+        "zhipu" => "glm-4",
+        "openrouter" => "auto",
+        _ => "deepseek-chat",
+    };
+    let effective_model = if model.is_empty() { default_model } else { &model };
+
+    // Step 5: Write .env file
+    let env_content = format!(
+        "LLM_API_KEY={}\nLLM_BASE_URL={}\nLLM_MODEL={}\nCOPAW_PORT={}\nCOPAW_HOST=127.0.0.1\n",
+        api_key, effective_base_url, effective_model, port
+    );
+    std::fs::write(config_dir.join(".env"), &env_content)
+        .map_err(|e| format!("Failed to write .env: {}", e))?;
+
+    Ok(CopawInstallResult {
+        success: true,
+        config_dir: config_dir.to_string_lossy().to_string(),
+        error: String::new(),
+    })
+}
+
+#[tauri::command]
+async fn start_local_copaw(
+    state: tauri::State<'_, AppState>,
+    port: Option<u16>,
+) -> Result<String, String> {
+    let port = port.unwrap_or(8088);
+    let mut pm = state.process_manager.lock().await;
+
+    if pm.is_running(COPAW_PROCESS_NAME) {
+        return Ok("already_running".to_string());
+    }
+
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let config_dir = home.join(".agentos").join("copaw");
+    let server_path = config_dir.join("server.py");
+
+    if !server_path.exists() {
+        return Err("CoPaw not installed. Run install first.".to_string());
+    }
+
+    let mut envs = HashMap::new();
+    envs.insert("PATH".to_string(), python_extended_path());
+
+    let _pid = pm.spawn_with_env(
+        COPAW_PROCESS_NAME,
+        "python3",
+        &[server_path.to_string_lossy().to_string()],
+        Some(&envs),
+    ).map_err(|e| format!("Failed to start CoPaw: {}", e))?;
+
+    // Drop the lock before polling
+    drop(pm);
+
+    // Health check: poll until ready
+    let url = format!("http://127.0.0.1:{}/health", port);
+    let client = reqwest::Client::new();
+    for _ in 0..30 {
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        if let Ok(resp) = client.get(&url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                println!("[Tauri] Local CoPaw started on port {}", port);
+                return Ok("started".to_string());
+            }
+        }
+    }
+
+    // Timed out — check if process still alive
+    let pm = state.process_manager.lock().await;
+    if pm.is_running(COPAW_PROCESS_NAME) {
+        Ok("started_no_health".to_string())
+    } else {
+        Err("CoPaw process exited before becoming ready".to_string())
+    }
+}
+
+#[tauri::command]
+async fn stop_local_copaw(
+    state: tauri::State<'_, AppState>,
+    port: Option<u16>,
+) -> Result<(), String> {
+    let port = port.unwrap_or(8088);
+    let mut pm = state.process_manager.lock().await;
+    let _ = pm.kill(COPAW_PROCESS_NAME);
+    drop(pm);
+
+    // Also kill any process listening on the port
+    if let Ok(output) = std::process::Command::new("lsof")
+        .args(&["-ti", &format!(":{}", port)])
+        .output()
+    {
+        let pids = String::from_utf8_lossy(&output.stdout);
+        for pid_str in pids.split_whitespace() {
+            if pid_str.parse::<u32>().is_ok() {
+                let _ = std::process::Command::new("kill")
+                    .arg(pid_str.trim())
+                    .output();
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct LocalCopawStatus {
+    running: bool,
+    pid: Option<u32>,
+    port: u16,
+}
+
+#[tauri::command]
+async fn get_local_copaw_status(
+    state: tauri::State<'_, AppState>,
+    port: Option<u16>,
+) -> Result<LocalCopawStatus, String> {
+    let port = port.unwrap_or(8088);
+    let pm = state.process_manager.lock().await;
+    let mut running = pm.is_running(COPAW_PROCESS_NAME);
+    let mut pid = if running {
+        pm.list().into_iter().find(|(n, _)| n == COPAW_PROCESS_NAME).and_then(|(_, info)| info.1)
+    } else {
+        None
+    };
+
+    // Also check if any process is listening on the port
+    if !running {
+        if let Ok(output) = std::process::Command::new("lsof")
+            .args(&["-ti", &format!(":{}", port)])
+            .output()
+        {
+            let pids_str = String::from_utf8_lossy(&output.stdout);
+            if let Some(first_pid) = pids_str.split_whitespace().next() {
+                if let Ok(p) = first_pid.parse::<u32>() {
+                    running = true;
+                    pid = Some(p);
+                }
+            }
+        }
+    }
+
+    Ok(LocalCopawStatus { running, pid, port })
+}
+
+#[tauri::command]
+async fn check_local_copaw_installed() -> Result<bool, String> {
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let env_path = home.join(".agentos").join("copaw").join(".env");
+    Ok(env_path.exists())
+}
+
 #[tauri::command]
 fn frontend_log(msg: String) {
     println!("[Frontend] {}", msg);
@@ -1018,6 +1342,12 @@ pub fn run() {
             update_local_openclaw_config,
             check_local_openclaw_installed,
             upgrade_openclaw,
+            check_copaw_prerequisites,
+            install_copaw,
+            start_local_copaw,
+            stop_local_copaw,
+            get_local_copaw_status,
+            check_local_copaw_installed,
         ])
         .on_window_event(|window, event| {
             // Minimize to tray instead of closing
