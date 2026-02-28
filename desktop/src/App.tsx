@@ -444,44 +444,37 @@ function App() {
   }, [mode, userId]);
 
   const getOrCreateOpenClawClient = useCallback(() => {
-    // Unified agent fields: use agentUrl/agentToken when set
-    if (mode === 'openclaw' && agentId === 'openclaw' && (agentSubMode === 'direct' || agentSubMode === 'deploy')) {
-      const url = agentSubMode === 'deploy'
-        ? OPENCLAW_LOCAL_GATEWAY
-        : agentUrl;
-      const token = agentSubMode === 'deploy'
-        ? (useSettingsStore.getState().localOpenclawToken || '')
-        : agentToken;
-      if (!url) {
-        setOpenclawError('Agent URL not configured. Set it in Settings.');
-        return null;
-      }
-      if (openclawClientRef.current) return openclawClientRef.current;
-      const client = new OpenClawDirectClient(url, token);
-      client.onConnectionChange = (connected) => {
-        setOpenclawConnected(connected);
-        if (!connected) setOpenclawError(null);
-      };
-      client.onPairingError = (msg) => {
-        setOpenclawError(msg);
-      };
-      openclawClientRef.current = client;
-      return client;
+    if (openclawClientRef.current) return openclawClientRef.current;
+
+    // Always read fresh state to avoid stale closure issues
+    const s = useSettingsStore.getState();
+    const isDeploy = s.agentSubMode === 'deploy' && s.deployTemplateId === 'openclaw' && (s.localAgentInstalled || s.localOpenclawInstalled);
+
+    let url = '';
+    let token = '';
+
+    if (isDeploy) {
+      // Deploy mode: always use local gateway
+      url = OPENCLAW_LOCAL_GATEWAY;
+      token = s.localOpenclawToken || '';
+    } else if (s.agentUrl) {
+      // Unified direct mode
+      url = s.agentUrl;
+      token = s.agentToken || '';
+    } else {
+      // Legacy fallback
+      const isLocal = s.localOpenclawInstalled && (
+        (s.openclawSubMode === 'selfhosted' && s.selfhostedType === 'local') ||
+        (s.openclawSubMode === 'deploy')
+      );
+      url = isLocal ? OPENCLAW_LOCAL_GATEWAY : s.openclawUrl;
+      token = isLocal ? (s.localOpenclawToken || '') : s.openclawToken;
     }
 
-    // Legacy mode
-    const { openclawUrl, openclawToken, selfhostedType: shType, deployType: depType, openclawSubMode: ocSub, localOpenclawInstalled: localInstalled, localOpenclawToken: localToken } = useSettingsStore.getState();
-    const isLocal = localInstalled && (
-      (ocSub === 'selfhosted' && shType === 'local') ||
-      (ocSub === 'deploy' && depType === 'local')
-    );
-    const url = isLocal ? OPENCLAW_LOCAL_GATEWAY : openclawUrl;
-    const token = isLocal ? localToken : openclawToken;
     if (!url) {
       setOpenclawError('OpenClaw URL not configured. Set it in Settings.');
       return null;
     }
-    if (openclawClientRef.current) return openclawClientRef.current;
     const client = new OpenClawDirectClient(url, token);
     client.onConnectionChange = (connected) => {
       setOpenclawConnected(connected);
@@ -497,16 +490,18 @@ function App() {
   const getOrCreateCoPawClient = useCallback(() => {
     if (copawClientRef.current) return copawClientRef.current;
 
+    // Always read fresh state to avoid stale closure issues
+    const s = useSettingsStore.getState();
+    const isDeploy = s.agentSubMode === 'deploy' && s.deployTemplateId === 'copaw' && (s.localAgentInstalled || s.localCopawInstalled);
+
     let baseUrl = '';
-    if (mode === 'copaw' && agentId === 'copaw' && (agentSubMode === 'direct' || agentSubMode === 'deploy')) {
-      if (agentSubMode === 'deploy') {
-        baseUrl = `http://127.0.0.1:${localAgentPort || 8088}`;
-      } else {
-        baseUrl = agentUrl || '';
-      }
+    if (isDeploy) {
+      baseUrl = `http://127.0.0.1:${s.localAgentPort || s.localCopawPort || 8088}`;
+    } else if (s.agentUrl) {
+      baseUrl = s.agentUrl;
     } else {
-      // Legacy mode
-      const { copawUrl: selfUrl, copawSubMode: cSub, localCopawPort: cPort, localCopawInstalled: cInstalled } = useSettingsStore.getState();
+      // Legacy fallback
+      const { copawUrl: selfUrl, copawSubMode: cSub, localCopawPort: cPort, localCopawInstalled: cInstalled } = s;
       baseUrl = (cSub === 'deploy' && cInstalled)
         ? `http://127.0.0.1:${cPort || 8088}`
         : selfUrl || '';

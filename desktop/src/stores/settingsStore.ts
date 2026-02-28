@@ -381,8 +381,12 @@ export const useSettingsStore = create<SettingsState>()(
         // Legacy fields still persisted for rollback safety
         openclawUrl: state.openclawUrl,
         openclawToken: state.openclawToken,
+        openclawSubMode: state.openclawSubMode,
+        deployType: state.deployType,
+        selfhostedType: state.selfhostedType,
         copawUrl: state.copawUrl,
         copawToken: state.copawToken,
+        copawSubMode: state.copawSubMode,
         bridgeEnabled: state.bridgeEnabled,
         copawBridgeEnabled: state.copawBridgeEnabled,
         localOpenclawInstalled: state.localOpenclawInstalled,
