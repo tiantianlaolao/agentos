@@ -358,6 +358,28 @@ async fn install_openclaw(
         }
     }
 
+    // Step 1b: npm install -g clawhub (skip if already installed)
+    let ch_check = std::process::Command::new("clawhub")
+        .arg("--cli-version")
+        .env("PATH", &path)
+        .output();
+    let clawhub_installed = ch_check.map(|o| o.status.success()).unwrap_or(false);
+    if !clawhub_installed {
+        let mut ch_args = vec!["install".to_string(), "-g".to_string(), "clawhub".to_string()];
+        if let Some(ref reg) = registry {
+            ch_args.push(format!("--registry={}", reg));
+        }
+        let ch_result = std::process::Command::new("npm")
+            .args(&ch_args)
+            .env("PATH", &path)
+            .output();
+        if let Ok(ref out) = ch_result {
+            if !out.status.success() {
+                println!("[install_openclaw] clawhub install failed (non-fatal): {}", String::from_utf8_lossy(&out.stderr));
+            }
+        }
+    }
+
     // Step 2: Create directory structure
     let state_dir = config_dir.join("state");
     let agent_auth_dir = state_dir.join("agents").join("main").join("agent");
@@ -1094,6 +1116,35 @@ async fn check_local_copaw_installed() -> Result<bool, String> {
 
 // ── ClawHub skill management commands (desktop deploy mode) ──
 
+/// Ensure clawhub CLI is installed. Auto-installs if missing.
+/// Returns true if clawhub is available after the check.
+#[tauri::command]
+async fn ensure_clawhub() -> Result<bool, String> {
+    let path = extended_path();
+    let check = std::process::Command::new("clawhub")
+        .arg("--cli-version")
+        .env("PATH", &path)
+        .output();
+    if check.map(|o| o.status.success()).unwrap_or(false) {
+        return Ok(true);
+    }
+    // Not installed — try to install
+    println!("[ensure_clawhub] clawhub not found, installing...");
+    let result = std::process::Command::new("npm")
+        .args(["install", "-g", "clawhub"])
+        .env("PATH", &path)
+        .output()
+        .map_err(|e| format!("Failed to run npm: {}", e))?;
+    if result.status.success() {
+        println!("[ensure_clawhub] clawhub installed successfully");
+        Ok(true)
+    } else {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        println!("[ensure_clawhub] clawhub install failed: {}", stderr);
+        Ok(false)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct ClawHubSkill {
     name: String,
@@ -1600,6 +1651,7 @@ pub fn run() {
             stop_local_copaw,
             get_local_copaw_status,
             check_local_copaw_installed,
+            ensure_clawhub,
             clawhub_search,
             clawhub_install,
             clawhub_uninstall,

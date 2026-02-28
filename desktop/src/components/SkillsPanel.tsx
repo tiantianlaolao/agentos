@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore.ts';
+import { useAuthStore } from '../stores/authStore.ts';
 import type { AgentMode, SkillManifestInfo } from '../types/index.ts';
 import type { OpenClawDirectClient } from '../services/openclawDirect.ts';
 import type { useWebSocket } from '../hooks/useWebSocket.ts';
@@ -112,9 +114,17 @@ function getCacheKey(mode: AgentMode, agentSubMode?: string, agentId?: string): 
   return `agent-${agentId || mode}-${agentSubMode || 'direct'}`;
 }
 
+/** Whether this mode has a skill library (Library tab) */
+function hasLibrary(mode: AgentMode, agentSubMode?: string): boolean {
+  if (mode === 'builtin') return true;
+  if (agentSubMode === 'deploy') return true;  // deploy mode: search via clawhub
+  return false;
+}
+
+/** Whether skills can be managed (uninstall, add) */
 function canManageSkills(mode: AgentMode, agentSubMode?: string): boolean {
   if (mode === 'builtin') return true;
-  if (agentSubMode === 'deploy') return true;  // deploy mode = full management
+  if (agentSubMode === 'deploy') return true;  // deploy mode = can import SKILL.md
   return false;  // direct mode = read-only
 }
 
@@ -129,8 +139,11 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
   const mode = useSettingsStore((s) => s.mode);
   const agentSubMode = useSettingsStore((s) => s.agentSubMode);
   const agentId = useSettingsStore((s) => s.agentId);
+  const userId = useAuthStore((s) => s.userId);
   const cacheKey = getCacheKey(mode, agentSubMode, agentId);
   const manageable = canManageSkills(mode, agentSubMode);
+  const showLibrary = hasLibrary(mode, agentSubMode);
+  const isDeployMode = mode !== 'builtin' && agentSubMode === 'deploy';
   const [activeTab, setActiveTab] = useState<TabKey>('installed');
   const [skills, setSkills] = useState<SkillManifestInfo[]>(skillsCache.get(cacheKey) || []);
   const [library, setLibrary] = useState<SkillLibraryItem[]>(libraryCache.get(cacheKey) || []);
@@ -146,7 +159,86 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
   }, [detailSkillName, library]);
   const [addSkillMode, setAddSkillMode] = useState<null | 'menu' | 'http' | 'mcp' | 'skillmd' | 'generate'>(null);
 
+  const [clawhubReady, setClawhubReady] = useState(false);
+  const [clawhubSearchQuery, setClawhubSearchQuery] = useState('');
+  const [clawhubResults, setClawhubResults] = useState<Array<{ name: string; slug: string; description: string; author: string; version: string }>>([]);
+  const [clawhubSearching, setClawhubSearching] = useState(false);
+  const [clawhubInstalling, setClawhubInstalling] = useState<string | null>(null);
+  const clawhubSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const wsCallbackRegistered = useRef(false);
+
+  // Deploy mode: ensure clawhub CLI is available
+  useEffect(() => {
+    if (!isDeployMode) return;
+    invoke<boolean>('ensure_clawhub').then((ok) => {
+      setClawhubReady(ok);
+      if (!ok) console.warn('[SkillsPanel] clawhub CLI not available');
+    }).catch(() => setClawhubReady(false));
+  }, [isDeployMode]);
+
+  // Deploy mode: search clawhub with debounce
+  const searchClawhub = useCallback(async (query: string) => {
+    if (!clawhubReady) return;
+    setClawhubSearching(true);
+    try {
+      const results = await invoke<Array<{ name: string; slug: string; description: string; author: string; version: string }>>('clawhub_search', { query, userId: userId || '' });
+      setClawhubResults(results);
+    } catch (err) {
+      console.error('[SkillsPanel] clawhub search failed:', err);
+      setClawhubResults([]);
+    } finally {
+      setClawhubSearching(false);
+    }
+  }, [clawhubReady, userId]);
+
+  // Debounced clawhub search
+  useEffect(() => {
+    if (!isDeployMode || activeTab !== 'library') return;
+    if (!clawhubSearchQuery.trim()) {
+      setClawhubResults([]);
+      return;
+    }
+    if (clawhubSearchTimer.current) clearTimeout(clawhubSearchTimer.current);
+    clawhubSearchTimer.current = setTimeout(() => {
+      searchClawhub(clawhubSearchQuery.trim());
+    }, 500);
+    return () => { if (clawhubSearchTimer.current) clearTimeout(clawhubSearchTimer.current); };
+  }, [clawhubSearchQuery, isDeployMode, activeTab, searchClawhub]);
+
+  // Deploy mode: install from clawhub
+  const refreshInstalledRef = useRef<(() => void) | null>(null);
+  const clawhubInstallSkill = useCallback(async (slug: string) => {
+    if (!userId) return;
+    setClawhubInstalling(slug);
+    try {
+      await invoke('clawhub_install', { slug, userId });
+      setClawhubResults((prev) => prev.filter((s) => s.slug !== slug));
+      skillsCache.delete(cacheKey);
+      // Refresh installed list via ref (set after fetchDirectSkills/requestSkillListWS are defined)
+      refreshInstalledRef.current?.();
+    } catch (err) {
+      console.error('[SkillsPanel] clawhub install failed:', err);
+    } finally {
+      setClawhubInstalling(null);
+    }
+  }, [userId, cacheKey]);
+
+  // Deploy mode: uninstall via clawhub (delete local dir)
+  const clawhubUninstallSkill = useCallback(async (slug: string) => {
+    if (!userId) return;
+    try {
+      await invoke('clawhub_uninstall', { slug, userId });
+      skillsCache.delete(cacheKey);
+      setSkills((prev) => {
+        const updated = prev.filter((s) => s.name !== slug);
+        skillsCache.set(cacheKey, updated);
+        return updated;
+      });
+    } catch (err) {
+      console.error('[SkillsPanel] clawhub uninstall failed:', err);
+    }
+  }, [userId, cacheKey]);
 
   // Self-hosted OpenClaw: fetch skills directly
   const fetchDirectSkills = useCallback(async (force = false) => {
@@ -198,7 +290,16 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     ws.requestSkillList().catch(() => setLoading(false));
   }, [cacheKey, ws]);
 
-  // Request library via WS (both builtin and deploy modes use WS)
+  // Wire up refresh ref for clawhub install callback
+  refreshInstalledRef.current = () => {
+    if (mode !== 'builtin' && openclawClient) {
+      fetchDirectSkills(true);
+    } else {
+      requestSkillListWS(true);
+    }
+  };
+
+  // Request library via WS (builtin mode only)
   const requestLibrary = useCallback(async (force = false) => {
     if (!force && libraryCache.has(cacheKey)) {
       setLibrary(libraryCache.get(cacheKey)!);
@@ -242,8 +343,12 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     });
   }, [ws, cacheKey, library]);
 
-  // Uninstall skill (both modes use WS)
+  // Uninstall skill
   const uninstallSkill = useCallback(async (skillName: string) => {
+    if (isDeployMode) {
+      await clawhubUninstallSkill(skillName);
+      return;
+    }
     if (!ws) return;
     ws.uninstallSkill?.(skillName).catch(() => {});
     // Optimistic update
@@ -259,20 +364,22 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
       libraryCache.set(cacheKey, updated);
       return updated;
     });
-  }, [ws, cacheKey]);
+  }, [ws, cacheKey, isDeployMode, clawhubUninstallSkill]);
 
   const handleRefresh = useCallback(() => {
     skillsCache.delete(cacheKey);
     libraryCache.delete(cacheKey);
+    setClawhubResults([]);
+    setClawhubSearchQuery('');
     if (mode !== 'builtin' && openclawClient) {
       fetchDirectSkills(true);
     } else {
       requestSkillListWS(true);
-      if (activeTab === 'library') {
+      if (activeTab === 'library' && !isDeployMode) {
         requestLibrary(true);
       }
     }
-  }, [mode, openclawClient, fetchDirectSkills, requestSkillListWS, requestLibrary, cacheKey, activeTab]);
+  }, [mode, openclawClient, fetchDirectSkills, requestSkillListWS, requestLibrary, cacheKey, activeTab, isDeployMode]);
 
   // Cleanup WS callback on unmount only
   const wsRef = useRef(ws);
@@ -297,12 +404,12 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     }
   }, [mode, openclawClient, cacheKey, fetchDirectSkills, requestSkillListWS]);
 
-  // Load library when tab switches
+  // Load library when tab switches (builtin mode only — deploy uses clawhub search)
   useEffect(() => {
-    if (activeTab === 'library' && !libraryCache.has(cacheKey) && manageable) {
+    if (activeTab === 'library' && !isDeployMode && !libraryCache.has(cacheKey) && manageable) {
       requestLibrary();
     }
-  }, [activeTab, cacheKey, manageable, requestLibrary]);
+  }, [activeTab, cacheKey, manageable, requestLibrary, isDeployMode]);
 
   // Filter and group library items
   const filteredLibrary = useMemo(() => {
@@ -514,7 +621,72 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
               })}
             </div>
           )
+        ) : isDeployMode ? (
+          /* ── Deploy mode: search-driven ClawHub library ── */
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* Search Bar */}
+            <div className="skills-search-bar">
+              <input
+                type="text"
+                className="skills-search-input"
+                placeholder={t('skills.searchClawhub')}
+                value={clawhubSearchQuery}
+                onChange={(e) => setClawhubSearchQuery(e.target.value)}
+                autoFocus
+              />
+              {clawhubSearchQuery && (
+                <button className="skills-search-clear" onClick={() => { setClawhubSearchQuery(''); setClawhubResults([]); }}>
+                  &times;
+                </button>
+              )}
+            </div>
+
+            {!clawhubReady ? (
+              <div className="skills-loading">
+                <div className="spinner" />
+                <span>{t('skills.initClawhub')}</span>
+              </div>
+            ) : clawhubSearching ? (
+              <div className="skills-loading">
+                <div className="spinner" />
+                <span>{t('skills.searching')}</span>
+              </div>
+            ) : !clawhubSearchQuery.trim() ? (
+              <div className="skills-empty">
+                <span style={{ fontSize: '14px', color: '#888' }}>{t('skills.clawhubHint')}</span>
+              </div>
+            ) : clawhubResults.length === 0 ? (
+              <div className="skills-empty">
+                <span>{t('skills.noMatch')}</span>
+              </div>
+            ) : (
+              <div className="skills-list" style={{ flex: 1, overflowY: 'auto' }}>
+                {clawhubResults.map((skill) => (
+                  <div key={skill.slug} className="skill-card">
+                    <div className="skill-card-header">
+                      <div className="skill-name-row">
+                        <span className="skill-name">{skill.name}</span>
+                        {skill.version && <span className="skill-version">v{skill.version}</span>}
+                      </div>
+                      <button
+                        className="skill-install-btn"
+                        disabled={clawhubInstalling === skill.slug}
+                        onClick={() => clawhubInstallSkill(skill.slug)}
+                      >
+                        {clawhubInstalling === skill.slug ? t('skills.installing') : t('skills.install')}
+                      </button>
+                    </div>
+                    <div className="skill-desc">{skill.description}</div>
+                    <div className="skill-meta">
+                      <span className="skill-author">{t('skills.by')} {skill.author || 'ClawHub'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
+          /* ── Builtin mode: full catalog library ── */
           libraryLoading ? (
             <div className="skills-loading">
               <div className="spinner" />
@@ -691,50 +863,54 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
               <h2 className="skills-title">{t('skills.addSkillTitle')}</h2>
             </div>
             <div className="register-skill-form" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                className="add-skill-option-card"
-                onClick={() => setAddSkillMode('http')}
-                style={{
-                  background: '#1a1a2e',
-                  border: '1px solid #2d2d44',
-                  borderRadius: '10px',
-                  padding: '14px 16px',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px',
-                }}
-              >
-                <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
-                  <span style={{ marginRight: '8px' }}>&#x1F310;</span>{t('skills.httpSkill')}
-                </span>
-                <span style={{ fontSize: '12px', color: '#888' }}>
-                  {t('skills.httpSkillDesc')}
-                </span>
-              </button>
-              <button
-                className="add-skill-option-card"
-                onClick={() => setAddSkillMode('mcp')}
-                style={{
-                  background: '#1a1a2e',
-                  border: '1px solid #2d2d44',
-                  borderRadius: '10px',
-                  padding: '14px 16px',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px',
-                }}
-              >
-                <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
-                  <span style={{ marginRight: '8px' }}>&#x1F50C;</span>{t('skills.mcpServer')}
-                </span>
-                <span style={{ fontSize: '12px', color: '#888' }}>
-                  {t('skills.mcpServerDesc')}
-                </span>
-              </button>
+              {!isDeployMode && (
+                <button
+                  className="add-skill-option-card"
+                  onClick={() => setAddSkillMode('http')}
+                  style={{
+                    background: '#1a1a2e',
+                    border: '1px solid #2d2d44',
+                    borderRadius: '10px',
+                    padding: '14px 16px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
+                    <span style={{ marginRight: '8px' }}>&#x1F310;</span>{t('skills.httpSkill')}
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {t('skills.httpSkillDesc')}
+                  </span>
+                </button>
+              )}
+              {!isDeployMode && (
+                <button
+                  className="add-skill-option-card"
+                  onClick={() => setAddSkillMode('mcp')}
+                  style={{
+                    background: '#1a1a2e',
+                    border: '1px solid #2d2d44',
+                    borderRadius: '10px',
+                    padding: '14px 16px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
+                    <span style={{ marginRight: '8px' }}>&#x1F50C;</span>{t('skills.mcpServer')}
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {t('skills.mcpServerDesc')}
+                  </span>
+                </button>
+              )}
               <button
                 className="add-skill-option-card"
                 onClick={() => setAddSkillMode('skillmd')}
@@ -757,28 +933,30 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
                   {t('skills.skillMdDesc')}
                 </span>
               </button>
-              <button
-                className="add-skill-option-card"
-                onClick={() => setAddSkillMode('generate')}
-                style={{
-                  background: '#1a1a2e',
-                  border: '1px solid #2d2d44',
-                  borderRadius: '10px',
-                  padding: '14px 16px',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px',
-                }}
-              >
-                <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
-                  <span style={{ marginRight: '8px' }}>&#x1F916;</span>{t('skills.aiGenerate')}
-                </span>
-                <span style={{ fontSize: '12px', color: '#888' }}>
-                  {t('skills.aiGenerateDesc')}
-                </span>
-              </button>
+              {!isDeployMode && (
+                <button
+                  className="add-skill-option-card"
+                  onClick={() => setAddSkillMode('generate')}
+                  style={{
+                    background: '#1a1a2e',
+                    border: '1px solid #2d2d44',
+                    borderRadius: '10px',
+                    padding: '14px 16px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <span style={{ fontSize: '15px', fontWeight: 600, color: '#e0e0e0' }}>
+                    <span style={{ marginRight: '8px' }}>&#x1F916;</span>{t('skills.aiGenerate')}
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {t('skills.aiGenerateDesc')}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>
