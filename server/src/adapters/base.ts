@@ -170,7 +170,7 @@ export interface AgentAdapter {
   invalidateSkillsCache?(): void;
 }
 
-export type AgentType = 'builtin' | 'openclaw' | 'copaw' | 'desktop';
+export type AgentType = 'builtin' | 'openclaw' | 'copaw' | 'ag-ui' | 'desktop';
 
 export interface AgentConnectOptions {
   url?: string;

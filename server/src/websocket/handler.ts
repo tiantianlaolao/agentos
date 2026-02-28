@@ -61,6 +61,8 @@ interface Session {
   provider: LLMProvider | AgentAdapter | null;
   abortController: AbortController | null;
   isHosted: boolean;
+  /** For mode='agent': the protocol used (e.g. 'openclaw-ws', 'ag-ui') */
+  agentProtocol?: string;
 }
 
 /**
@@ -891,7 +893,7 @@ function handleSkillConfigSet(ws: WebSocket, message: { payload: { skillName: st
 }
 
 async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Session> {
-  const { mode, provider: providerName, apiKey, openclawUrl, openclawToken, openclawHosted, copawUrl, copawToken, deviceId, authToken, model } = message.payload;
+  const { mode, provider: providerName, apiKey, openclawUrl, openclawToken, openclawHosted, copawUrl, copawToken, agentUrl, agentToken, agentProtocol, deviceId, authToken, model } = message.payload;
 
   // Verify JWT if provided
   let userId: string | null = null;
@@ -926,6 +928,12 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
     // copaw mode via WS: either selfhosted with URL, or bridge (server checks bridge availability)
     // If no copawUrl and no bridge, the client should use direct mode — but allow connection anyway
     // (the chat handler will check for bridge availability)
+  }
+
+  // Unified agent mode — accepts any agent with URL, or uses bridge fallback
+  if (mode === 'agent') {
+    // agent mode via WS: either direct with agentUrl, or bridge (deploy)
+    // If no agentUrl and no bridge, the chat handler will check for bridge availability
   }
 
   // Hosted OpenClaw mode
@@ -974,7 +982,7 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
   } else {
     // If client sends mode='builtin' with an apiKey, treat as BYOK (user's own key)
     const effectiveMode = (mode === 'builtin' && apiKey) ? 'byok' : mode;
-    llmProvider = createProvider(effectiveMode, { provider: providerName, apiKey, model, openclawUrl, openclawToken, copawUrl, copawToken });
+    llmProvider = createProvider(effectiveMode, { provider: providerName, apiKey, model, openclawUrl, openclawToken, copawUrl, copawToken, agentUrl, agentToken, agentProtocol });
   }
 
   const resolvedDeviceId = deviceId || 'anonymous';
@@ -993,10 +1001,11 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
     provider: llmProvider,
     abortController: null,
     isHosted,
+    agentProtocol: mode === 'agent' ? (agentProtocol || 'openclaw-ws') : undefined,
   };
 
   // For agent adapter modes: register as push target and connect for chat
-  if ((mode === 'openclaw' || mode === 'copaw' || isHosted) && llmProvider && isAgentAdapter(llmProvider)) {
+  if ((mode === 'openclaw' || mode === 'copaw' || mode === 'agent' || isHosted) && llmProvider && isAgentAdapter(llmProvider)) {
     const adapter = llmProvider;
 
     // Register as active push target and flush queued messages
@@ -1018,7 +1027,7 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
 
   // Send skill names: use registry for builtin/byok, or generic tag for agent modes
   const userCtx = { userId, userPhone };
-  const skillNames = (mode !== 'openclaw' && mode !== 'copaw' && !isHosted)
+  const skillNames = (mode !== 'openclaw' && mode !== 'copaw' && mode !== 'agent' && !isHosted)
     ? skillRegistry.listEnabledForUser(userCtx).map((s) => s.manifest.name)
     : ['agent'];
 
@@ -1116,13 +1125,13 @@ async function handleChatSend(
     }
     llmMessages.push({ role: 'user', content });
 
-    // Bridge routing: if (openclaw or copaw) mode and bridge is available, route through bridge
+    // Bridge routing: if (openclaw, copaw, or agent) mode and bridge is available, route through bridge
     // Hosted mode uses the server's direct adapter to the hosted gateway, not the bridge.
-    const bridgeAgentType: BridgeAgentType = session.mode === 'copaw' ? 'copaw' : 'openclaw';
-    if ((session.mode === 'openclaw' || session.mode === 'copaw') && session.userId && !session.isHosted && hasBridgeOnline(session.userId, bridgeAgentType)) {
+    const bridgeAgentType: BridgeAgentType = (session.mode === 'copaw' || (session.mode === 'agent' && session.agentProtocol === 'ag-ui')) ? 'copaw' : 'openclaw';
+    if ((session.mode === 'openclaw' || session.mode === 'copaw' || session.mode === 'agent') && session.userId && !session.isHosted && hasBridgeOnline(session.userId, bridgeAgentType)) {
       console.log(`[Chat] Routing through ${bridgeAgentType} bridge for user ${session.userId}`);
       const batcher = new ChunkBatcher(ws, conversationId);
-      const sessionKey = session.mode === 'copaw'
+      const sessionKey = (session.mode === 'copaw' || (session.mode === 'agent' && session.agentProtocol === 'ag-ui'))
         ? `agentos-copaw-${session.userId}`
         : `agentos-${session.userId}`;
 
@@ -1173,9 +1182,9 @@ async function handleChatSend(
       });
     } else
     // Set up agent adapter session key and tool event forwarding
-    if ((session.mode === 'openclaw' || session.mode === 'copaw' || session.isHosted) && session.provider && isAgentAdapter(session.provider)) {
+    if ((session.mode === 'openclaw' || session.mode === 'copaw' || session.mode === 'agent' || session.isHosted) && session.provider && isAgentAdapter(session.provider)) {
       // Stable per-user sessionKey so agent retains conversation context across reconnects and devices
-      if (session.mode === 'copaw') {
+      if (session.mode === 'copaw' || (session.mode === 'agent' && session.agentProtocol === 'ag-ui')) {
         session.provider.sessionKey = `agentos-copaw-${session.userId || session.deviceId}`;
       } else {
         session.provider.sessionKey = `agentos-${session.userId || session.deviceId}`;

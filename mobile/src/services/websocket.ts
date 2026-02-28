@@ -35,7 +35,7 @@ export class WebSocketClient {
     this.url = url;
   }
 
-  connect(mode: ConnectionMode, options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean }): void {
+  connect(mode: ConnectionMode, options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean; agentUrl?: string; agentToken?: string; agentProtocol?: string }): void {
     this.lastMode = mode;
     this.lastOptions = options;
     this.cleanup();
@@ -131,7 +131,7 @@ export class WebSocketClient {
 
   private sendConnect(
     mode: ConnectionMode,
-    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean }
+    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean; agentUrl?: string; agentToken?: string; agentProtocol?: string }
   ): void {
     this.send({
       id: randomUUID(),
@@ -147,6 +147,9 @@ export class WebSocketClient {
         copawUrl: options?.copawUrl,
         copawToken: options?.copawToken,
         copawHosted: options?.copawHosted,
+        agentUrl: options?.agentUrl,
+        agentToken: options?.agentToken,
+        agentProtocol: options?.agentProtocol,
         authToken: options?.authToken,
         model: options?.model,
         deviceId: options?.deviceId,
@@ -204,7 +207,7 @@ export class WebSocketClient {
 
   private scheduleReconnect(
     mode: ConnectionMode,
-    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean }
+    options?: { provider?: LLMProvider; apiKey?: string; openclawUrl?: string; openclawToken?: string; authToken?: string; model?: string; deviceId?: string; openclawHosted?: boolean; copawUrl?: string; copawToken?: string; copawHosted?: boolean; agentUrl?: string; agentToken?: string; agentProtocol?: string }
   ): void {
     // Exponential backoff: 1s, 2s, 4s, 8s, ... max 30s
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);

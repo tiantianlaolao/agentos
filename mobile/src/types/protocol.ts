@@ -38,7 +38,7 @@ export enum MessageType {
   PONG = 'pong',
 }
 
-export type ConnectionMode = 'builtin' | 'openclaw' | 'copaw' | 'byok' | 'desktop';
+export type ConnectionMode = 'builtin' | 'openclaw' | 'copaw' | 'agent' | 'byok' | 'desktop';
 
 export type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'gemini' | 'moonshot' | 'qwen' | 'zhipu' | 'openrouter';
 
@@ -77,6 +77,9 @@ export interface ConnectMessage extends BaseMessage {
     copawUrl?: string;
     copawToken?: string;
     copawHosted?: boolean;
+    agentUrl?: string;
+    agentToken?: string;
+    agentProtocol?: string;
     deviceId?: string;
     authToken?: string;
     model?: string;

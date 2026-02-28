@@ -11,10 +11,10 @@ import type {
 } from './base.js';
 
 /**
- * CoPaw adapter — connects to Alibaba's CoPaw / AgentScope Runtime.
+ * AG-UI adapter — connects to agents using the AG-UI HTTP/SSE protocol.
  *
- * CoPaw exposes an HTTP SSE endpoint at /process (default port 8088 or 8090).
- * Protocol: POST JSON request, receive Server-Sent Events (SSE) streaming response.
+ * Originally built for Alibaba's CoPaw / AgentScope Runtime, but works with
+ * any agent that implements the AG-UI protocol.
  *
  * Key endpoints:
  *   POST /process — SSE streaming chat (Agent API Protocol)
@@ -24,8 +24,8 @@ import type {
  * We use the /ag-ui endpoint for richer tool event support (TOOL_CALL_START, etc).
  * Falls back to /process for simpler deployments.
  */
-export class CoPawAdapter implements AgentAdapter {
-  readonly name = 'copaw';
+export class AgUiAdapter implements AgentAdapter {
+  readonly name = 'ag-ui';
   readonly type: AgentType = 'copaw';
 
   private baseUrl: string;
@@ -57,7 +57,7 @@ export class CoPawAdapter implements AgentAdapter {
     // Mark as connected immediately — real connectivity is verified on first chat.
     // Avoids the old blocking health check that sent a full LLM request (1-3s delay).
     this.connected = true;
-    console.log(`[CoPaw] Ready (${this.baseUrl})`);
+    console.log(`[AG-UI] Ready (${this.baseUrl})`);
   }
 
   isConnected(): boolean {
@@ -119,7 +119,7 @@ export class CoPawAdapter implements AgentAdapter {
     } catch (err) {
       // If AG-UI endpoint not available, fall back to /process
       if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
-        console.log('[CoPaw] AG-UI endpoint not available, falling back to /process');
+        console.log('[AG-UI] AG-UI endpoint not available, falling back to /process');
         this.useAgUi = false;
         yield* this._chatProcess(content, options);
         return;
@@ -130,16 +130,16 @@ export class CoPawAdapter implements AgentAdapter {
     if (!response.ok) {
       // 404/405 means AG-UI not supported — fall back to /process
       if (response.status === 404 || response.status === 405) {
-        console.log(`[CoPaw] AG-UI endpoint returned ${response.status}, falling back to /process`);
+        console.log(`[AG-UI] AG-UI endpoint returned ${response.status}, falling back to /process`);
         this.useAgUi = false;
         yield* this._chatProcess(content, options);
         return;
       }
-      throw new Error(`CoPaw AG-UI error: ${response.status} ${response.statusText}`);
+      throw new Error(`AG-UI error: ${response.status} ${response.statusText}`);
     }
 
     if (!response.body) {
-      throw new Error('CoPaw: No response body');
+      throw new Error('AG-UI: No response body');
     }
 
     const reader = (response.body as unknown as { getReader(): ReadableStreamDefaultReader<Uint8Array> }).getReader();
@@ -195,10 +195,10 @@ export class CoPawAdapter implements AgentAdapter {
                   this.onToolEvent({
                     phase: 'error',
                     name: 'system',
-                    error: event.message || 'CoPaw run error',
+                    error: event.message || 'AG-UI run error',
                   });
                 }
-                throw new Error(event.message || 'CoPaw run error');
+                throw new Error(event.message || 'AG-UI run error');
               // RUN_STARTED, TEXT_MESSAGE_START, TEXT_MESSAGE_END, RUN_FINISHED, TOOL_CALL_ARGS, TOOL_CALL_END
               // are lifecycle events that don't produce text output
             }
@@ -237,11 +237,11 @@ export class CoPawAdapter implements AgentAdapter {
     });
 
     if (!response.ok) {
-      throw new Error(`CoPaw error: ${response.status} ${response.statusText}`);
+      throw new Error(`AG-UI /process error: ${response.status} ${response.statusText}`);
     }
 
     if (!response.body) {
-      throw new Error('CoPaw: No response body');
+      throw new Error('AG-UI: No response body');
     }
 
     const reader = (response.body as unknown as { getReader(): ReadableStreamDefaultReader<Uint8Array> }).getReader();
@@ -270,23 +270,12 @@ export class CoPawAdapter implements AgentAdapter {
           try {
             const event = JSON.parse(dataStr);
 
-            // CoPaw /process SSE sends the same text multiple times in different event types:
-            //   seq N:   {"object":"content", "delta":true, "text":"chunk"}  — streaming delta
-            //   seq N+1: {"object":"content", "delta":null, "text":"chunk"}  — content completed
-            //   seq N+2: {"object":"message", "content":[{..."text":"full"}]} — message completed
-            //   seq N+3: {"object":"response", "output":[{"content":[...]}]}  — response completed
-            //
-            // We ONLY yield from delta events (delta===true). The completed events contain
-            // the same text again and would cause duplication.
-
             if (event.object === 'content' && event.delta === true && event.text) {
               hasReceivedDelta = true;
               yield event.text as string;
               continue;
             }
 
-            // Fallback: if no delta events were received (old CoPaw format),
-            // extract text from the final response.output array.
             if (!hasReceivedDelta && event.object === 'response' && event.status === 'completed') {
               const output = event.output;
               if (Array.isArray(output)) {
@@ -320,14 +309,13 @@ export class CoPawAdapter implements AgentAdapter {
 
   async listSkills(): Promise<SkillManifest[]> {
     // Return cache if fresh
-    if (this.skillsCache && Date.now() - this.skillsCacheTime < CoPawAdapter.SKILLS_CACHE_TTL) {
+    if (this.skillsCache && Date.now() - this.skillsCacheTime < AgUiAdapter.SKILLS_CACHE_TTL) {
       return this.skillsCache;
     }
 
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
-      // CoPaw /skills API returns: [{name, content, source, enabled, ...}]
       const res = await fetch(`${this.baseUrl.replace(/\/agent\/?$/, '')}/skills`, {
         headers: this._headers(),
         signal: controller.signal,
@@ -344,7 +332,6 @@ export class CoPawAdapter implements AgentAdapter {
       }>;
 
       this.skillsCache = skills.map((s) => {
-        // Extract description from YAML frontmatter in content field
         let description = '';
         if (s.content) {
           const descMatch = s.content.match(/description:\s*"([^"]+)"/);
@@ -354,19 +341,19 @@ export class CoPawAdapter implements AgentAdapter {
           name: s.name,
           version: '1.0.0',
           description,
-          author: s.source || 'CoPaw',
+          author: s.source || 'AG-UI',
           agents: ['copaw'],
           environments: ['cloud'],
           permissions: [],
           functions: [],
           audit: 'ecosystem' as const,
-          auditSource: 'CoPaw',
+          auditSource: 'AG-UI',
         };
       });
       this.skillsCacheTime = Date.now();
       return this.skillsCache;
     } catch (err) {
-      console.error('[CoPaw] listSkills failed:', err instanceof Error ? err.message : err);
+      console.error('[AG-UI] listSkills failed:', err instanceof Error ? err.message : err);
       return this.skillsCache || [];
     }
   }
@@ -381,14 +368,13 @@ export class CoPawAdapter implements AgentAdapter {
         signal: AbortSignal.timeout(10000),
       });
       if (response.ok) {
-        console.log(`[CoPaw] Skill "${manifest.name}" install request sent`);
-        this.skillsCache = null; // Invalidate cache
+        console.log(`[AG-UI] Skill "${manifest.name}" install request sent`);
+        this.skillsCache = null;
       } else {
-        console.log(`[CoPaw] Skill install not supported (HTTP ${response.status}), ignoring`);
+        console.log(`[AG-UI] Skill install not supported (HTTP ${response.status}), ignoring`);
       }
     } catch (err) {
-      // CoPaw may not support skill install API yet — log and continue
-      console.log(`[CoPaw] installSkill not available: ${err instanceof Error ? err.message : err}`);
+      console.log(`[AG-UI] installSkill not available: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -402,13 +388,13 @@ export class CoPawAdapter implements AgentAdapter {
         signal: AbortSignal.timeout(10000),
       });
       if (response.ok) {
-        console.log(`[CoPaw] Skill "${skillName}" uninstall request sent`);
+        console.log(`[AG-UI] Skill "${skillName}" uninstall request sent`);
         this.skillsCache = null;
       } else {
-        console.log(`[CoPaw] Skill uninstall not supported (HTTP ${response.status}), ignoring`);
+        console.log(`[AG-UI] Skill uninstall not supported (HTTP ${response.status}), ignoring`);
       }
     } catch (err) {
-      console.log(`[CoPaw] uninstallSkill not available: ${err instanceof Error ? err.message : err}`);
+      console.log(`[AG-UI] uninstallSkill not available: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -424,3 +410,6 @@ export class CoPawAdapter implements AgentAdapter {
     return headers;
   }
 }
+
+/** @deprecated Use AgUiAdapter instead */
+export const CoPawAdapter = AgUiAdapter;

@@ -59,7 +59,11 @@ export function useWebSocket() {
       copawUrl?: string,
       copawToken?: string,
       openclawHosted?: boolean,
-      copawHosted?: boolean
+      copawHosted?: boolean,
+      // Unified agent mode fields
+      agentUrl?: string,
+      agentToken?: string,
+      agentProtocol?: string,
     ) => {
       try {
         flog('connect() called, mode=' + mode + ', url=' + url);
@@ -143,6 +147,9 @@ export function useWebSocket() {
           copawToken: copawToken || null,
           openclawHosted: openclawHosted || null,
           copawHosted: copawHosted || null,
+          agentUrl: agentUrl || null,
+          agentToken: agentToken || null,
+          agentProtocol: agentProtocol || null,
           onEvent: channel,
         });
 

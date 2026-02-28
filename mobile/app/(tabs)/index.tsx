@@ -76,10 +76,11 @@ interface SkillInfo {
   description: string;
 }
 
-/** builtin & byok share the same agent — openclaw and copaw need isolation */
-function conversationMode(m: ConnectionMode): 'builtin' | 'openclaw' | 'copaw' {
+/** builtin & byok share the same agent — agent mode needs isolation */
+function conversationMode(m: ConnectionMode): 'builtin' | 'openclaw' | 'copaw' | 'agent' {
   if (m === 'openclaw') return 'openclaw';
   if (m === 'copaw') return 'copaw';
+  if (m === 'agent') return 'agent';
   return 'builtin';
 }
 
@@ -92,8 +93,7 @@ interface AgentTab {
 
 const AGENT_TABS: AgentTab[] = [
   { mode: 'builtin', labelKey: 'chat.tabBuiltin', descKey: 'chat.tabBuiltinDesc', color: '#2d7d46' },
-  { mode: 'openclaw', labelKey: 'chat.tabOpenclaw', descKey: 'chat.tabOpenclawDesc', color: '#c26a1b' },
-  { mode: 'copaw', labelKey: 'chat.tabCopaw', descKey: 'chat.tabCopawDesc', color: '#1b6bc2' },
+  { mode: 'agent', labelKey: 'chat.tabAgent', descKey: 'chat.tabAgentDesc', color: '#1b6bc2' },
 ];
 
 export default function ChatScreen() {
@@ -138,7 +138,7 @@ export default function ChatScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const { mode, builtinSubMode, provider, apiKey, openclawUrl, openclawToken, serverUrl, selectedModel, settingsLoaded, openclawSubMode, setHostedQuota, setMode, hostedActivated, copawSubMode, copawUrl, copawToken } = useSettingsStore();
+  const { mode, builtinSubMode, provider, apiKey, openclawUrl, openclawToken, serverUrl, selectedModel, settingsLoaded, openclawSubMode, setHostedQuota, setMode, hostedActivated, copawSubMode, copawUrl, copawToken, agentSubMode, agentId, agentUrl, agentToken } = useSettingsStore();
   const { authToken, userId, isLoggedIn } = useAuthStore();
   const currentUserId = isLoggedIn ? userId : 'anonymous';
 
@@ -293,7 +293,49 @@ export default function ChatScreen() {
     };
 
     const connectWithDeviceId = (deviceId: string) => {
-      // ── OpenClaw self-hosted mode with user-provided URL: direct connect ──
+      // ── Agent mode: direct connect for OpenClaw ──
+      if (mode === 'agent' && agentSubMode === 'direct' && agentId === 'openclaw' && agentUrl) {
+        // Clean up old WS client if switching modes
+        if (wsClient) { wsClient.disconnect(); wsClient = null; }
+
+        const client = getOpenClawClient(agentUrl, agentToken);
+        client.sessionKey = `agentos-${randomUUID().slice(0, 8)}`;
+
+        client.onConnectionChange = (c) => setConnected(c);
+        client.onPush = (content) => handlePushMessage(content, 'openclaw');
+        client.onPairingError = (message) => {
+          Alert.alert(
+            'Device Pairing Required',
+            message,
+            [{ text: 'OK' }],
+          );
+        };
+
+        client.ensureConnected()
+          .then(() => setConnected(true))
+          .catch(() => setConnected(false));
+
+        cleanupRef.current = () => {
+          client.onConnectionChange = null;
+          client.onPush = null;
+          client.onPairingError = null;
+        };
+        return;
+      }
+
+      // ── Agent mode: direct connect for CoPaw — use WS to server with agent params ──
+      if (mode === 'agent' && agentSubMode === 'direct' && agentId === 'copaw') {
+        if (openclawClient) { openclawClient.disconnect(); openclawClient = null; }
+        // Falls through to WS client below with agent mode params
+      }
+
+      // ── Agent mode: custom — not supported yet ──
+      if (mode === 'agent' && agentSubMode === 'direct' && agentId === 'custom') {
+        // Do nothing, show error in UI
+        return;
+      }
+
+      // ── Legacy: OpenClaw self-hosted mode with user-provided URL: direct connect ──
       if (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawUrl) {
         // Clean up old WS client if switching modes
         if (wsClient) { wsClient.disconnect(); wsClient = null; }
@@ -442,9 +484,30 @@ export default function ChatScreen() {
       const isOpenclawHosted = mode === 'openclaw' && openclawSubMode === 'hosted';
       const isCopawDeploy = mode === 'copaw' && copawSubMode === 'deploy';
       const isByok = mode === 'builtin' && builtinSubMode === 'byok';
+      const isAgentMode = mode === 'agent';
       const byokApiKey = isByok ? apiKey || undefined : undefined;
       const byokModel = isByok ? (selectedModel || provider) : (selectedModel || undefined);
-      client.connect(mode, { provider, apiKey: byokApiKey, openclawUrl, openclawToken, authToken: authToken || undefined, model: byokModel, deviceId, openclawHosted: isOpenclawHosted || undefined, copawUrl: isCopawDeploy ? undefined : (copawUrl || undefined), copawToken: isCopawDeploy ? undefined : (copawToken || undefined) });
+      const connectParams: Record<string, string | boolean | undefined> = {
+        provider,
+        apiKey: byokApiKey,
+        openclawUrl,
+        openclawToken,
+        authToken: authToken || undefined,
+        model: byokModel,
+        deviceId,
+        openclawHosted: isOpenclawHosted || undefined,
+        copawUrl: isCopawDeploy ? undefined : (copawUrl || undefined),
+        copawToken: isCopawDeploy ? undefined : (copawToken || undefined),
+      };
+      // Agent mode: pass agent-specific params
+      if (isAgentMode) {
+        connectParams.agentUrl = agentUrl || undefined;
+        connectParams.agentToken = agentToken || undefined;
+        if (agentId === 'copaw') {
+          connectParams.agentProtocol = 'ag-ui';
+        }
+      }
+      client.connect(mode, connectParams as any);
 
       cleanupRef.current = () => {
         unsubConnected();
@@ -477,6 +540,7 @@ export default function ChatScreen() {
   }, [
     settingsLoaded, serverUrl, mode, builtinSubMode, provider, apiKey, openclawUrl, openclawToken,
     copawUrl, copawToken, copawSubMode, authToken, selectedModel, openclawSubMode, handlePushMessage,
+    agentSubMode, agentId, agentUrl, agentToken,
     setConnected, setGenerating, addMessage,
     setCurrentConversation, setHostedQuota, resetStreamTimeout, clearStreamTimeout,
     // checkAndCleanup accessed via ref to avoid re-running connection on every render
@@ -572,10 +636,22 @@ export default function ChatScreen() {
   }, [currentConversationId, loadingMore, hasMore, messages, prependMessages]);
 
   const handleSelectAgent = useCallback((targetMode: ConnectionMode) => {
-    // OpenClaw requires login
-    if (targetMode === 'openclaw') {
+    // Agent mode with OpenClaw requires login
+    if (targetMode === 'agent' || targetMode === 'openclaw') {
       const { isLoggedIn } = useAuthStore.getState();
-      if (!isLoggedIn) {
+      const currentAgentId = useSettingsStore.getState().agentId;
+      if (targetMode === 'agent' && currentAgentId === 'openclaw' && !isLoggedIn) {
+        Alert.alert(
+          t('chat.openclawNeedLogin'),
+          t('chat.openclawNeedLoginDesc'),
+          [
+            { text: t('chat.cancel'), style: 'cancel' },
+            { text: t('settings.loginOrRegister'), onPress: () => router.push('/login') },
+          ],
+        );
+        return;
+      }
+      if (targetMode === 'openclaw' && !isLoggedIn) {
         Alert.alert(
           t('chat.openclawNeedLogin'),
           t('chat.openclawNeedLoginDesc'),
@@ -587,7 +663,6 @@ export default function ChatScreen() {
         return;
       }
     }
-    // CoPaw: URL is optional — server has default COPAW_URL configured
     if (targetMode !== mode) {
       setMode(targetMode);
       setSetting('mode', targetMode).catch(() => {});
@@ -654,7 +729,7 @@ export default function ChatScreen() {
 
     // ── Route by mode ──
 
-    if (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawClient) {
+    if ((mode === 'agent' && agentSubMode === 'direct' && agentId === 'openclaw' && openclawClient) || (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawClient)) {
       // OpenClaw direct: send via Gateway WS
       const ac = new AbortController();
       abortControllerRef.current = ac;
@@ -755,6 +830,7 @@ export default function ChatScreen() {
   }, [
     inputText, isGenerating, currentConversationId, messages, serverUrl,
     mode, currentUserId, provider, apiKey, selectedModel, openclawUrl, openclawSubMode,
+    agentSubMode, agentId, agentUrl, agentToken,
     addMessage, setCurrentConversation, setGenerating, resetStreamTimeout,
   ]);
 

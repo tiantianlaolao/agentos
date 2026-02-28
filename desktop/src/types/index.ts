@@ -1,4 +1,4 @@
-export type AgentMode = 'builtin' | 'openclaw' | 'copaw';
+export type AgentMode = 'builtin' | 'openclaw' | 'copaw' | 'agent';
 
 export interface ChatMessageItem {
   id: string;

@@ -55,6 +55,9 @@ impl WsClient {
         copaw_token: Option<String>,
         openclaw_hosted: Option<bool>,
         copaw_hosted: Option<bool>,
+        agent_url: Option<String>,
+        agent_token: Option<String>,
+        agent_protocol: Option<String>,
         channel: Channel<Value>,
     ) -> Result<ConnectResult, Box<dyn std::error::Error + Send + Sync>> {
         self.disconnect().await;
@@ -82,6 +85,9 @@ impl WsClient {
                 "copawToken": copaw_token,
                 "openclawHosted": openclaw_hosted,
                 "copawHosted": copaw_hosted,
+                "agentUrl": agent_url,
+                "agentToken": agent_token,
+                "agentProtocol": agent_protocol,
             }
         });
 

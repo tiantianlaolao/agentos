@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useSettingsStore } from '../stores/settingsStore.ts';
+import { useSettingsStore, KNOWN_AGENTS } from '../stores/settingsStore.ts';
 import { useAuthStore } from '../stores/authStore.ts';
 import { login as apiLogin, register as apiRegister, sendCode as apiSendCode } from '../services/authApi.ts';
 import { activateHostedAccess, getHostedStatus, updateHostedModel } from '../services/hostedApi.ts';
@@ -13,16 +13,16 @@ import type { AgentMode } from '../types/index.ts';
 
 import type { LLMProvider } from '../stores/settingsStore.ts';
 
-const MODE_COLORS: Record<AgentMode, string> = {
+const MODE_COLORS: Record<string, string> = {
   builtin: '#2d7d46',
+  agent: '#c26a1b',
   openclaw: '#c26a1b',
   copaw: '#1b6bc2',
 };
 
-const MODES: { value: AgentMode; label: string; description: string }[] = [
-  { value: 'builtin', label: 'Built-in', description: 'Server-hosted DeepSeek' },
-  { value: 'openclaw', label: 'OpenClaw', description: 'Full agent mode' },
-  { value: 'copaw', label: 'CoPaw', description: 'Remote CoPaw agent' },
+const MODES: { value: AgentMode; label: string; labelKey: string; descKey: string }[] = [
+  { value: 'builtin', label: 'Built-in', labelKey: 'modes.builtin', descKey: 'modes.builtinDesc' },
+  { value: 'agent', label: 'External Agent', labelKey: 'modes.agent', descKey: 'modes.agentDesc' },
 ];
 
 const MODELS: { key: string; label: string }[] = [
@@ -47,6 +47,16 @@ const LANGUAGES: { key: 'zh' | 'en'; label: string }[] = [
   { key: 'en', label: 'English' },
 ];
 
+/** Check if a URL points to localhost */
+function isLocalUrl(url: string): boolean {
+  try {
+    const lower = url.toLowerCase();
+    return lower.includes('localhost') || lower.includes('127.0.0.1') || lower.includes('0.0.0.0');
+  } catch {
+    return false;
+  }
+}
+
 interface Props {
   onClose: () => void;
 }
@@ -56,32 +66,25 @@ export function SettingsPanel({ onClose }: Props) {
   const auth = useAuthStore();
   const t = useTranslation();
 
-  const [formMode, setFormMode] = useState<AgentMode>(store.mode);
+  const [formMode, setFormMode] = useState<AgentMode>(store.mode === 'openclaw' || store.mode === 'copaw' ? 'agent' : store.mode);
   const [formBuiltinSubMode, setFormBuiltinSubMode] = useState<'free' | 'byok'>(store.builtinSubMode);
   const [formProvider, setFormProvider] = useState<LLMProvider>(store.provider);
   const [formApiKey, setFormApiKey] = useState(store.apiKey);
   const [formServerUrl] = useState(store.serverUrl);
   const [formSelectedModel, setFormSelectedModel] = useState(store.selectedModel);
-  const [formOpenclawUrl, setFormOpenclawUrl] = useState(store.openclawUrl);
-  const [formOpenclawToken, setFormOpenclawToken] = useState(store.openclawToken);
-  const [formOpenclawSubMode, setFormOpenclawSubMode] = useState(store.openclawSubMode);
-  const [formDeployType, setFormDeployType] = useState(store.deployType);
+  const [formLocale, setFormLocale] = useState(store.locale);
+  const [saved, setSaved] = useState(false);
+
+  // Unified agent form state
+  const [formAgentSubMode, setFormAgentSubMode] = useState<'direct' | 'deploy'>(store.agentSubMode);
+  const [formAgentId, setFormAgentId] = useState(store.agentId);
+  const [formAgentUrl, setFormAgentUrl] = useState(store.agentUrl);
+  const [formAgentToken, setFormAgentToken] = useState(store.agentToken);
+  const [formDeployTemplateId, setFormDeployTemplateId] = useState(store.deployTemplateId);
   const [formDeployModelMode, setFormDeployModelMode] = useState(store.deployModelMode);
   const [formDeployProvider, setFormDeployProvider] = useState<LLMProvider>(store.deployProvider);
   const [formDeployApiKey, setFormDeployApiKey] = useState(store.deployApiKey);
   const [formDeployModel, setFormDeployModel] = useState(store.deployModel);
-  const [formSelfhostedType, setFormSelfhostedType] = useState(store.selfhostedType);
-  const [formCopawUrl, setFormCopawUrl] = useState(store.copawUrl);
-  const [formCopawToken] = useState(store.copawToken);
-  const [formCopawSubMode, setFormCopawSubMode] = useState(store.copawSubMode);
-  const [formCopawDeployType] = useState(store.copawDeployType);
-  const [formCopawSelfhostedType] = useState(store.copawSelfhostedType);
-  const [formCopawDeployModelMode, setFormCopawDeployModelMode] = useState(store.copawDeployModelMode);
-  const [formCopawDeployProvider, setFormCopawDeployProvider] = useState<LLMProvider>(store.copawDeployProvider);
-  const [formCopawDeployApiKey, setFormCopawDeployApiKey] = useState(store.copawDeployApiKey);
-  const [formCopawDeployModel, setFormCopawDeployModel] = useState(store.copawDeployModel);
-  const [formLocale, setFormLocale] = useState(store.locale);
-  const [saved, setSaved] = useState(false);
 
   // Auth form state
   const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
@@ -102,6 +105,9 @@ export function SettingsPanel({ onClose }: Props) {
   // Hosted model update state
   const [hostedModelUpdating, setHostedModelUpdating] = useState(false);
   const [hostedModelMsg, setHostedModelMsg] = useState('');
+
+  const selectedAgent = KNOWN_AGENTS.find(a => a.id === formAgentId);
+  const deployAgent = KNOWN_AGENTS.find(a => a.id === formDeployTemplateId);
 
   const handleUpdateHostedModel = useCallback(async () => {
     if (!formDeployApiKey.trim()) return;
@@ -135,28 +141,35 @@ export function SettingsPanel({ onClose }: Props) {
     store.setApiKey(formApiKey);
     store.setServerUrl(formServerUrl);
     store.setSelectedModel(formSelectedModel);
-    store.setOpenclawUrl(formOpenclawUrl);
-    store.setOpenclawToken(formOpenclawToken);
-    store.setOpenclawSubMode(formOpenclawSubMode);
-    store.setDeployType(formDeployType);
+    store.setLocale(formLocale);
+
+    // Unified agent fields
+    store.setAgentSubMode(formAgentSubMode);
+    store.setAgentId(formAgentId);
+    store.setAgentUrl(formAgentUrl);
+    store.setAgentToken(formAgentToken);
+    store.setDeployTemplateId(formDeployTemplateId);
     store.setDeployModelMode(formDeployModelMode);
     store.setDeployProvider(formDeployProvider);
     store.setDeployApiKey(formDeployApiKey);
     store.setDeployModel(formDeployModel);
-    store.setSelfhostedType(formSelfhostedType);
-    store.setCopawUrl(formCopawUrl);
-    store.setCopawToken(formCopawToken);
-    store.setCopawSubMode(formCopawSubMode);
-    store.setCopawDeployType(formCopawDeployType);
-    store.setCopawSelfhostedType(formCopawSelfhostedType);
-    store.setCopawDeployModelMode(formCopawDeployModelMode);
-    store.setCopawDeployProvider(formCopawDeployProvider);
-    store.setCopawDeployApiKey(formCopawDeployApiKey);
-    store.setCopawDeployModel(formCopawDeployModel);
-    store.setLocale(formLocale);
+
+    // Also sync to legacy fields for backward compat with App.tsx (until refactored)
+    if (formAgentId === 'openclaw') {
+      store.setOpenclawUrl(formAgentUrl);
+      store.setOpenclawToken(formAgentToken);
+      store.setOpenclawSubMode(formAgentSubMode === 'deploy' ? 'deploy' : 'selfhosted');
+      store.setSelfhostedType(isLocalUrl(formAgentUrl) ? 'local' : 'remote');
+      store.setDeployType('local');
+      store.setBridgeEnabled(store.agentBridgeEnabled);
+    } else if (formAgentId === 'copaw') {
+      store.setCopawUrl(formAgentUrl);
+      store.setCopawToken(formAgentToken);
+      store.setCopawSubMode(formAgentSubMode === 'deploy' ? 'deploy' : 'selfhosted');
+    }
 
     // Auto-sync model config to local openclaw.json if installed
-    if (store.localOpenclawInstalled && formMode === 'openclaw' && formOpenclawSubMode === 'deploy' && formDeployType === 'local') {
+    if (store.localAgentInstalled && formMode === 'agent' && formAgentSubMode === 'deploy' && formDeployTemplateId === 'openclaw') {
       try {
         const isDefault = formDeployModelMode === 'default';
         const provider = isDefault ? 'deepseek' : formDeployProvider;
@@ -167,12 +180,9 @@ export function SettingsPanel({ onClose }: Props) {
 
         const userId = auth.userId || undefined;
         await invoke('update_local_openclaw_config', { provider, apiKey, model, baseUrl, userId });
-        store.setLocalOpenclawProvider(provider);
-        store.setLocalOpenclawApiKey(apiKey);
-        store.setLocalOpenclawModel(model);
 
         // Restart if running
-        const port = store.localOpenclawPort || 18789;
+        const port = store.localAgentPort || 18789;
         const status = await invoke<{ running: boolean }>('get_local_openclaw_status', { port });
         if (status?.running) {
           await invoke('stop_local_openclaw');
@@ -187,12 +197,10 @@ export function SettingsPanel({ onClose }: Props) {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }, [
-    store, auth.authToken, formMode, formBuiltinSubMode, formProvider, formApiKey, formServerUrl,
-    formSelectedModel, formOpenclawUrl, formOpenclawToken,
-    formOpenclawSubMode, formDeployType, formDeployModelMode, formDeployProvider, formDeployApiKey, formDeployModel,
-    formSelfhostedType, formCopawUrl, formCopawToken, formCopawSubMode,
-    formCopawDeployType, formCopawSelfhostedType, formCopawDeployModelMode,
-    formCopawDeployProvider, formCopawDeployApiKey, formCopawDeployModel, formLocale,
+    store, auth.authToken, auth.userId, formMode, formBuiltinSubMode, formProvider, formApiKey, formServerUrl,
+    formSelectedModel, formLocale,
+    formAgentSubMode, formAgentId, formAgentUrl, formAgentToken,
+    formDeployTemplateId, formDeployModelMode, formDeployProvider, formDeployApiKey, formDeployModel,
   ]);
 
   const handleSendCode = useCallback(async () => {
@@ -246,15 +254,14 @@ export function SettingsPanel({ onClose }: Props) {
     setAuthLoading(false);
 
     if (result.ok && result.data) {
-      // Stop any running OpenClaw from previous user before switching
       try {
         await invoke('stop_local_openclaw');
       } catch { /* ignore */ }
       auth.login(result.data.userId, result.data.phone, result.data.token);
-      // Check if new user has local OpenClaw installed
       try {
         const installed = await invoke<boolean>('check_local_openclaw_installed', { userId: result.data.userId });
         store.setLocalOpenclawInstalled(installed);
+        store.setLocalAgentInstalled(installed);
       } catch { /* ignore */ }
       setAuthSuccess(authTab === 'login' ? t('settings.loginSuccess') : t('settings.registerSuccess'));
       setAuthPhone('');
@@ -265,10 +272,9 @@ export function SettingsPanel({ onClose }: Props) {
     } else {
       setAuthError(result.error || 'Unknown error');
     }
-  }, [authTab, authPhone, authPassword, authConfirmPassword, authCode, formServerUrl, store.serverUrl, auth, t]);
+  }, [authTab, authPhone, authPassword, authConfirmPassword, authCode, formServerUrl, store.serverUrl, auth, store, t]);
 
   const handleLogout = useCallback(async () => {
-    // Stop local OpenClaw before logging out (it belongs to current user)
     try {
       await invoke('stop_local_openclaw');
     } catch { /* ignore */ }
@@ -277,6 +283,7 @@ export function SettingsPanel({ onClose }: Props) {
     store.setHostedQuota(0, 0);
     store.setHostedInstanceStatus('');
     store.setLocalOpenclawInstalled(false);
+    store.setLocalAgentInstalled(false);
   }, [auth, store]);
 
   const handleActivate = useCallback(async () => {
@@ -312,7 +319,7 @@ export function SettingsPanel({ onClose }: Props) {
     } catch { /* ignore */ }
   }, [auth.authToken, formServerUrl, store]);
 
-  const activeModeColor = MODE_COLORS[store.mode];
+  const activeModeColor = MODE_COLORS[store.mode] || '#c26a1b';
   const activeModeLabel = t(`modes.${store.mode}`);
 
   return (
@@ -435,7 +442,7 @@ export function SettingsPanel({ onClose }: Props) {
           </span>
         </div>
 
-        {/* Connection Mode */}
+        {/* Connection Mode — only 2 options: builtin | agent */}
         <div className="settings-section">
           <h3 className="settings-section-title">{t('settings.connectionMode')}</h3>
           <div className="settings-mode-list">
@@ -460,8 +467,8 @@ export function SettingsPanel({ onClose }: Props) {
                   </span>
                 </div>
                 <div className="settings-mode-text">
-                  <span className="settings-mode-name">{t(`modes.${m.value}`)}</span>
-                  <span className="settings-mode-desc">{t(`modes.${m.value}Desc`)}</span>
+                  <span className="settings-mode-name">{t(m.labelKey)}</span>
+                  <span className="settings-mode-desc">{t(m.descKey)}</span>
                 </div>
               </button>
             ))}
@@ -526,29 +533,149 @@ export function SettingsPanel({ onClose }: Props) {
           </div>
         )}
 
-        {/* OpenClaw settings */}
-        {formMode === 'openclaw' && (
+        {/* ========= External Agent settings ========= */}
+        {formMode === 'agent' && (
           <div className="settings-section">
-            <h3 className="settings-section-title">{t('settings.openclawConfig')}</h3>
+            <h3 className="settings-section-title">{t('settings.agentConfig')}</h3>
+
+            {/* Sub-mode: Direct | Deploy */}
             <div className="settings-submode-row">
               <button
-                className={`settings-submode-btn ${formOpenclawSubMode === 'deploy' ? 'active' : ''}`}
-                onClick={() => setFormOpenclawSubMode('deploy')}
+                className={`settings-submode-btn ${formAgentSubMode === 'direct' ? 'active' : ''}`}
+                onClick={() => setFormAgentSubMode('direct')}
+              >
+                {t('settings.directConnect')}
+              </button>
+              <button
+                className={`settings-submode-btn ${formAgentSubMode === 'deploy' ? 'active' : ''}`}
+                onClick={() => setFormAgentSubMode('deploy')}
               >
                 {t('settings.deploy')}
               </button>
-              <button
-                className={`settings-submode-btn ${formOpenclawSubMode === 'selfhosted' ? 'active' : ''}`}
-                onClick={() => setFormOpenclawSubMode('selfhosted')}
-              >
-                {t('settings.selfhosted')}
-              </button>
             </div>
 
-            {/* ── 一键部署 ── */}
-            {formOpenclawSubMode === 'deploy' && (
+            {/* ── Direct Connect ── */}
+            {formAgentSubMode === 'direct' && (
               <>
-                {/* Model selection — shared by cloud + local */}
+                {/* Agent card selection */}
+                <div className="settings-field" style={{ marginTop: '8px' }}>
+                  <label className="settings-label">{t('settings.selectAgent')}</label>
+                  <div className="settings-mode-list" style={{ gap: '6px' }}>
+                    {KNOWN_AGENTS.map((agent) => (
+                      <button
+                        key={agent.id}
+                        className={`settings-mode-card ${formAgentId === agent.id ? 'active' : ''}`}
+                        onClick={() => setFormAgentId(agent.id)}
+                        style={formAgentId === agent.id ? { borderColor: '#c26a1b' } : undefined}
+                      >
+                        <div className="settings-mode-radio">
+                          <span
+                            className={`settings-radio-outer ${formAgentId === agent.id ? 'selected' : ''}`}
+                            style={formAgentId === agent.id ? { borderColor: '#c26a1b' } : undefined}
+                          >
+                            {formAgentId === agent.id && (
+                              <span className="settings-radio-inner" style={{ background: '#c26a1b' }} />
+                            )}
+                          </span>
+                        </div>
+                        <div className="settings-mode-text">
+                          <span className="settings-mode-name">{agent.icon} {agent.name}</span>
+                          <span className="settings-mode-desc">{agent.protocol === 'openclaw-ws' ? 'WebSocket' : agent.protocol === 'ag-ui' ? 'HTTP/SSE' : t('settings.comingSoon')}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Agent-specific fields */}
+                {formAgentId === 'custom' ? (
+                  <div className="settings-field" style={{ marginTop: '8px' }}>
+                    <span className="settings-hint" style={{ color: '#999' }}>{t('settings.comingSoon')}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="settings-field">
+                      <label className="settings-label">
+                        {selectedAgent?.transport === 'ws' ? 'WebSocket URL' : 'HTTP URL'}
+                      </label>
+                      <input
+                        className="settings-input"
+                        value={formAgentUrl}
+                        onChange={(e) => setFormAgentUrl(e.target.value)}
+                        placeholder={selectedAgent?.urlPlaceholder || ''}
+                      />
+                      <span className="settings-hint">{selectedAgent?.urlHint || ''}</span>
+                    </div>
+                    <div className="settings-field">
+                      <label className="settings-label">
+                        Token {selectedAgent?.tokenRequired ? '' : `(${t('settings.optional')})`}
+                      </label>
+                      <input
+                        className="settings-input"
+                        type="password"
+                        value={formAgentToken}
+                        onChange={(e) => setFormAgentToken(e.target.value)}
+                        placeholder={t('settings.accessTokenPlaceholder')}
+                      />
+                    </div>
+
+                    {/* Bridge toggle — only when URL is localhost and user is logged in */}
+                    {isLocalUrl(formAgentUrl) && (
+                      <>
+                        {!auth.isLoggedIn ? (
+                          <p className="settings-hosted-note">{t('bridge.needLogin')}</p>
+                        ) : (
+                          <>
+                            <button
+                              className={`settings-auth-btn ${store.agentBridgeEnabled ? 'settings-bridge-active' : ''}`}
+                              onClick={() => store.setAgentBridgeEnabled(!store.agentBridgeEnabled)}
+                            >
+                              {store.agentBridgeEnabled ? t('bridge.disable') : t('bridge.enable')}
+                            </button>
+                            <span className="settings-hint">{t('settings.localBridgeHint')}</span>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── One-click Deploy ── */}
+            {formAgentSubMode === 'deploy' && (
+              <>
+                {/* Template selection */}
+                <div className="settings-field" style={{ marginTop: '8px' }}>
+                  <label className="settings-label">{t('settings.selectAgent')}</label>
+                  <div className="settings-mode-list" style={{ gap: '6px' }}>
+                    {KNOWN_AGENTS.filter(a => a.deploy).map((agent) => (
+                      <button
+                        key={agent.id}
+                        className={`settings-mode-card ${formDeployTemplateId === agent.id ? 'active' : ''}`}
+                        onClick={() => setFormDeployTemplateId(agent.id)}
+                        style={formDeployTemplateId === agent.id ? { borderColor: '#c26a1b' } : undefined}
+                      >
+                        <div className="settings-mode-radio">
+                          <span
+                            className={`settings-radio-outer ${formDeployTemplateId === agent.id ? 'selected' : ''}`}
+                            style={formDeployTemplateId === agent.id ? { borderColor: '#c26a1b' } : undefined}
+                          >
+                            {formDeployTemplateId === agent.id && (
+                              <span className="settings-radio-inner" style={{ background: '#c26a1b' }} />
+                            )}
+                          </span>
+                        </div>
+                        <div className="settings-mode-text">
+                          <span className="settings-mode-name">{agent.icon} {agent.name}</span>
+                          <span className="settings-mode-desc">{agent.deploy?.runtime === 'node' ? 'Node.js' : 'Python'}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Model selection — shared across templates */}
                 <div className="settings-field" style={{ marginTop: '8px' }}>
                   <label className="settings-label">{t('settings.deployModel')}</label>
                   <div className="settings-submode-row">
@@ -608,284 +735,69 @@ export function SettingsPanel({ onClose }: Props) {
                   </>
                 )}
 
-                <div className="settings-submode-row" style={{ marginTop: '8px' }}>
-                  <button
-                    className={`settings-submode-btn ${formDeployType === 'cloud' ? 'active' : ''}`}
-                    style={{ opacity: 0.4, pointerEvents: 'none', cursor: 'not-allowed' }}
-                    onClick={() => setFormDeployType('cloud')}
-                  >
-                    {t('settings.deployCloud')}
-                  </button>
-                  <button
-                    className={`settings-submode-btn ${formDeployType === 'local' ? 'active' : ''}`}
-                    onClick={() => setFormDeployType('local')}
-                  >
-                    {t('settings.deployLocal')}
-                  </button>
-                </div>
-                {formDeployType === 'cloud' && (
-                  <span className="settings-hint" style={{ color: '#999' }}>云托管功能暂未开放</span>
-                )}
-
-                {/* 云托管 — 现有 hosted 逻辑 */}
-                {formDeployType === 'cloud' && (
-                  <div className="settings-hosted-section">
-                    {!auth.isLoggedIn ? (
-                      <p className="settings-hosted-note">{t('settings.hostedNeedLogin')}</p>
-                    ) : !store.hostedActivated ? (
-                      <>
-                        <p className="settings-hosted-note">{t('settings.hostedNote')}</p>
-                        <div className="settings-field">
-                          <label className="settings-label">{t('settings.inviteCode')}</label>
-                          <input
-                            className="settings-input"
-                            value={inviteCode}
-                            onChange={(e) => setInviteCode(e.target.value)}
-                            placeholder={t('settings.inviteCodePlaceholder')}
-                          />
-                        </div>
-                        {activateError && <p className="settings-auth-error">{activateError}</p>}
-                        <button
-                          className="settings-auth-btn"
-                          onClick={handleActivate}
-                          disabled={activateLoading}
-                        >
-                          {activateLoading ? t('settings.activating') : t('settings.activate')}
-                        </button>
-                      </>
-                    ) : (
-                      <div className="settings-hosted-status">
-                        {store.hostedInstanceStatus === 'provisioning' && (
-                          <p className="settings-hosted-note">{t('settings.instanceProvisioning')}</p>
-                        )}
-                        {store.hostedInstanceStatus === 'ready' && (
-                          <p className="settings-hosted-ready">
-                            {t('settings.instanceReady')} — {t('settings.quotaLabel')}: {store.hostedQuotaUsed}/{store.hostedQuotaTotal}
-                          </p>
-                        )}
-                        {store.hostedInstanceStatus === 'error' && (
-                          <p className="settings-auth-error">{t('settings.instanceError')}</p>
-                        )}
-                        {store.hostedInstanceStatus !== 'ready' && (
-                          <button className="settings-auth-btn" onClick={handleRefreshHostedStatus}>
-                            Refresh
-                          </button>
-                        )}
-                        {store.hostedInstanceStatus === 'ready' && formDeployModelMode === 'custom' && (
-                          <>
-                            <button
-                              className="settings-auth-btn"
-                              onClick={handleUpdateHostedModel}
-                              disabled={hostedModelUpdating || !formDeployApiKey.trim()}
-                              style={{ marginTop: '4px' }}
-                            >
-                              {hostedModelUpdating ? '...' : t('settings.save')}
-                            </button>
-                            {hostedModelMsg && <span className="settings-hint">{hostedModelMsg}</span>}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 部署到本地 — 新功能 */}
-                {formDeployType === 'local' && (
+                {/* Render Setup/Status based on template */}
+                {formDeployTemplateId === 'openclaw' && (
                   <>
-                    {store.localOpenclawInstalled ? (
+                    {store.localAgentInstalled || store.localOpenclawInstalled ? (
                       <LocalOpenclawStatus />
                     ) : (
-                      <LocalOpenclawSetup onInstalled={() => store.setLocalOpenclawInstalled(true)} />
+                      <LocalOpenclawSetup onInstalled={() => {
+                        store.setLocalOpenclawInstalled(true);
+                        store.setLocalAgentInstalled(true);
+                      }} />
                     )}
                   </>
                 )}
-              </>
-            )}
 
-            {/* ── 自建直连（完全不动） ── */}
-            {formOpenclawSubMode === 'selfhosted' && (
-              <>
-                <div className="settings-submode-row" style={{ marginTop: '8px' }}>
-                  <button
-                    className={`settings-submode-btn ${formSelfhostedType === 'remote' ? 'active' : ''}`}
-                    onClick={() => setFormSelfhostedType('remote')}
-                  >
-                    {t('settings.selfhostedRemote')}
-                  </button>
-                  <button
-                    className={`settings-submode-btn ${formSelfhostedType === 'local' ? 'active' : ''}`}
-                    onClick={() => setFormSelfhostedType('local')}
-                  >
-                    {t('settings.selfhostedLocal')}
-                  </button>
-                </div>
-                {formSelfhostedType === 'remote' && (
+                {formDeployTemplateId === 'copaw' && (
                   <>
-                    <span className="settings-hint">{t('settings.remoteHint')}</span>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.openclawUrl')}</label>
-                      <input
-                        className="settings-input"
-                        value={formOpenclawUrl}
-                        onChange={(e) => setFormOpenclawUrl(e.target.value)}
-                        placeholder={t('settings.openclawUrlPlaceholder')}
-                      />
-                      <span className="settings-hint">{t('settings.openclawUrlHint')}</span>
-                    </div>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.accessToken')}</label>
-                      <input
-                        className="settings-input"
-                        type="password"
-                        value={formOpenclawToken}
-                        onChange={(e) => setFormOpenclawToken(e.target.value)}
-                        placeholder={t('settings.accessTokenPlaceholder')}
-                      />
-                      <span className="settings-hint">{t('settings.openclawTokenHint')}</span>
-                    </div>
-                  </>
-                )}
-                {formSelfhostedType === 'local' && (
-                  <>
-                    <span className="settings-hint">{t('settings.localHint')}</span>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.accessToken')}</label>
-                      <input
-                        className="settings-input"
-                        type="password"
-                        value={formOpenclawToken}
-                        onChange={(e) => setFormOpenclawToken(e.target.value)}
-                        placeholder={t('settings.accessTokenPlaceholder')}
-                      />
-                      <span className="settings-hint">{t('settings.openclawTokenHint')}</span>
-                    </div>
-                    {!auth.isLoggedIn ? (
-                      <p className="settings-hosted-note">{t('bridge.needLogin')}</p>
+                    {store.localCopawInstalled ? (
+                      <LocalCopawStatus />
                     ) : (
-                      <>
-                        <button
-                          className={`settings-auth-btn ${store.bridgeEnabled ? 'settings-bridge-active' : ''}`}
-                          onClick={() => store.setBridgeEnabled(!store.bridgeEnabled)}
-                        >
-                          {store.bridgeEnabled ? t('bridge.disable') : t('bridge.enable')}
-                        </button>
-                        <span className="settings-hint">{t('settings.localBridgeHint')}</span>
-                      </>
+                      <LocalCopawSetup onInstalled={() => {
+                        store.setLocalCopawInstalled(true);
+                        store.setLocalAgentInstalled(true);
+                      }} />
                     )}
                   </>
                 )}
-              </>
-            )}
-          </div>
-        )}
 
-        {/* CoPaw settings */}
-        {formMode === 'copaw' && (
-          <div className="settings-section">
-            <h3 className="settings-section-title">{t('settings.copawConfig')}</h3>
-            <div className="settings-submode-row">
-              <button
-                className={`settings-submode-btn ${formCopawSubMode === 'deploy' ? 'active' : ''}`}
-                onClick={() => setFormCopawSubMode('deploy')}
-              >
-                {t('settings.deploy')}
-              </button>
-              <button
-                className={`settings-submode-btn ${formCopawSubMode === 'selfhosted' ? 'active' : ''}`}
-                onClick={() => setFormCopawSubMode('selfhosted')}
-              >
-                {t('settings.selfhosted')}
-              </button>
-            </div>
-
-            {/* ── 一键部署 ── */}
-            {formCopawSubMode === 'deploy' && (
-              <>
-                {/* Model selection */}
-                <div className="settings-field" style={{ marginTop: '8px' }}>
-                  <label className="settings-label">{t('settings.deployModel')}</label>
-                  <div className="settings-submode-row">
-                    <button
-                      className={`settings-submode-btn ${formCopawDeployModelMode === 'default' ? 'active' : ''}`}
-                      onClick={() => setFormCopawDeployModelMode('default')}
-                    >
-                      {t('settings.deployModelDefault')}
-                    </button>
-                    <button
-                      className={`settings-submode-btn ${formCopawDeployModelMode === 'custom' ? 'active' : ''}`}
-                      onClick={() => setFormCopawDeployModelMode('custom')}
-                    >
-                      {t('settings.deployModelCustom')}
-                    </button>
+                {/* Hosted section (legacy, for cloud deploy users) */}
+                {formDeployTemplateId === 'openclaw' && store.hostedActivated && (
+                  <div className="settings-hosted-section" style={{ marginTop: '8px' }}>
+                    <div className="settings-hosted-status">
+                      {store.hostedInstanceStatus === 'provisioning' && (
+                        <p className="settings-hosted-note">{t('settings.instanceProvisioning')}</p>
+                      )}
+                      {store.hostedInstanceStatus === 'ready' && (
+                        <p className="settings-hosted-ready">
+                          {t('settings.instanceReady')} — {t('settings.quotaLabel')}: {store.hostedQuotaUsed}/{store.hostedQuotaTotal}
+                        </p>
+                      )}
+                      {store.hostedInstanceStatus === 'error' && (
+                        <p className="settings-auth-error">{t('settings.instanceError')}</p>
+                      )}
+                      {store.hostedInstanceStatus !== 'ready' && (
+                        <button className="settings-auth-btn" onClick={handleRefreshHostedStatus}>
+                          Refresh
+                        </button>
+                      )}
+                      {store.hostedInstanceStatus === 'ready' && formDeployModelMode === 'custom' && (
+                        <>
+                          <button
+                            className="settings-auth-btn"
+                            onClick={handleUpdateHostedModel}
+                            disabled={hostedModelUpdating || !formDeployApiKey.trim()}
+                            style={{ marginTop: '4px' }}
+                          >
+                            {hostedModelUpdating ? '...' : t('settings.save')}
+                          </button>
+                          {hostedModelMsg && <span className="settings-hint">{hostedModelMsg}</span>}
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <span className="settings-hint">
-                    {formCopawDeployModelMode === 'default'
-                      ? t('settings.deployModelDefaultHint')
-                      : t('settings.deployModelCustomHint')}
-                  </span>
-                </div>
-
-                {formCopawDeployModelMode === 'custom' && (
-                  <>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.localSetupProvider')}</label>
-                      <select
-                        className="settings-select"
-                        value={formCopawDeployProvider}
-                        onChange={(e) => setFormCopawDeployProvider(e.target.value as LLMProvider)}
-                      >
-                        {PROVIDERS.map((p) => (
-                          <option key={p.key} value={p.key}>{p.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.localSetupApiKey')}</label>
-                      <input
-                        className="settings-input"
-                        type="password"
-                        value={formCopawDeployApiKey}
-                        onChange={(e) => setFormCopawDeployApiKey(e.target.value)}
-                        placeholder={t('settings.localSetupApiKeyPlaceholder')}
-                      />
-                    </div>
-                    <div className="settings-field">
-                      <label className="settings-label">{t('settings.localSetupModel')}</label>
-                      <input
-                        className="settings-input"
-                        value={formCopawDeployModel}
-                        onChange={(e) => setFormCopawDeployModel(e.target.value)}
-                        placeholder={t('settings.localSetupModelPlaceholder')}
-                      />
-                    </div>
-                  </>
                 )}
-
-                {/* Local CoPaw setup / status */}
-                {!store.localCopawInstalled ? (
-                  <LocalCopawSetup onInstalled={() => {
-                    store.setLocalCopawInstalled(true);
-                    store.setCopawDeployType('local');
-                  }} />
-                ) : (
-                  <LocalCopawStatus />
-                )}
-              </>
-            )}
-
-            {/* ── 自建直连 ── */}
-            {formCopawSubMode === 'selfhosted' && (
-              <>
-                <div className="settings-field" style={{ marginTop: '8px' }}>
-                  <label className="settings-label">{t('settings.copawUrl')}</label>
-                  <input
-                    className="settings-input"
-                    value={formCopawUrl}
-                    onChange={(e) => setFormCopawUrl(e.target.value)}
-                    placeholder={t('settings.copawUrlPlaceholder')}
-                  />
-                  <span className="settings-hint">{t('settings.copawUrlHint')}</span>
-                </div>
               </>
             )}
           </div>

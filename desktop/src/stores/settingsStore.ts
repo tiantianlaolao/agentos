@@ -8,7 +8,61 @@ export type LLMProvider = 'deepseek' | 'openai' | 'anthropic' | 'gemini' | 'moon
 
 type BuiltinSubMode = 'free' | 'byok';
 
-type SelfhostedType = 'remote' | 'local';
+/**
+ * Known external agent definitions.
+ * Each agent has a fixed protocol and UI configuration.
+ */
+export interface AgentDefinition {
+  id: string;
+  name: string;
+  icon: string;
+  transport: 'ws' | 'http';
+  protocol: string;  // 'openclaw-ws' | 'ag-ui' | 'openai-compat'
+  urlPlaceholder: string;
+  urlHint: string;
+  defaultPort?: number;
+  tokenRequired?: boolean;
+  deploy?: {
+    runtime: 'node' | 'python';
+  };
+}
+
+export const KNOWN_AGENTS: AgentDefinition[] = [
+  {
+    id: 'openclaw',
+    name: 'OpenClaw',
+    icon: '🐾',
+    transport: 'ws',
+    protocol: 'openclaw-ws',
+    urlPlaceholder: 'ws://your-server:18789',
+    urlHint: 'WebSocket URL',
+    defaultPort: 18789,
+    tokenRequired: true,
+    deploy: { runtime: 'node' },
+  },
+  {
+    id: 'copaw',
+    name: 'CoPaw',
+    icon: '🤖',
+    transport: 'http',
+    protocol: 'ag-ui',
+    urlPlaceholder: 'http://your-server:8088/agent',
+    urlHint: 'HTTP URL',
+    defaultPort: 8088,
+    tokenRequired: false,
+    deploy: { runtime: 'python' },
+  },
+  {
+    id: 'custom',
+    name: '其他 Agent',
+    icon: '🔌',
+    transport: 'http',
+    protocol: 'openai-compat',
+    urlPlaceholder: 'http://your-server:8080',
+    urlHint: 'HTTP URL',
+    tokenRequired: false,
+  },
+];
 
 interface SettingsState {
   // Connection
@@ -19,59 +73,69 @@ interface SettingsState {
   serverUrl: string;
   selectedModel: string;
 
-  // OpenClaw
-  openclawUrl: string;
-  openclawToken: string;
-  openclawSubMode: 'hosted' | 'selfhosted' | 'deploy';
-  deployType: 'cloud' | 'local';
-  selfhostedType: SelfhostedType;
-  hostedActivated: boolean;
-  hostedQuotaUsed: number;
-  hostedQuotaTotal: number;
-  hostedInstanceStatus: string;
+  // === Unified Agent Mode ===
+  agentSubMode: 'direct' | 'deploy';
+  agentId: string;          // 'openclaw' | 'copaw' | 'custom'
+  agentUrl: string;
+  agentToken: string;
+  agentBridgeEnabled: boolean;
 
-  // CoPaw
-  copawUrl: string;
-  copawToken: string;
-  copawSubMode: 'hosted' | 'selfhosted' | 'deploy';
-  copawDeployType: 'cloud' | 'local';
-  copawSelfhostedType: 'remote' | 'local';
-  copawDeployModelMode: 'default' | 'custom';
-  copawDeployProvider: LLMProvider;
-  copawDeployApiKey: string;
-  copawDeployModel: string;
+  // Deploy mode
+  deployTemplateId: string;  // 'openclaw' | 'copaw'
+  localAgentInstalled: boolean;
+  localAgentPort: number;
+  localAgentAutoStart: boolean;
+  localAgentAutoBridge: boolean;
 
-  // Deploy model mode
+  // Deploy model mode (cross-template)
   deployModelMode: 'default' | 'custom';
   deployProvider: LLMProvider;
   deployApiKey: string;
   deployModel: string;
 
-  // OpenClaw Bridge
-  bridgeEnabled: boolean;
+  // OpenClaw hosted (legacy, kept for hosted users)
+  hostedActivated: boolean;
+  hostedQuotaUsed: number;
+  hostedQuotaTotal: number;
+  hostedInstanceStatus: string;
 
-  // Local CoPaw
-  localCopawInstalled: boolean;
-  localCopawPort: number;
-  localCopawAutoStart: boolean;
-  localCopawAutoBridge: boolean;
-  copawBridgeEnabled: boolean;
-
-  // Local OpenClaw
-  localOpenclawInstalled: boolean;
+  // Local OpenClaw deploy-specific (kept for Tauri command compat)
   localOpenclawToken: string;
-  localOpenclawPort: number;
-  localOpenclawProvider: LLMProvider;
-  localOpenclawApiKey: string;
-  localOpenclawModel: string;
-  localOpenclawAutoStart: boolean;
-  localOpenclawAutoBridge: boolean;
 
   // App
   locale: 'zh' | 'en';
 
   // Lifecycle
   settingsLoaded: boolean;
+
+  // === Legacy fields (kept in state for migration, not persisted in v11) ===
+  openclawUrl: string;
+  openclawToken: string;
+  openclawSubMode: 'hosted' | 'selfhosted' | 'deploy';
+  deployType: 'cloud' | 'local';
+  selfhostedType: 'remote' | 'local';
+  copawUrl: string;
+  copawToken: string;
+  copawSubMode: 'hosted' | 'selfhosted' | 'deploy';
+  copawDeployType: 'cloud' | 'local';
+  copawSelfhostedType: 'remote' | 'local';
+  localOpenclawInstalled: boolean;
+  localOpenclawPort: number;
+  localOpenclawAutoStart: boolean;
+  localOpenclawAutoBridge: boolean;
+  localOpenclawProvider: LLMProvider;
+  localOpenclawApiKey: string;
+  localOpenclawModel: string;
+  bridgeEnabled: boolean;
+  localCopawInstalled: boolean;
+  localCopawPort: number;
+  localCopawAutoStart: boolean;
+  localCopawAutoBridge: boolean;
+  copawBridgeEnabled: boolean;
+  copawDeployModelMode: 'default' | 'custom';
+  copawDeployProvider: LLMProvider;
+  copawDeployApiKey: string;
+  copawDeployModel: string;
 
   // Actions
   setMode: (mode: AgentMode) => void;
@@ -80,14 +144,33 @@ interface SettingsState {
   setApiKey: (apiKey: string) => void;
   setServerUrl: (url: string) => void;
   setSelectedModel: (model: string) => void;
+
+  // Unified agent actions
+  setAgentSubMode: (subMode: 'direct' | 'deploy') => void;
+  setAgentId: (id: string) => void;
+  setAgentUrl: (url: string) => void;
+  setAgentToken: (token: string) => void;
+  setAgentBridgeEnabled: (enabled: boolean) => void;
+  setDeployTemplateId: (id: string) => void;
+  setLocalAgentInstalled: (v: boolean) => void;
+  setLocalAgentPort: (port: number) => void;
+  setLocalAgentAutoStart: (v: boolean) => void;
+  setLocalAgentAutoBridge: (v: boolean) => void;
+  setDeployModelMode: (mode: 'default' | 'custom') => void;
+  setDeployProvider: (provider: LLMProvider) => void;
+  setDeployApiKey: (key: string) => void;
+  setDeployModel: (model: string) => void;
+  setHostedActivated: (v: boolean) => void;
+  setHostedQuota: (used: number, total: number) => void;
+  setHostedInstanceStatus: (status: string) => void;
+  setLocalOpenclawToken: (token: string) => void;
+
+  // Legacy setters (for compat with existing components)
   setOpenclawUrl: (url: string) => void;
   setOpenclawToken: (token: string) => void;
   setOpenclawSubMode: (mode: 'hosted' | 'selfhosted' | 'deploy') => void;
   setDeployType: (type: 'cloud' | 'local') => void;
-  setSelfhostedType: (type: SelfhostedType) => void;
-  setHostedActivated: (v: boolean) => void;
-  setHostedQuota: (used: number, total: number) => void;
-  setHostedInstanceStatus: (status: string) => void;
+  setSelfhostedType: (type: 'remote' | 'local') => void;
   setCopawUrl: (url: string) => void;
   setCopawToken: (token: string) => void;
   setCopawSubMode: (mode: 'hosted' | 'selfhosted' | 'deploy') => void;
@@ -97,11 +180,6 @@ interface SettingsState {
   setCopawDeployProvider: (provider: LLMProvider) => void;
   setCopawDeployApiKey: (key: string) => void;
   setCopawDeployModel: (model: string) => void;
-  switchUser: (userId: string) => void;
-  setDeployModelMode: (mode: 'default' | 'custom') => void;
-  setDeployProvider: (provider: LLMProvider) => void;
-  setDeployApiKey: (key: string) => void;
-  setDeployModel: (model: string) => void;
   setBridgeEnabled: (enabled: boolean) => void;
   setLocalCopawInstalled: (v: boolean) => void;
   setLocalCopawPort: (port: number) => void;
@@ -109,13 +187,14 @@ interface SettingsState {
   setLocalCopawAutoBridge: (v: boolean) => void;
   setCopawBridgeEnabled: (enabled: boolean) => void;
   setLocalOpenclawInstalled: (v: boolean) => void;
-  setLocalOpenclawToken: (token: string) => void;
   setLocalOpenclawPort: (port: number) => void;
   setLocalOpenclawProvider: (provider: LLMProvider) => void;
   setLocalOpenclawApiKey: (key: string) => void;
   setLocalOpenclawModel: (model: string) => void;
   setLocalOpenclawAutoStart: (v: boolean) => void;
   setLocalOpenclawAutoBridge: (v: boolean) => void;
+
+  switchUser: (userId: string) => void;
   setLocale: (locale: 'zh' | 'en') => void;
   loadSettings: () => void;
   saveSettings: () => void;
@@ -130,59 +209,92 @@ export const useSettingsStore = create<SettingsState>()(
       apiKey: '',
       serverUrl: 'ws://43.155.104.45:3100/ws',
       selectedModel: 'deepseek',
+
+      // Unified agent
+      agentSubMode: 'direct',
+      agentId: 'openclaw',
+      agentUrl: '',
+      agentToken: '',
+      agentBridgeEnabled: false,
+      deployTemplateId: 'openclaw',
+      localAgentInstalled: false,
+      localAgentPort: 18789,
+      localAgentAutoStart: true,
+      localAgentAutoBridge: true,
+      deployModelMode: 'default',
+      deployProvider: 'deepseek',
+      deployApiKey: '',
+      deployModel: '',
+      hostedActivated: false,
+      hostedQuotaUsed: 0,
+      hostedQuotaTotal: 0,
+      hostedInstanceStatus: '',
+      localOpenclawToken: '',
+
+      // Legacy defaults
       openclawUrl: '',
       openclawToken: '',
       openclawSubMode: 'deploy',
       deployType: 'cloud',
       selfhostedType: 'remote',
-      hostedActivated: false,
-      hostedQuotaUsed: 0,
-      hostedQuotaTotal: 0,
-      hostedInstanceStatus: '',
       copawUrl: '',
       copawToken: '',
       copawSubMode: 'deploy',
       copawDeployType: 'local',
       copawSelfhostedType: 'remote',
-      copawDeployModelMode: 'default',
-      copawDeployProvider: 'deepseek',
-      copawDeployApiKey: '',
-      copawDeployModel: '',
-      deployModelMode: 'default',
-      deployProvider: 'deepseek',
-      deployApiKey: '',
-      deployModel: '',
+      localOpenclawInstalled: false,
+      localOpenclawPort: 18789,
+      localOpenclawAutoStart: true,
+      localOpenclawAutoBridge: true,
+      localOpenclawProvider: 'deepseek',
+      localOpenclawApiKey: '',
+      localOpenclawModel: '',
       bridgeEnabled: false,
       localCopawInstalled: false,
       localCopawPort: 8088,
       localCopawAutoStart: true,
       localCopawAutoBridge: true,
       copawBridgeEnabled: false,
-      localOpenclawInstalled: false,
-      localOpenclawToken: '',
-      localOpenclawPort: 18789,
-      localOpenclawProvider: 'deepseek',
-      localOpenclawApiKey: '',
-      localOpenclawModel: '',
-      localOpenclawAutoStart: true,
-      localOpenclawAutoBridge: true,
+      copawDeployModelMode: 'default',
+      copawDeployProvider: 'deepseek',
+      copawDeployApiKey: '',
+      copawDeployModel: '',
+
       locale: 'zh',
       settingsLoaded: false,
 
+      // Unified agent setters
       setMode: (mode) => set({ mode }),
       setBuiltinSubMode: (subMode) => set({ builtinSubMode: subMode }),
       setProvider: (provider) => set({ provider }),
       setApiKey: (apiKey) => set({ apiKey }),
       setServerUrl: (url) => set({ serverUrl: url }),
       setSelectedModel: (model) => set({ selectedModel: model }),
+      setAgentSubMode: (subMode) => set({ agentSubMode: subMode }),
+      setAgentId: (id) => set({ agentId: id }),
+      setAgentUrl: (url) => set({ agentUrl: url }),
+      setAgentToken: (token) => set({ agentToken: token }),
+      setAgentBridgeEnabled: (enabled) => set({ agentBridgeEnabled: enabled }),
+      setDeployTemplateId: (id) => set({ deployTemplateId: id }),
+      setLocalAgentInstalled: (v) => set({ localAgentInstalled: v }),
+      setLocalAgentPort: (port) => set({ localAgentPort: port }),
+      setLocalAgentAutoStart: (v) => set({ localAgentAutoStart: v }),
+      setLocalAgentAutoBridge: (v) => set({ localAgentAutoBridge: v }),
+      setDeployModelMode: (mode) => set({ deployModelMode: mode }),
+      setDeployProvider: (provider) => set({ deployProvider: provider }),
+      setDeployApiKey: (key) => set({ deployApiKey: key }),
+      setDeployModel: (model) => set({ deployModel: model }),
+      setHostedActivated: (v) => set({ hostedActivated: v }),
+      setHostedQuota: (used, total) => set({ hostedQuotaUsed: used, hostedQuotaTotal: total }),
+      setHostedInstanceStatus: (status) => set({ hostedInstanceStatus: status }),
+      setLocalOpenclawToken: (token) => set({ localOpenclawToken: token }),
+
+      // Legacy setters (compat)
       setOpenclawUrl: (url) => set({ openclawUrl: url }),
       setOpenclawToken: (token) => set({ openclawToken: token }),
       setOpenclawSubMode: (mode) => set({ openclawSubMode: mode }),
       setDeployType: (type) => set({ deployType: type }),
       setSelfhostedType: (type) => set({ selfhostedType: type }),
-      setHostedActivated: (v) => set({ hostedActivated: v }),
-      setHostedQuota: (used, total) => set({ hostedQuotaUsed: used, hostedQuotaTotal: total }),
-      setHostedInstanceStatus: (status) => set({ hostedInstanceStatus: status }),
       setCopawUrl: (url) => set({ copawUrl: url }),
       setCopawToken: (token) => set({ copawToken: token }),
       setCopawSubMode: (mode) => set({ copawSubMode: mode }),
@@ -192,11 +304,24 @@ export const useSettingsStore = create<SettingsState>()(
       setCopawDeployProvider: (provider) => set({ copawDeployProvider: provider }),
       setCopawDeployApiKey: (key) => set({ copawDeployApiKey: key }),
       setCopawDeployModel: (model) => set({ copawDeployModel: model }),
+      setBridgeEnabled: (enabled) => set({ bridgeEnabled: enabled }),
+      setLocalCopawInstalled: (v) => set({ localCopawInstalled: v }),
+      setLocalCopawPort: (port) => set({ localCopawPort: port }),
+      setLocalCopawAutoStart: (v) => set({ localCopawAutoStart: v }),
+      setLocalCopawAutoBridge: (v) => set({ localCopawAutoBridge: v }),
+      setCopawBridgeEnabled: (enabled) => set({ copawBridgeEnabled: enabled }),
+      setLocalOpenclawInstalled: (v) => set({ localOpenclawInstalled: v }),
+      setLocalOpenclawPort: (port) => set({ localOpenclawPort: port }),
+      setLocalOpenclawProvider: (provider) => set({ localOpenclawProvider: provider }),
+      setLocalOpenclawApiKey: (key) => set({ localOpenclawApiKey: key }),
+      setLocalOpenclawModel: (model) => set({ localOpenclawModel: model }),
+      setLocalOpenclawAutoStart: (v) => set({ localOpenclawAutoStart: v }),
+      setLocalOpenclawAutoBridge: (v) => set({ localOpenclawAutoBridge: v }),
+
       switchUser: (userId) => {
         const newKey = userId ? `agentos-settings-${userId}` : 'agentos-settings';
         const oldKey = 'agentos-settings';
 
-        // Try to load user-specific settings from localStorage
         const raw = localStorage.getItem(newKey);
         if (raw) {
           try {
@@ -205,7 +330,6 @@ export const useSettingsStore = create<SettingsState>()(
             set({ ...data, settingsLoaded: true });
           } catch { /* ignore */ }
         } else if (userId) {
-          // Migrate from old global key to user-specific key
           const oldRaw = localStorage.getItem(oldKey);
           if (oldRaw) {
             localStorage.setItem(newKey, oldRaw);
@@ -213,37 +337,14 @@ export const useSettingsStore = create<SettingsState>()(
           }
         }
 
-        // Update persist storage name so future saves go to the right key
         const persistApi = (useSettingsStore as unknown as { persist: { setOptions: (opts: { name: string }) => void; rehydrate: () => Promise<void> } }).persist;
         persistApi.setOptions({ name: newKey });
       },
-      setDeployModelMode: (mode) => set({ deployModelMode: mode }),
-      setDeployProvider: (provider) => set({ deployProvider: provider }),
-      setDeployApiKey: (key) => set({ deployApiKey: key }),
-      setDeployModel: (model) => set({ deployModel: model }),
-      setBridgeEnabled: (enabled) => set({ bridgeEnabled: enabled }),
-      setLocalCopawInstalled: (v) => set({ localCopawInstalled: v }),
-      setLocalCopawPort: (port) => set({ localCopawPort: port }),
-      setLocalCopawAutoStart: (v) => set({ localCopawAutoStart: v }),
-      setLocalCopawAutoBridge: (v) => set({ localCopawAutoBridge: v }),
-      setCopawBridgeEnabled: (enabled) => set({ copawBridgeEnabled: enabled }),
-      setLocalOpenclawInstalled: (v) => set({ localOpenclawInstalled: v }),
-      setLocalOpenclawToken: (token) => set({ localOpenclawToken: token }),
-      setLocalOpenclawPort: (port) => set({ localOpenclawPort: port }),
-      setLocalOpenclawProvider: (provider) => set({ localOpenclawProvider: provider }),
-      setLocalOpenclawApiKey: (key) => set({ localOpenclawApiKey: key }),
-      setLocalOpenclawModel: (model) => set({ localOpenclawModel: model }),
-      setLocalOpenclawAutoStart: (v) => set({ localOpenclawAutoStart: v }),
-      setLocalOpenclawAutoBridge: (v) => set({ localOpenclawAutoBridge: v }),
       setLocale: (locale) => set({ locale }),
       loadSettings: () => {
-        // Persist middleware auto-loads from localStorage on creation.
-        // This is a manual trigger to mark settings as ready.
         set({ settingsLoaded: true });
       },
       saveSettings: () => {
-        // Persist middleware auto-saves on every set() call.
-        // Expose explicit save as a no-op for API parity with mobile.
         void get();
       },
     }),
@@ -256,47 +357,49 @@ export const useSettingsStore = create<SettingsState>()(
         apiKey: state.apiKey,
         serverUrl: state.serverUrl,
         selectedModel: state.selectedModel,
-        openclawUrl: state.openclawUrl,
-        openclawToken: state.openclawToken,
-        openclawSubMode: state.openclawSubMode,
-        deployType: state.deployType,
-        selfhostedType: state.selfhostedType,
-        hostedActivated: state.hostedActivated,
-        hostedQuotaUsed: state.hostedQuotaUsed,
-        hostedQuotaTotal: state.hostedQuotaTotal,
-        hostedInstanceStatus: state.hostedInstanceStatus,
-        copawUrl: state.copawUrl,
-        copawToken: state.copawToken,
-        copawSubMode: state.copawSubMode,
-        copawDeployType: state.copawDeployType,
-        copawSelfhostedType: state.copawSelfhostedType,
-        copawDeployModelMode: state.copawDeployModelMode,
-        copawDeployProvider: state.copawDeployProvider,
-        copawDeployApiKey: state.copawDeployApiKey,
-        copawDeployModel: state.copawDeployModel,
+        // Unified agent fields
+        agentSubMode: state.agentSubMode,
+        agentId: state.agentId,
+        agentUrl: state.agentUrl,
+        agentToken: state.agentToken,
+        agentBridgeEnabled: state.agentBridgeEnabled,
+        deployTemplateId: state.deployTemplateId,
+        localAgentInstalled: state.localAgentInstalled,
+        localAgentPort: state.localAgentPort,
+        localAgentAutoStart: state.localAgentAutoStart,
+        localAgentAutoBridge: state.localAgentAutoBridge,
         deployModelMode: state.deployModelMode,
         deployProvider: state.deployProvider,
         deployApiKey: state.deployApiKey,
         deployModel: state.deployModel,
+        hostedActivated: state.hostedActivated,
+        hostedQuotaUsed: state.hostedQuotaUsed,
+        hostedQuotaTotal: state.hostedQuotaTotal,
+        hostedInstanceStatus: state.hostedInstanceStatus,
+        localOpenclawToken: state.localOpenclawToken,
+        locale: state.locale,
+        // Legacy fields still persisted for rollback safety
+        openclawUrl: state.openclawUrl,
+        openclawToken: state.openclawToken,
+        copawUrl: state.copawUrl,
+        copawToken: state.copawToken,
         bridgeEnabled: state.bridgeEnabled,
+        copawBridgeEnabled: state.copawBridgeEnabled,
+        localOpenclawInstalled: state.localOpenclawInstalled,
+        localOpenclawPort: state.localOpenclawPort,
+        localOpenclawAutoStart: state.localOpenclawAutoStart,
+        localOpenclawAutoBridge: state.localOpenclawAutoBridge,
         localCopawInstalled: state.localCopawInstalled,
         localCopawPort: state.localCopawPort,
         localCopawAutoStart: state.localCopawAutoStart,
         localCopawAutoBridge: state.localCopawAutoBridge,
-        copawBridgeEnabled: state.copawBridgeEnabled,
-        localOpenclawInstalled: state.localOpenclawInstalled,
-        localOpenclawToken: state.localOpenclawToken,
-        localOpenclawPort: state.localOpenclawPort,
-        localOpenclawProvider: state.localOpenclawProvider,
-        localOpenclawApiKey: state.localOpenclawApiKey,
-        localOpenclawModel: state.localOpenclawModel,
-        localOpenclawAutoStart: state.localOpenclawAutoStart,
-        localOpenclawAutoBridge: state.localOpenclawAutoBridge,
-        locale: state.locale,
       }),
-      version: 10,
-      migrate: (persisted: unknown) => {
+      version: 11,
+      migrate: (persisted: unknown, version: number) => {
         const state = (persisted || {}) as Record<string, unknown>;
+
+        // ── v0→v10 migrations (keep all existing) ──
+
         // v1→v3: if selfhosted was set but no URL configured, reset to hosted
         if (!state.openclawUrl && state.openclawSubMode === 'selfhosted') {
           state.openclawSubMode = 'hosted';
@@ -315,7 +418,6 @@ export const useSettingsStore = create<SettingsState>()(
         }
         delete state.bridgeGatewayUrl;
         // v5→v6: restructure OpenClaw sub-modes + add local deploy fields
-        // 'hosted' → 'deploy' with deployType='cloud'
         if (state.openclawSubMode === 'hosted') {
           state.openclawSubMode = 'deploy';
           state.deployType = 'cloud';
@@ -334,14 +436,14 @@ export const useSettingsStore = create<SettingsState>()(
         if (!state.deployProvider) state.deployProvider = 'deepseek';
         if (!state.deployApiKey) state.deployApiKey = '';
         if (!state.deployModel) state.deployModel = '';
-        // v8→v9: CoPaw deploy fields + copawSubMode 'deploy' support
+        // v8→v9: CoPaw deploy fields
         if (!state.copawDeployType) state.copawDeployType = 'local';
         if (!state.copawSelfhostedType) state.copawSelfhostedType = 'remote';
         if (!state.copawDeployModelMode) state.copawDeployModelMode = 'default';
         if (!state.copawDeployProvider) state.copawDeployProvider = 'deepseek';
         if (!state.copawDeployApiKey) state.copawDeployApiKey = '';
         if (!state.copawDeployModel) state.copawDeployModel = '';
-        // v9→v10: Local CoPaw fields + copawSubMode default to 'deploy'
+        // v9→v10: Local CoPaw fields
         if (state.localCopawInstalled === undefined) state.localCopawInstalled = false;
         if (!state.localCopawPort) state.localCopawPort = 8088;
         if (state.localCopawAutoStart === undefined) state.localCopawAutoStart = true;
@@ -354,6 +456,92 @@ export const useSettingsStore = create<SettingsState>()(
             .replace('150.109.157.27', '43.155.104.45')
             .replace('43.154.188.177', '43.155.104.45');
         }
+
+        // ── v10→v11: Unified agent mode migration ──
+        if (version < 11) {
+          const oldMode = state.mode as string;
+
+          if (oldMode === 'openclaw') {
+            const ocSub = state.openclawSubMode as string;
+            const shType = state.selfhostedType as string;
+
+            if (ocSub === 'selfhosted') {
+              state.mode = 'agent';
+              state.agentSubMode = 'direct';
+              state.agentId = 'openclaw';
+              if (shType === 'local') {
+                // Local selfhosted: construct URL from port
+                const port = state.localOpenclawPort || 18789;
+                state.agentUrl = `ws://localhost:${port}`;
+                state.agentToken = state.openclawToken || '';
+                state.agentBridgeEnabled = state.bridgeEnabled || false;
+              } else {
+                // Remote selfhosted
+                state.agentUrl = state.openclawUrl || '';
+                state.agentToken = state.openclawToken || '';
+              }
+            } else if (ocSub === 'deploy') {
+              const depType = state.deployType as string;
+              if (depType === 'local') {
+                state.mode = 'agent';
+                state.agentSubMode = 'deploy';
+                state.deployTemplateId = 'openclaw';
+                state.localAgentInstalled = state.localOpenclawInstalled || false;
+                state.localAgentPort = state.localOpenclawPort || 18789;
+                state.localAgentAutoStart = state.localOpenclawAutoStart !== false;
+                state.localAgentAutoBridge = state.localOpenclawAutoBridge !== false;
+                state.agentBridgeEnabled = state.bridgeEnabled || false;
+              } else {
+                // Cloud deploy (hosted) — keep as builtin for now since hosted is legacy
+                // Users can re-select agent mode manually
+                state.mode = 'agent';
+                state.agentSubMode = 'direct';
+                state.agentId = 'openclaw';
+                state.agentUrl = state.openclawUrl || '';
+                state.agentToken = state.openclawToken || '';
+              }
+            }
+          } else if (oldMode === 'copaw') {
+            const cSub = state.copawSubMode as string;
+
+            if (cSub === 'selfhosted') {
+              state.mode = 'agent';
+              state.agentSubMode = 'direct';
+              state.agentId = 'copaw';
+              state.agentUrl = state.copawUrl || '';
+              state.agentToken = state.copawToken || '';
+            } else if (cSub === 'deploy') {
+              state.mode = 'agent';
+              state.agentSubMode = 'deploy';
+              state.deployTemplateId = 'copaw';
+              state.localAgentInstalled = state.localCopawInstalled || false;
+              state.localAgentPort = state.localCopawPort || 8088;
+              state.localAgentAutoStart = state.localCopawAutoStart !== false;
+              state.localAgentAutoBridge = state.localCopawAutoBridge !== false;
+              state.agentBridgeEnabled = state.copawBridgeEnabled || false;
+              // Migrate CoPaw deploy model settings if active
+              if (state.copawDeployModelMode && state.copawDeployModelMode !== 'default') {
+                state.deployModelMode = state.copawDeployModelMode;
+                state.deployProvider = state.copawDeployProvider || 'deepseek';
+                state.deployApiKey = state.copawDeployApiKey || '';
+                state.deployModel = state.copawDeployModel || '';
+              }
+            }
+          }
+
+          // Set defaults for new fields if not set by migration
+          if (!state.agentSubMode) state.agentSubMode = 'direct';
+          if (!state.agentId) state.agentId = 'openclaw';
+          if (state.agentUrl === undefined) state.agentUrl = '';
+          if (state.agentToken === undefined) state.agentToken = '';
+          if (state.agentBridgeEnabled === undefined) state.agentBridgeEnabled = false;
+          if (!state.deployTemplateId) state.deployTemplateId = 'openclaw';
+          if (state.localAgentInstalled === undefined) state.localAgentInstalled = false;
+          if (!state.localAgentPort) state.localAgentPort = 18789;
+          if (state.localAgentAutoStart === undefined) state.localAgentAutoStart = true;
+          if (state.localAgentAutoBridge === undefined) state.localAgentAutoBridge = true;
+        }
+
         return state;
       },
       onRehydrateStorage: () => {

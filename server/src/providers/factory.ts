@@ -6,7 +6,7 @@ import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
 import { MoonshotProvider } from './moonshot.js';
 import { OpenClawAdapter } from '../adapters/openclaw.js';
-import { CoPawAdapter } from '../adapters/copaw.js';
+import { AgUiAdapter } from '../adapters/ag-ui.js';
 import { DesktopAdapter } from '../adapters/desktop.js';
 
 interface ProviderOptions {
@@ -17,6 +17,10 @@ interface ProviderOptions {
   openclawToken?: string;
   copawUrl?: string;
   copawToken?: string;
+  // Unified agent mode fields
+  agentUrl?: string;
+  agentToken?: string;
+  agentProtocol?: string;
 }
 
 /**
@@ -71,6 +75,23 @@ export function createProvider(mode: ConnectionMode, options: ProviderOptions): 
       }
     }
 
+    // Unified agent mode: use agentProtocol to pick adapter
+    case 'agent': {
+      const protocol = options.agentProtocol || 'openclaw-ws';
+      if (protocol === 'openclaw-ws') {
+        const url = options.agentUrl || process.env.OPENCLAW_URL || 'ws://127.0.0.1:18789';
+        const token = options.agentToken || process.env.OPENCLAW_TOKEN || '';
+        return new OpenClawAdapter(url, token);
+      }
+      if (protocol === 'ag-ui') {
+        const url = options.agentUrl || process.env.COPAW_URL || 'http://127.0.0.1:8088/agent';
+        const token = options.agentToken || '';
+        return new AgUiAdapter(url, token);
+      }
+      throw new Error(`Unknown agent protocol: ${protocol}`);
+    }
+
+    // Legacy aliases — backward compatible with old clients
     case 'openclaw': {
       const url = options.openclawUrl || process.env.OPENCLAW_URL || 'ws://127.0.0.1:18789';
       const token = options.openclawToken || process.env.OPENCLAW_TOKEN || '';
@@ -80,7 +101,7 @@ export function createProvider(mode: ConnectionMode, options: ProviderOptions): 
     case 'copaw': {
       const url = options.copawUrl || process.env.COPAW_URL || 'http://127.0.0.1:8088/agent';
       const token = options.copawToken || process.env.COPAW_TOKEN || '';
-      return new CoPawAdapter(url, token);
+      return new AgUiAdapter(url, token);
     }
 
     case 'desktop': {

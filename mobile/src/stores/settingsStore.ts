@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type { ConnectionMode, LLMProvider } from '../types/protocol';
 
 type BuiltinSubMode = 'free' | 'byok';
+type AgentSubMode = 'direct' | 'deploy';
+type AgentId = 'openclaw' | 'copaw' | 'custom';
 
 interface SettingsState {
   // Connection
@@ -32,6 +34,12 @@ interface SettingsState {
   copawDeployApiKey: string;
   copawDeployModel: string;
 
+  // Agent (unified)
+  agentSubMode: AgentSubMode;
+  agentId: AgentId;
+  agentUrl: string;
+  agentToken: string;
+
   // App
   locale: string;
 
@@ -60,6 +68,10 @@ interface SettingsState {
   setCopawDeployProvider: (provider: string) => void;
   setCopawDeployApiKey: (key: string) => void;
   setCopawDeployModel: (model: string) => void;
+  setAgentSubMode: (mode: AgentSubMode) => void;
+  setAgentId: (id: AgentId) => void;
+  setAgentUrl: (url: string) => void;
+  setAgentToken: (token: string) => void;
   setLocale: (locale: string) => void;
   setSettingsLoaded: (loaded: boolean) => void;
 }
@@ -87,6 +99,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   copawDeployProvider: 'deepseek',
   copawDeployApiKey: '',
   copawDeployModel: '',
+  agentSubMode: 'direct',
+  agentId: 'openclaw',
+  agentUrl: '',
+  agentToken: '',
   locale: 'zh',
   settingsLoaded: false,
 
@@ -111,6 +127,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setCopawDeployProvider: (provider) => set({ copawDeployProvider: provider }),
   setCopawDeployApiKey: (key) => set({ copawDeployApiKey: key }),
   setCopawDeployModel: (model) => set({ copawDeployModel: model }),
+  setAgentSubMode: (mode) => set({ agentSubMode: mode }),
+  setAgentId: (id) => set({ agentId: id }),
+  setAgentUrl: (url) => set({ agentUrl: url }),
+  setAgentToken: (token) => set({ agentToken: token }),
   setLocale: (locale) => set({ locale }),
   setSettingsLoaded: (loaded) => set({ settingsLoaded: loaded }),
 }));

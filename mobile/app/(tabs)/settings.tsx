@@ -22,12 +22,12 @@ import Constants from 'expo-constants';
 
 const MODES: { key: ConnectionMode; titleKey: string; descKey: string }[] = [
   { key: 'builtin', titleKey: 'settings.builtin', descKey: 'settings.builtinDesc' },
-  { key: 'openclaw', titleKey: 'settings.openclaw', descKey: 'settings.openclawDesc' },
-  { key: 'copaw', titleKey: 'settings.copaw', descKey: 'settings.copawDesc' },
+  { key: 'agent', titleKey: 'settings.agent', descKey: 'settings.agentDesc' },
 ];
 
 const MODE_COLORS: Record<string, string> = {
   builtin: '#2d7d46',
+  agent: '#1b6bc2',
   openclaw: '#c26a1b',
   copaw: '#1b6bc2',
 };
@@ -122,6 +122,10 @@ export default function SettingsScreen() {
   const [formCopawDeployProvider, setFormCopawDeployProvider] = useState(store.copawDeployProvider);
   const [formCopawDeployApiKey, setFormCopawDeployApiKey] = useState(store.copawDeployApiKey);
   const [formCopawDeployModel, setFormCopawDeployModel] = useState(store.copawDeployModel);
+  const [formAgentSubMode, setFormAgentSubMode] = useState<'direct' | 'deploy'>(store.agentSubMode);
+  const [formAgentId, setFormAgentId] = useState<'openclaw' | 'copaw' | 'custom'>(store.agentId);
+  const [formAgentUrl, setFormAgentUrl] = useState(store.agentUrl);
+  const [formAgentToken, setFormAgentToken] = useState(store.agentToken);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load persisted settings on mount
@@ -149,6 +153,7 @@ export default function SettingsScreen() {
           'copawSubMode', 'copawUrl', 'copawToken', 'builtinSubMode',
           'copawDeployType', 'copawSelfhostedType', 'copawDeployModelMode',
           'copawDeployProvider', 'copawDeployApiKey', 'copawDeployModel',
+          'agentSubMode', 'agentId', 'agentUrl', 'agentToken',
         ];
         await Promise.all(userScopedKeys.map(migrate));
 
@@ -172,6 +177,10 @@ export default function SettingsScreen() {
         const copawDeployProvider = await getSetting(uk('copawDeployProvider'));
         const copawDeployApiKey = await getSetting(uk('copawDeployApiKey'));
         const copawDeployModel = await getSetting(uk('copawDeployModel'));
+        const agentSubMode = await getSetting(uk('agentSubMode'));
+        const agentId = await getSetting(uk('agentId'));
+        const agentUrl = await getSetting(uk('agentUrl'));
+        const agentToken = await getSetting(uk('agentToken'));
 
         // Migration: old 'byok' top-level mode → builtin + builtinSubMode='byok'
         if (mode === 'byok') {
@@ -213,6 +222,39 @@ export default function SettingsScreen() {
         if (copawDeployProvider) { store.setCopawDeployProvider(copawDeployProvider); setFormCopawDeployProvider(copawDeployProvider); }
         if (copawDeployApiKey) { store.setCopawDeployApiKey(copawDeployApiKey); setFormCopawDeployApiKey(copawDeployApiKey); }
         if (copawDeployModel) { store.setCopawDeployModel(copawDeployModel); setFormCopawDeployModel(copawDeployModel); }
+        if (agentSubMode) {
+          const v = agentSubMode as 'direct' | 'deploy';
+          store.setAgentSubMode(v); setFormAgentSubMode(v);
+        }
+        if (agentId) {
+          const v = agentId as 'openclaw' | 'copaw' | 'custom';
+          store.setAgentId(v); setFormAgentId(v);
+        }
+        if (agentUrl) { store.setAgentUrl(agentUrl); setFormAgentUrl(agentUrl); }
+        if (agentToken) { store.setAgentToken(agentToken); setFormAgentToken(agentToken); }
+
+        // Migration: old 'openclaw'/'copaw' top-level mode → 'agent' mode
+        if (mode === 'openclaw') {
+          store.setMode('agent'); setFormMode('agent');
+          store.setAgentId('openclaw'); setFormAgentId('openclaw');
+          store.setAgentSubMode('direct'); setFormAgentSubMode('direct');
+          // Migrate URL/token if available
+          if (openclawUrl) { store.setAgentUrl(openclawUrl); setFormAgentUrl(openclawUrl); }
+          if (openclawToken) { store.setAgentToken(openclawToken); setFormAgentToken(openclawToken); }
+          setSetting(uk('mode'), 'agent');
+          setSetting(uk('agentId'), 'openclaw');
+          setSetting(uk('agentSubMode'), 'direct');
+        } else if (mode === 'copaw') {
+          store.setMode('agent'); setFormMode('agent');
+          store.setAgentId('copaw'); setFormAgentId('copaw');
+          const csm = copawSubMode === 'deploy' ? 'deploy' : 'direct';
+          store.setAgentSubMode(csm as 'direct' | 'deploy'); setFormAgentSubMode(csm as 'direct' | 'deploy');
+          if (copawUrl) { store.setAgentUrl(copawUrl); setFormAgentUrl(copawUrl); }
+          if (copawToken) { store.setAgentToken(copawToken); setFormAgentToken(copawToken); }
+          setSetting(uk('mode'), 'agent');
+          setSetting(uk('agentId'), 'copaw');
+          setSetting(uk('agentSubMode'), csm);
+        }
         if (serverUrl) { store.setServerUrl(serverUrl); }
         if (locale) { store.setLocale(locale); setFormLocale(locale); setI18nLocale(locale); }
         if (selectedModel) { store.setSelectedModel(selectedModel); setFormModel(selectedModel); }
@@ -299,6 +341,10 @@ export default function SettingsScreen() {
     store.setCopawDeployProvider(formCopawDeployProvider);
     store.setCopawDeployApiKey(formCopawDeployApiKey);
     store.setCopawDeployModel(formCopawDeployModel);
+    store.setAgentSubMode(formAgentSubMode);
+    store.setAgentId(formAgentId);
+    store.setAgentUrl(formAgentUrl);
+    store.setAgentToken(formAgentToken);
     store.setLocale(formLocale);
     store.setSelectedModel(formModel);
     store.setOpenclawSubMode(formSubMode);
@@ -322,6 +368,10 @@ export default function SettingsScreen() {
         setSetting(uk('copawDeployProvider'), formCopawDeployProvider),
         setSetting(uk('copawDeployApiKey'), formCopawDeployApiKey),
         setSetting(uk('copawDeployModel'), formCopawDeployModel),
+        setSetting(uk('agentSubMode'), formAgentSubMode),
+        setSetting(uk('agentId'), formAgentId),
+        setSetting(uk('agentUrl'), formAgentUrl),
+        setSetting(uk('agentToken'), formAgentToken),
         setSetting('locale', formLocale), // global — no userKey
         setSetting(uk('selectedModel'), formModel),
         setSetting(uk('openclawSubMode'), formSubMode),
@@ -331,7 +381,7 @@ export default function SettingsScreen() {
     }
 
     Alert.alert(t('settings.saved'));
-  }, [formMode, formBuiltinSubMode, formProvider, formApiKey, formOpenclawUrl, formOpenclawToken, formCopawSubMode, formCopawUrl, formCopawToken, formCopawDeployType, formCopawSelfhostedType, formCopawDeployModelMode, formCopawDeployProvider, formCopawDeployApiKey, formCopawDeployModel, formLocale, formModel, formSubMode, store, authStore.userId, t]);
+  }, [formMode, formBuiltinSubMode, formProvider, formApiKey, formOpenclawUrl, formOpenclawToken, formCopawSubMode, formCopawUrl, formCopawToken, formCopawDeployType, formCopawSelfhostedType, formCopawDeployModelMode, formCopawDeployProvider, formCopawDeployApiKey, formCopawDeployModel, formAgentSubMode, formAgentId, formAgentUrl, formAgentToken, formLocale, formModel, formSubMode, store, authStore.userId, t]);
 
   const handleLogout = useCallback(() => {
     authStore.logout();
@@ -353,6 +403,7 @@ export default function SettingsScreen() {
         <Text style={[styles.currentModeValue, { color: activeModeColor }]}>
           {activeModeInfo ? t(activeModeInfo.titleKey) : store.mode}
           {store.mode === 'builtin' && store.builtinSubMode === 'byok' ? ` (${t('settings.builtinByok')})` : ''}
+          {store.mode === 'agent' ? ` (${store.agentId === 'openclaw' ? 'OpenClaw' : store.agentId === 'copaw' ? 'CoPaw' : store.agentId})` : ''}
         </Text>
       </View>
 
@@ -459,194 +510,142 @@ export default function SettingsScreen() {
         </View>
       )}
 
-      {/* OpenClaw sub-mode options */}
-      {formMode === 'openclaw' && (
+      {/* Agent unified mode options */}
+      {formMode === 'agent' && (
         <View style={styles.subModeContainer}>
-          {/* Hosted sub-option — greyed out / disabled */}
-          <View
-            style={[styles.subModeCard, { opacity: 0.4 }]}
-            pointerEvents="none"
-          >
-            <View style={styles.cardRow}>
-              <View style={styles.subRadio}>
-              </View>
-              <View style={styles.cardTextContainer}>
-                <Text style={styles.subModeTitle}>{t('settings.openclawDeployCloud')}</Text>
-                <Text style={styles.cardDesc}>{t('settings.openclawHostedDesc')}</Text>
-              </View>
-            </View>
-            <Text style={styles.disabledHint}>{t('settings.openclawCloudNotAvailable')}</Text>
+          {/* Sub-mode: Direct / Deploy */}
+          <View style={styles.providerRow}>
+            <TouchableOpacity
+              style={[styles.providerChip, formAgentSubMode === 'direct' && styles.providerChipSelected]}
+              onPress={() => setFormAgentSubMode('direct')}
+            >
+              <Text style={[styles.providerChipText, formAgentSubMode === 'direct' && styles.providerChipTextSelected]}>
+                {t('settings.agentDirect')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.providerChip, formAgentSubMode === 'deploy' && styles.providerChipSelected]}
+              onPress={() => setFormAgentSubMode('deploy')}
+            >
+              <Text style={[styles.providerChipText, formAgentSubMode === 'deploy' && styles.providerChipTextSelected]}>
+                {t('settings.agentDeploy')}
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Self-hosted sub-option */}
-          <TouchableOpacity
-            style={[styles.subModeCard, formSubMode === 'selfhosted' && styles.subModeCardSelected]}
-            onPress={() => setFormSubMode('selfhosted')}
-          >
-            <View style={styles.cardRow}>
-              <View style={[styles.subRadio, formSubMode === 'selfhosted' && styles.radioSelected]}>
-                {formSubMode === 'selfhosted' && <View style={styles.subRadioDot} />}
-              </View>
-              <View style={styles.cardTextContainer}>
-                <Text style={styles.subModeTitle}>{t('settings.openclawSelfhosted')}</Text>
-                <Text style={styles.cardDesc}>{t('settings.openclawSelfhostedDesc')}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          {/* Self-hosted fields */}
-          {formSubMode === 'selfhosted' && (
+          {/* Direct sub-mode: Agent selection + config */}
+          {formAgentSubMode === 'direct' && (
             <>
-              <View style={styles.fieldContainer}>
-                <Text style={styles.fieldLabel}>{t('settings.openclawUrl')}</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formOpenclawUrl}
-                  onChangeText={setFormOpenclawUrl}
-                  placeholder={t('settings.openclawUrlPlaceholder')}
-                  placeholderTextColor="#888888"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                />
-                <Text style={styles.fieldHint}>{t('settings.openclawUrlHint')}</Text>
-              </View>
-
-              <View style={styles.fieldContainer}>
-                <Text style={styles.fieldLabel}>{t('settings.openclawToken')}</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formOpenclawToken}
-                  onChangeText={setFormOpenclawToken}
-                  placeholder={t('settings.openclawTokenPlaceholder')}
-                  placeholderTextColor="#888888"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <Text style={styles.fieldHint}>{t('settings.openclawTokenHint')}</Text>
-              </View>
-            </>
-          )}
-        </View>
-      )}
-
-      {/* CoPaw sub-mode options */}
-      {formMode === 'copaw' && (
-        <View style={styles.subModeContainer}>
-          {/* Level 1: Deploy (一键部署) */}
-          <TouchableOpacity
-            style={[styles.subModeCard, formCopawSubMode === 'deploy' && styles.subModeCardSelected]}
-            onPress={() => setFormCopawSubMode('deploy')}
-          >
-            <View style={styles.cardRow}>
-              <View style={[styles.subRadio, formCopawSubMode === 'deploy' && styles.radioSelected]}>
-                {formCopawSubMode === 'deploy' && <View style={styles.subRadioDot} />}
-              </View>
-              <View style={styles.cardTextContainer}>
-                <Text style={styles.subModeTitle}>{t('settings.copawDeploy')}</Text>
-                <Text style={styles.cardDesc}>{t('settings.copawDeployDesc')}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          {/* Deploy hint: deploy on desktop first */}
-          {formCopawSubMode === 'deploy' && (
-            <View style={{ marginLeft: 26, marginBottom: 8 }}>
-              <Text style={styles.fieldHint}>{t('settings.copawDeployDesktopHint')}</Text>
-            </View>
-          )}
-
-          {/* Level 1: Self-hosted (自建直连) */}
-          <TouchableOpacity
-            style={[styles.subModeCard, formCopawSubMode === 'selfhosted' && styles.subModeCardSelected]}
-            onPress={() => setFormCopawSubMode('selfhosted')}
-          >
-            <View style={styles.cardRow}>
-              <View style={[styles.subRadio, formCopawSubMode === 'selfhosted' && styles.radioSelected]}>
-                {formCopawSubMode === 'selfhosted' && <View style={styles.subRadioDot} />}
-              </View>
-              <View style={styles.cardTextContainer}>
-                <Text style={styles.subModeTitle}>{t('settings.copawSelfhosted')}</Text>
-                <Text style={styles.cardDesc}>{t('settings.copawSelfhostedDesc')}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          {/* Self-hosted sub-options */}
-          {formCopawSubMode === 'selfhosted' && (
-            <View style={{ marginLeft: 26, marginBottom: 8 }}>
-              {/* Remote */}
+              {/* Agent card selection */}
+              <Text style={styles.fieldLabel}>{t('settings.agentSelectAgent')}</Text>
               <View style={styles.providerRow}>
                 <TouchableOpacity
-                  style={[styles.providerChip, formCopawSelfhostedType === 'remote' && styles.providerChipSelected]}
-                  onPress={() => setFormCopawSelfhostedType('remote')}
+                  style={[styles.providerChip, formAgentId === 'openclaw' && styles.providerChipSelected]}
+                  onPress={() => setFormAgentId('openclaw')}
                 >
-                  <Text style={[styles.providerChipText, formCopawSelfhostedType === 'remote' && styles.providerChipTextSelected]}>
-                    {t('settings.copawSelfhostedRemote')}
+                  <Text style={[styles.providerChipText, formAgentId === 'openclaw' && styles.providerChipTextSelected]}>
+                    {t('settings.agentOpenClaw')}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.providerChip, formCopawSelfhostedType === 'local' && styles.providerChipSelected]}
-                  onPress={() => setFormCopawSelfhostedType('local')}
+                  style={[styles.providerChip, formAgentId === 'copaw' && styles.providerChipSelected]}
+                  onPress={() => setFormAgentId('copaw')}
                 >
-                  <Text style={[styles.providerChipText, formCopawSelfhostedType === 'local' && styles.providerChipTextSelected]}>
-                    {t('settings.copawSelfhostedLocal')}
+                  <Text style={[styles.providerChipText, formAgentId === 'copaw' && styles.providerChipTextSelected]}>
+                    {t('settings.agentCoPaw')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.providerChip, formAgentId === 'custom' && styles.providerChipSelected]}
+                  onPress={() => setFormAgentId('custom')}
+                >
+                  <Text style={[styles.providerChipText, formAgentId === 'custom' && styles.providerChipTextSelected]}>
+                    {t('settings.agentCustom')}
                   </Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Remote: URL + Token */}
-              {formCopawSelfhostedType === 'remote' && (
+              {/* OpenClaw: WS URL + Token (required) */}
+              {formAgentId === 'openclaw' && (
                 <>
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>{t('settings.copawUrl')}</Text>
+                    <Text style={styles.fieldLabel}>{t('settings.agentUrl')}</Text>
                     <TextInput
                       style={styles.textInput}
-                      value={formCopawUrl}
-                      onChangeText={setFormCopawUrl}
-                      placeholder={t('settings.copawUrlPlaceholder')}
+                      value={formAgentUrl}
+                      onChangeText={setFormAgentUrl}
+                      placeholder={t('settings.agentOpenClawUrlPlaceholder')}
                       placeholderTextColor="#888888"
                       autoCapitalize="none"
                       autoCorrect={false}
                       keyboardType="url"
                     />
-                    <Text style={styles.fieldHint}>{t('settings.copawUrlHint')}</Text>
+                    <Text style={styles.fieldHint}>{t('settings.agentOpenClawUrlHint')}</Text>
                   </View>
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>{t('settings.copawToken')}</Text>
+                    <Text style={styles.fieldLabel}>{t('settings.agentToken')}</Text>
                     <TextInput
                       style={styles.textInput}
-                      value={formCopawToken}
-                      onChangeText={setFormCopawToken}
-                      placeholder={t('settings.copawTokenPlaceholder')}
+                      value={formAgentToken}
+                      onChangeText={setFormAgentToken}
+                      placeholder={t('settings.agentOpenClawTokenPlaceholder')}
                       placeholderTextColor="#888888"
                       secureTextEntry
                       autoCapitalize="none"
                       autoCorrect={false}
                     />
-                    <Text style={styles.fieldHint}>{t('settings.copawTokenHint')}</Text>
+                    <Text style={styles.fieldHint}>{t('settings.agentOpenClawTokenHint')}</Text>
                   </View>
                 </>
               )}
 
-              {/* Local: localhost config */}
-              {formCopawSelfhostedType === 'local' && (
-                <View style={styles.fieldContainer}>
-                  <Text style={styles.fieldLabel}>{t('settings.copawUrl')}</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={formCopawUrl}
-                    onChangeText={setFormCopawUrl}
-                    placeholder="http://localhost:8088"
-                    placeholderTextColor="#888888"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="url"
-                  />
-                  <Text style={styles.fieldHint}>{t('settings.copawUrlHint')}</Text>
+              {/* CoPaw: HTTP URL + Token (optional) */}
+              {formAgentId === 'copaw' && (
+                <>
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>{t('settings.agentUrl')}</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={formAgentUrl}
+                      onChangeText={setFormAgentUrl}
+                      placeholder={t('settings.agentCoPawUrlPlaceholder')}
+                      placeholderTextColor="#888888"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="url"
+                    />
+                    <Text style={styles.fieldHint}>{t('settings.agentCoPawUrlHint')}</Text>
+                  </View>
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>{t('settings.agentToken')}</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={formAgentToken}
+                      onChangeText={setFormAgentToken}
+                      placeholder={t('settings.agentCoPawTokenPlaceholder')}
+                      placeholderTextColor="#888888"
+                      secureTextEntry
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <Text style={styles.fieldHint}>{t('settings.agentCoPawTokenHint')}</Text>
+                  </View>
+                </>
+              )}
+
+              {/* Custom: coming soon */}
+              {formAgentId === 'custom' && (
+                <View style={{ marginTop: 8, marginBottom: 8 }}>
+                  <Text style={styles.disabledHint}>{t('settings.agentCustomComingSoon')}</Text>
                 </View>
               )}
+            </>
+          )}
+
+          {/* Deploy sub-mode: hint to use desktop */}
+          {formAgentSubMode === 'deploy' && (
+            <View style={{ marginTop: 4, marginBottom: 8 }}>
+              <Text style={styles.fieldHint}>{t('settings.agentDeployDesc')}</Text>
             </View>
           )}
         </View>
