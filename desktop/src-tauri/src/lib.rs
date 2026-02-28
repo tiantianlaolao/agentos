@@ -32,8 +32,6 @@ async fn connect_server(
     model: Option<String>,
     copaw_url: Option<String>,
     copaw_token: Option<String>,
-    openclaw_hosted: Option<bool>,
-    copaw_hosted: Option<bool>,
     agent_url: Option<String>,
     agent_token: Option<String>,
     agent_protocol: Option<String>,
@@ -42,7 +40,7 @@ async fn connect_server(
     println!("[Tauri] connect_server called (mode: {})", mode);
     let mut client = state.ws_client.lock().await;
     let result = client
-        .connect(&url, &mode, auth_token, api_key, model, copaw_url, copaw_token, openclaw_hosted, copaw_hosted, agent_url, agent_token, agent_protocol, on_event)
+        .connect(&url, &mode, auth_token, api_key, model, copaw_url, copaw_token, agent_url, agent_token, agent_protocol, on_event)
         .await
         .map_err(|e| e.to_string());
     println!("[Tauri] connect_server result: {:?}", result);
@@ -1094,6 +1092,257 @@ async fn check_local_copaw_installed() -> Result<bool, String> {
     Ok(env_path.exists())
 }
 
+// ── ClawHub skill management commands (desktop deploy mode) ──
+
+#[derive(Serialize, Deserialize)]
+struct ClawHubSkill {
+    name: String,
+    slug: String,
+    description: String,
+    author: String,
+    version: String,
+}
+
+/// Search or explore ClawHub marketplace skills via the clawhub CLI.
+/// Empty query = explore (list all); non-empty = search.
+#[tauri::command]
+async fn clawhub_search(query: String, _user_id: String) -> Result<Vec<ClawHubSkill>, String> {
+    let path = extended_path();
+
+    let output = if query.trim().is_empty() {
+        std::process::Command::new("clawhub")
+            .args(["explore", "--limit", "100"])
+            .env("PATH", &path)
+            .output()
+            .map_err(|e| format!("Failed to run clawhub: {}", e))?
+    } else {
+        std::process::Command::new("clawhub")
+            .args(["search", &query, "--limit", "30"])
+            .env("PATH", &path)
+            .output()
+            .map_err(|e| format!("Failed to run clawhub: {}", e))?
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("clawhub failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let skills = parse_clawhub_output(&stdout);
+    Ok(skills)
+}
+
+/// Parse clawhub CLI output into structured skill list.
+fn parse_clawhub_output(output: &str) -> Vec<ClawHubSkill> {
+    if output.trim().is_empty() {
+        return vec![];
+    }
+
+    // Try JSON first
+    if let Ok(parsed) = serde_json::from_str::<Vec<Value>>(output) {
+        return parsed
+            .iter()
+            .filter_map(|item| {
+                let slug = item["slug"]
+                    .as_str()
+                    .or_else(|| item["name"].as_str())?
+                    .to_string();
+                Some(ClawHubSkill {
+                    name: item["name"]
+                        .as_str()
+                        .unwrap_or(&slug)
+                        .to_string(),
+                    slug: slug.clone(),
+                    description: item["description"].as_str().unwrap_or("").to_string(),
+                    author: item["author"].as_str().unwrap_or("ClawHub").to_string(),
+                    version: item["version"].as_str().unwrap_or("1.0.0").to_string(),
+                })
+            })
+            .collect();
+    }
+
+    // Parse line-by-line text output
+    let slug_re = regex::Regex::new(r"^[a-z0-9][a-z0-9-]*$").unwrap();
+    let mut skills = vec![];
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('-') {
+            continue;
+        }
+
+        // Split on 2+ whitespace
+        let parts: Vec<&str> = trimmed.split("  ").filter(|s| !s.is_empty()).map(|s| s.trim()).collect();
+        if parts.len() < 2 {
+            continue;
+        }
+
+        let first = parts[0];
+        // Try "slug vX.Y.Z" format
+        let slug_version_re = regex::Regex::new(r"^([a-z0-9][a-z0-9-]*)\s+v(\d+\.\d+\.\d+)$").unwrap();
+        let (slug, version) = if let Some(caps) = slug_version_re.captures(first) {
+            (caps[1].to_string(), caps[2].to_string())
+        } else if slug_re.is_match(first) {
+            let ver = parts.get(1)
+                .and_then(|p| p.strip_prefix('v'))
+                .and_then(|v| if v.contains('.') { Some(v.to_string()) } else { None })
+                .unwrap_or_else(|| "1.0.0".to_string());
+            (first.to_string(), ver)
+        } else {
+            continue;
+        };
+
+        // Collect description from remaining parts (skip version/time fields)
+        let desc_parts: Vec<&str> = parts[1..].iter()
+            .filter(|p| {
+                let p = p.trim();
+                if p.starts_with('v') && p[1..].contains('.') { return false; }
+                if p.ends_with(" ago") || p == "just now" { return false; }
+                true
+            })
+            .copied()
+            .collect();
+
+        skills.push(ClawHubSkill {
+            name: slug.clone(),
+            slug,
+            description: desc_parts.join(" "),
+            author: "ClawHub".to_string(),
+            version,
+        });
+    }
+
+    skills
+}
+
+/// Install a ClawHub skill into the user's local workspace.
+#[tauri::command]
+async fn clawhub_install(slug: String, user_id: String) -> Result<(), String> {
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let workspace = home
+        .join(".agentos")
+        .join("openclaw")
+        .join("users")
+        .join(&user_id)
+        .join("workspace");
+    let path = extended_path();
+
+    let output = std::process::Command::new("clawhub")
+        .args([
+            "install",
+            &slug,
+            "--workdir",
+            workspace.to_str().ok_or("Invalid workspace path")?,
+            "--force",
+            "--no-input",
+        ])
+        .env("PATH", &path)
+        .output()
+        .map_err(|e| format!("Failed to run clawhub install: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("clawhub install failed: {}", stderr));
+    }
+
+    println!("[Tauri] clawhub_install: installed '{}' for user '{}'", slug, user_id);
+    Ok(())
+}
+
+/// Uninstall a ClawHub skill by removing its directory from the workspace.
+#[tauri::command]
+async fn clawhub_uninstall(slug: String, user_id: String) -> Result<(), String> {
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let skill_dir = home
+        .join(".agentos")
+        .join("openclaw")
+        .join("users")
+        .join(&user_id)
+        .join("workspace")
+        .join("skills")
+        .join(&slug);
+
+    if skill_dir.exists() {
+        std::fs::remove_dir_all(&skill_dir)
+            .map_err(|e| format!("Failed to remove skill directory: {}", e))?;
+        println!("[Tauri] clawhub_uninstall: removed '{}' for user '{}'", slug, user_id);
+    } else {
+        println!("[Tauri] clawhub_uninstall: skill dir not found for '{}'", slug);
+    }
+
+    Ok(())
+}
+
+/// Import a skill from a local directory into the workspace.
+/// If source_path contains SKILL.md, copy the whole directory.
+/// If source_path IS a SKILL.md file, use its parent directory name.
+#[tauri::command]
+async fn import_skill_local(source_path: String, user_id: String) -> Result<String, String> {
+    let source = std::path::PathBuf::from(&source_path);
+    let home = dirs_next::home_dir().ok_or("Cannot find home directory")?;
+    let skills_dir = home
+        .join(".agentos")
+        .join("openclaw")
+        .join("users")
+        .join(&user_id)
+        .join("workspace")
+        .join("skills");
+
+    std::fs::create_dir_all(&skills_dir)
+        .map_err(|e| format!("Failed to create skills directory: {}", e))?;
+
+    let (src_dir, skill_name) = if source.is_dir() {
+        // Directory containing SKILL.md
+        let name = source
+            .file_name()
+            .ok_or("Invalid directory name")?
+            .to_string_lossy()
+            .to_string();
+        (source.clone(), name)
+    } else if source.is_file() {
+        // Single SKILL.md file — use parent dir name
+        let parent = source.parent().ok_or("Cannot find parent directory")?;
+        let name = parent
+            .file_name()
+            .ok_or("Invalid parent directory name")?
+            .to_string_lossy()
+            .to_string();
+        (parent.to_path_buf(), name)
+    } else {
+        return Err("Source path does not exist".to_string());
+    };
+
+    let dest = skills_dir.join(&skill_name);
+    if dest.exists() {
+        std::fs::remove_dir_all(&dest)
+            .map_err(|e| format!("Failed to clean existing skill dir: {}", e))?;
+    }
+
+    // Recursive copy
+    copy_dir_recursive(&src_dir, &dest)
+        .map_err(|e| format!("Failed to copy skill: {}", e))?;
+
+    println!("[Tauri] import_skill_local: imported '{}' for user '{}'", skill_name, user_id);
+    Ok(skill_name)
+}
+
+/// Recursively copy a directory.
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn frontend_log(msg: String) {
     println!("[Frontend] {}", msg);
@@ -1351,6 +1600,10 @@ pub fn run() {
             stop_local_copaw,
             get_local_copaw_status,
             check_local_copaw_installed,
+            clawhub_search,
+            clawhub_install,
+            clawhub_uninstall,
+            import_skill_local,
         ])
         .on_window_event(|window, event| {
             // Minimize to tray instead of closing

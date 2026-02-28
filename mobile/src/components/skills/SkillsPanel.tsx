@@ -53,7 +53,6 @@ interface SkillsPanelProps {
   } | null;
   onClose: () => void;
   mode?: ConnectionMode;
-  openclawSubMode?: 'hosted' | 'selfhosted';
   openclawClient?: OpenClawDirectClient | null;
   serverUrl?: string;
   authToken?: string;
@@ -86,25 +85,23 @@ const ENV_ICONS: Record<string, { icon: string; label: string }> = {
 const skillsCache = new Map<string, SkillManifestInfo[]>();
 const libraryCache = new Map<string, SkillLibraryItem[]>();
 
-function getCacheKey(mode?: ConnectionMode, openclawSubMode?: string): string {
-  if (mode === 'openclaw' && openclawSubMode === 'selfhosted') return 'openclaw-selfhosted';
-  if (mode === 'openclaw') return 'openclaw-hosted';
-  if (mode === 'copaw') return 'copaw';
-  return 'builtin';
+function getCacheKey(mode?: ConnectionMode, agentId?: string): string {
+  if (!mode || mode === 'builtin') return 'builtin';
+  return `agent-${agentId || mode}`;
 }
 
 /** Whether this mode supports install/uninstall (Library tab visible) */
-function canManageSkills(mode?: ConnectionMode, openclawSubMode?: string): boolean {
+function canManageSkills(mode?: ConnectionMode): boolean {
   if (!mode || mode === 'builtin') return true;
-  if (mode === 'openclaw' && openclawSubMode === 'hosted') return true;
-  return false;
+  return false;  // Mobile external agent = always read-only
 }
 
-export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, openclawClient, serverUrl, authToken }: SkillsPanelProps) {
+export default function SkillsPanel({ wsClient, onClose, mode, openclawClient, serverUrl, authToken }: SkillsPanelProps) {
   const t = useTranslation();
   const locale = useSettingsStore((s) => s.locale);
-  const cacheKey = getCacheKey(mode, openclawSubMode);
-  const manageable = canManageSkills(mode, openclawSubMode);
+  const agentId = useSettingsStore((s) => s.agentId);
+  const cacheKey = getCacheKey(mode, agentId);
+  const manageable = canManageSkills(mode);
   const [activeTab, setActiveTab] = useState<TabKey>('installed');
   const [skills, setSkills] = useState<SkillManifestInfo[]>(skillsCache.get(cacheKey) || []);
   const [library, setLibrary] = useState<SkillLibraryItem[]>(libraryCache.get(cacheKey) || []);
@@ -234,7 +231,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
   }, [wsClient, cacheKey]);
 
   const handleRefresh = useCallback(() => {
-    if (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawClient) {
+    if (mode !== 'builtin' && openclawClient) {
       fetchDirectSkills(true);
     } else {
       requestSkillList(true);
@@ -242,12 +239,12 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
         requestLibrary(true);
       }
     }
-  }, [mode, openclawSubMode, openclawClient, fetchDirectSkills, requestSkillList, requestLibrary, activeTab]);
+  }, [mode, openclawClient, fetchDirectSkills, requestSkillList, requestLibrary, activeTab]);
 
   useEffect(() => {
-    const isSelfhosted = mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawClient;
+    const isDirect = mode !== 'builtin' && !!openclawClient;
 
-    if (isSelfhosted) {
+    if (isDirect) {
       if (!skillsCache.has(cacheKey)) {
         fetchDirectSkills();
       }
@@ -278,7 +275,7 @@ export default function SkillsPanel({ wsClient, onClose, mode, openclawSubMode, 
       unsubList();
       unsubLibrary();
     };
-  }, [wsClient, mode, openclawSubMode, openclawClient, cacheKey, requestSkillList, fetchDirectSkills]);
+  }, [wsClient, mode, openclawClient, cacheKey, requestSkillList, fetchDirectSkills]);
 
   // Load library when tab switches to it
   useEffect(() => {

@@ -546,9 +546,6 @@ function App() {
       return;
     }
 
-    const useHosted = mode === 'openclaw' && !isAdmin && openclawSubMode === 'deploy' && deployType === 'cloud' && hostedActivated;
-    const useCopawHosted = false;
-
     // BYOK
     const isByok = mode === 'builtin' && builtinSubMode === 'byok';
     const { provider, apiKey, selectedModel } = useSettingsStore.getState();
@@ -556,7 +553,7 @@ function App() {
     const byokModel = isByok ? (selectedModel || provider) : undefined;
 
     invoke('frontend_log', {
-      msg: `handleConnect: mode=${mode}, builtinSubMode=${builtinSubMode}, subMode=${openclawSubMode}, copawSubMode=${copawSubMode}, hostedActivated=${hostedActivated}, useHosted=${useHosted}, useCopawHosted=${useCopawHosted}, isByok=${isByok}, hasToken=${!!authToken}`,
+      msg: `handleConnect: mode=${mode}, builtinSubMode=${builtinSubMode}, subMode=${openclawSubMode}, copawSubMode=${copawSubMode}, isByok=${isByok}, hasToken=${!!authToken}`,
     }).catch(() => {});
 
     ws.connect(
@@ -567,8 +564,6 @@ function App() {
       byokModel,
       mode === 'copaw' && copawSubMode === 'selfhosted' ? copawUrl || undefined : undefined,
       mode === 'copaw' && copawSubMode === 'selfhosted' ? copawToken || undefined : undefined,
-      useHosted ? true : undefined,
-      useCopawHosted ? true : undefined,
     );
   }, [ws, serverUrl, mode, builtinSubMode, copawUrl, copawToken, copawSubMode, isDirectOpenClaw, isDirectCoPaw, isCopawSelfhosted, getOrCreateOpenClawClient, getOrCreateCoPawClient, authToken, isLoggedIn, openclawSubMode, deployType, hostedActivated, isAdmin, agentId, agentUrl, agentToken, agentSubMode]);
 

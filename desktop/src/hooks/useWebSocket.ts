@@ -58,8 +58,6 @@ export function useWebSocket() {
       model?: string,
       copawUrl?: string,
       copawToken?: string,
-      openclawHosted?: boolean,
-      copawHosted?: boolean,
       // Unified agent mode fields
       agentUrl?: string,
       agentToken?: string,
@@ -145,8 +143,6 @@ export function useWebSocket() {
           model: model || null,
           copawUrl: copawUrl || null,
           copawToken: copawToken || null,
-          openclawHosted: openclawHosted || null,
-          copawHosted: copawHosted || null,
           agentUrl: agentUrl || null,
           agentToken: agentToken || null,
           agentProtocol: agentProtocol || null,

@@ -86,10 +86,8 @@ export interface ConnectMessage extends BaseMessage {
     apiKey?: string;
     openclawUrl?: string;
     openclawToken?: string;
-    openclawHosted?: boolean;
     copawUrl?: string;
     copawToken?: string;
-    copawHosted?: boolean;
     // Unified agent mode fields
     agentUrl?: string;
     agentToken?: string;
@@ -159,7 +157,6 @@ export interface ConnectedMessage extends BaseMessage {
     sessionId: string;
     mode: ConnectionMode;
     skills: string[];
-    hostedQuota?: { used: number; total: number };
   };
 }
 

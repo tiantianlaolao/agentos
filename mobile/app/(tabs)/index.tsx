@@ -351,9 +351,6 @@ export default function ChatScreen() {
       const unsubConnected = client.on(MessageType.CONNECTED, (msg: ServerMessage) => {
         setConnected(true);
         const connected = msg as ConnectedMessage;
-        if (connected.payload.hostedQuota) {
-          setHostedQuota(connected.payload.hostedQuota.used, connected.payload.hostedQuota.total);
-        }
         // Request skill list to detect desktop online status
         client.send({
           id: randomUUID(),
@@ -458,7 +455,6 @@ export default function ChatScreen() {
         setDesktopOnline(hasDesktop);
       });
 
-      const isOpenclawHosted = mode === 'openclaw' && openclawSubMode === 'hosted';
       const isCopawDeploy = mode === 'copaw' && copawSubMode === 'deploy';
       const isByok = mode === 'builtin' && builtinSubMode === 'byok';
       const isAgentMode = isExternalAgent(mode);
@@ -472,7 +468,6 @@ export default function ChatScreen() {
         authToken: authToken || undefined,
         model: byokModel,
         deviceId,
-        openclawHosted: isOpenclawHosted || undefined,
         copawUrl: isCopawDeploy ? undefined : (copawUrl || undefined),
         copawToken: isCopawDeploy ? undefined : (copawToken || undefined),
       };
@@ -952,7 +947,6 @@ export default function ChatScreen() {
           wsClient={wsClient}
           onClose={() => setShowSkills(false)}
           mode={mode}
-          openclawSubMode={openclawSubMode as 'hosted' | 'selfhosted' | undefined}
           openclawClient={openclawClient}
           serverUrl={serverUrl}
           authToken={authToken || undefined}

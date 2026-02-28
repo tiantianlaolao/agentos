@@ -42,15 +42,6 @@ import {
 import { verifyToken } from '../auth/jwt.js';
 import { getMemory, migrateMemory } from '../memory/store.js';
 import { extractAndUpdateMemory } from '../memory/extractor.js';
-import { getHostedAccount, checkHostedQuota, incrementHostedUsage } from '../auth/hosted.js';
-import {
-  clawhubExplore,
-  clawhubSearch,
-  clawhubInstall,
-  clawhubUninstall,
-  getHostedWorkspacePath,
-  resolveSkillSlug,
-} from '../skills/clawhub.js';
 
 interface Session {
   id: string;
@@ -60,7 +51,6 @@ interface Session {
   userPhone: string | null;
   provider: LLMProvider | AgentAdapter | null;
   abortController: AbortController | null;
-  isHosted: boolean;
   /** For mode='agent': the protocol used (e.g. 'openclaw-ws', 'ag-ui') */
   agentProtocol?: string;
 }
@@ -576,90 +566,8 @@ async function handleSkillInstall(ws: WebSocket, message: SkillInstallMessage, s
     return;
   }
 
-  // Hosted OpenClaw → install via ClawHub CLI
-  if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.type === 'openclaw') {
-    try {
-      const account = getHostedAccount(session.userId);
-      const workdir = await getHostedWorkspacePath(session.userId, account?.port);
-      await clawhubInstall(skillName, workdir);
-      // Read the installed skill's display name from its SKILL.md
-      let installedDisplayName = skillName;
-      try {
-        const { readFile: rf } = await import('node:fs/promises');
-        const { join } = await import('node:path');
-        for (const fn of ['skill.yaml', 'SKILL.md']) {
-          try {
-            const raw = await rf(join(workdir, 'skills', skillName, fn), 'utf-8');
-            const m = raw.match(/^name:\s*(.+)$/m);
-            if (m) { installedDisplayName = m[1].trim(); break; }
-          } catch { /* try next */ }
-        }
-      } catch { /* keep slug as fallback */ }
-      // Brief wait for Gateway hot-reload, then return list with optimistic inject
-      const adapter = session.provider;
-      if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
-      await new Promise((r) => setTimeout(r, 2000));
-      if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
-      const adapterSkills = typeof adapter.listSkills === 'function' ? await adapter.listSkills() : [];
-      const adapterName = adapter.name;
-      const skills = adapterSkills.map((s) => {
-        const extra = s as unknown as Record<string, unknown>;
-        return {
-          name: s.name,
-          version: s.version || '1.0.0',
-          description: s.description || '',
-          author: s.author || adapterName,
-          audit: s.audit || 'ecosystem',
-          auditSource: s.auditSource || adapterName,
-          enabled: extra.disabled !== true,
-          emoji: typeof extra.emoji === 'string' ? extra.emoji : undefined,
-          eligible: typeof extra.eligible === 'boolean' ? extra.eligible : undefined,
-          source: typeof extra.source === 'string' ? extra.source : undefined,
-          functions: (s.functions || []).map((f) => ({ name: f.name, description: f.description })),
-        };
-      });
-      // Optimistic inject: if Gateway hasn't picked up the new skill yet, add it
-      // Match by both slug and display name since Gateway uses display name
-      if (!skills.some((s) => s.name === skillName || s.name === installedDisplayName)) {
-        console.log(`[ClawHub] Gateway hasn't reloaded "${skillName}" (display: "${installedDisplayName}") yet, injecting optimistically`);
-        skills.push({
-          name: installedDisplayName,
-          version: '1.0.0',
-          description: '',
-          author: 'ClawHub',
-          audit: 'ecosystem',
-          auditSource: 'ClawHub',
-          enabled: true,
-          emoji: undefined,
-          eligible: undefined,
-          source: 'openclaw-workspace',
-          functions: [],
-        });
-      }
-      send(ws, {
-        id: uuidv4(),
-        type: MessageType.SKILL_LIST_RESPONSE,
-        timestamp: Date.now(),
-        payload: { skills },
-      });
-    } catch (err) {
-      sendError(ws, ErrorCode.SKILL_ERROR, `安装技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-    return;
-  }
-
   try {
     installSkillForUser(session.userId, skillName);
-
-    // If hosted mode with agent adapter, also install on remote agent
-    if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.installSkill) {
-      const manifest = skillRegistry.get(skillName)?.manifest;
-      if (manifest) {
-        session.provider.installSkill(manifest).catch((err: Error) => {
-          console.error(`[Skills] Remote install failed for ${skillName}:`, err.message);
-        });
-      }
-    }
 
     // Return updated skill list
     handleSkillListRequest(ws, session).catch(() => {});
@@ -676,61 +584,8 @@ async function handleSkillUninstall(ws: WebSocket, message: SkillUninstallMessag
     return;
   }
 
-  // Hosted OpenClaw → uninstall via filesystem removal
-  if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.type === 'openclaw') {
-    try {
-      const account = getHostedAccount(session.userId);
-      const workdir = await getHostedWorkspacePath(session.userId, account?.port);
-      // Resolve display name (e.g. "DOCX") → directory slug (e.g. "word-docx")
-      const slug = await resolveSkillSlug(skillName, workdir);
-      await clawhubUninstall(slug, workdir);
-      // Brief wait, then return list with optimistic removal
-      const adapter = session.provider;
-      if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
-      await new Promise((r) => setTimeout(r, 2000));
-      if (adapter.invalidateSkillsCache) adapter.invalidateSkillsCache();
-      const adapterSkills = typeof adapter.listSkills === 'function' ? await adapter.listSkills() : [];
-      const adapterName = adapter.name;
-      // Filter out the uninstalled skill even if Gateway still reports it
-      const skills = adapterSkills
-        .filter((s) => s.name !== skillName)
-        .map((s) => {
-          const extra = s as unknown as Record<string, unknown>;
-          return {
-            name: s.name,
-            version: s.version || '1.0.0',
-            description: s.description || '',
-            author: s.author || adapterName,
-            audit: s.audit || 'ecosystem',
-            auditSource: s.auditSource || adapterName,
-            enabled: extra.disabled !== true,
-            emoji: typeof extra.emoji === 'string' ? extra.emoji : undefined,
-            eligible: typeof extra.eligible === 'boolean' ? extra.eligible : undefined,
-            source: typeof extra.source === 'string' ? extra.source : undefined,
-            functions: (s.functions || []).map((f) => ({ name: f.name, description: f.description })),
-          };
-        });
-      send(ws, {
-        id: uuidv4(),
-        type: MessageType.SKILL_LIST_RESPONSE,
-        timestamp: Date.now(),
-        payload: { skills },
-      });
-    } catch (err) {
-      sendError(ws, ErrorCode.SKILL_ERROR, `卸载技能失败: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-    return;
-  }
-
   try {
     uninstallSkillForUser(session.userId, skillName);
-
-    // If hosted mode with agent adapter, also uninstall on remote agent
-    if (session.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.uninstallSkill) {
-      session.provider.uninstallSkill(skillName).catch((err: Error) => {
-        console.error(`[Skills] Remote uninstall failed for ${skillName}:`, err.message);
-      });
-    }
 
     // Return updated skill list
     handleSkillListRequest(ws, session).catch(() => {});
@@ -746,62 +601,6 @@ const CATALOG_CACHE_TTL = 60_000;
 /** Handle SKILL_LIBRARY_REQUEST: return full catalog with installed status */
 async function handleSkillLibraryRequest(ws: WebSocket, message: SkillLibraryRequestMessage, session?: Session): Promise<void> {
   const opts = message.payload || {};
-
-  // Hosted OpenClaw → query ClawHub marketplace
-  if (session?.isHosted && session.provider && isAgentAdapter(session.provider) && session.provider.type === 'openclaw') {
-    try {
-      const hubSkills = opts.search
-        ? await clawhubSearch(opts.search)
-        : await clawhubExplore();
-
-      // Get installed skill directory names (slugs) from workspace filesystem
-      const account = getHostedAccount(session.userId!);
-      const workdir = await getHostedWorkspacePath(session.userId!, account?.port);
-      let installedSlugs = new Set<string>();
-      try {
-        const { readdir: rd } = await import('node:fs/promises');
-        const { join } = await import('node:path');
-        const entries = await rd(join(workdir, 'skills'), { withFileTypes: true });
-        installedSlugs = new Set(entries.filter((e) => e.isDirectory()).map((e) => e.name));
-      } catch { /* skills dir may not exist */ }
-
-      const skills = hubSkills.map((h) => ({
-        name: h.slug || h.name,
-        version: h.version || '1.0.0',
-        description: h.description || '',
-        author: h.author || 'ClawHub',
-        category: h.category || 'tools',
-        emoji: h.emoji || undefined,
-        environments: ['cloud'] as string[],
-        permissions: [] as string[],
-        audit: 'ecosystem',
-        auditSource: 'ClawHub',
-        visibility: 'public',
-        installed: installedSlugs.has(h.slug || h.name),
-        isDefault: false,
-        installCount: 0,
-        featured: false,
-        functions: [] as Array<{ name: string; description: string }>,
-        locales: undefined,
-      }));
-
-      send(ws, {
-        id: uuidv4(),
-        type: MessageType.SKILL_LIBRARY_RESPONSE,
-        timestamp: Date.now(),
-        payload: { skills },
-      });
-    } catch (err) {
-      console.error('[Skills] ClawHub library request failed:', err);
-      send(ws, {
-        id: uuidv4(),
-        type: MessageType.SKILL_LIBRARY_RESPONSE,
-        timestamp: Date.now(),
-        payload: { skills: [] },
-      });
-    }
-    return;
-  }
 
   const cacheKey = JSON.stringify(opts);
   let catalog: import('../skills/userSkills.js').SkillCatalogEntry[];
@@ -893,7 +692,7 @@ function handleSkillConfigSet(ws: WebSocket, message: { payload: { skillName: st
 }
 
 async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Session> {
-  const { mode, provider: providerName, apiKey, openclawUrl, openclawToken, openclawHosted, copawUrl, copawToken, agentUrl, agentToken, agentProtocol, deviceId, authToken, model } = message.payload;
+  const { mode, provider: providerName, apiKey, openclawUrl, openclawToken, copawUrl, copawToken, agentUrl, agentToken, agentProtocol, deviceId, authToken, model } = message.payload;
 
   // Verify JWT if provided
   let userId: string | null = null;
@@ -907,8 +706,8 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
     }
   }
 
-  // OpenClaw access control (non-hosted)
-  if (mode === 'openclaw' && !openclawHosted) {
+  // OpenClaw access control
+  if (mode === 'openclaw') {
     if (!userId) {
       sendError(ws, ErrorCode.AUTH_FAILED, '请先登录再使用 OpenClaw');
       throw new Error('OpenClaw requires authentication');
@@ -936,54 +735,9 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
     // If no agentUrl and no bridge, the chat handler will check for bridge availability
   }
 
-  // Hosted OpenClaw mode
-  let isHosted = false;
-  let hostedQuota: { used: number; total: number } | undefined;
-  let hostedPort: number | null = null;
-  let hostedInstanceToken: string | null = null;
-  let hostedInstanceStatus: string = 'pending';
-
-  if (openclawHosted) {
-    if (process.env.HOSTED_ENABLED !== 'true') {
-      sendError(ws, ErrorCode.INTERNAL_ERROR, '云托管功能暂未开放');
-      throw new Error('Hosted feature is disabled');
-    }
-
-    if (!userId) {
-      sendError(ws, ErrorCode.AUTH_FAILED, '请先登录后再使用托管服务');
-      throw new Error('Hosted mode requires authentication');
-    }
-
-    const account = getHostedAccount(userId);
-    if (!account) {
-      sendError(ws, ErrorCode.AUTH_FAILED, '请先激活托管服务');
-      throw new Error('Hosted account not activated');
-    }
-
-    isHosted = true;
-    hostedQuota = { used: account.quotaUsed, total: account.quotaTotal };
-    hostedPort = account.port;
-    hostedInstanceToken = account.instanceToken;
-    hostedInstanceStatus = account.instanceStatus;
-  }
-
-  let llmProvider: LLMProvider | AgentAdapter | null;
-  if (isHosted) {
-    if (!hostedPort || !hostedInstanceToken || hostedInstanceStatus !== 'ready') {
-      const msg = hostedInstanceStatus === 'provisioning'
-        ? '托管实例正在启动中，请稍后再试'
-        : hostedInstanceStatus === 'error'
-        ? '托管实例启动失败，请联系管理员'
-        : '托管实例未就绪，请联系管理员';
-      sendError(ws, ErrorCode.INTERNAL_ERROR, msg);
-      throw new Error(`Hosted instance not ready: ${hostedInstanceStatus}`);
-    }
-    llmProvider = new OpenClawAdapter(`ws://127.0.0.1:${hostedPort}`, hostedInstanceToken);
-  } else {
-    // If client sends mode='builtin' with an apiKey, treat as BYOK (user's own key)
-    const effectiveMode = (mode === 'builtin' && apiKey) ? 'byok' : mode;
-    llmProvider = createProvider(effectiveMode, { provider: providerName, apiKey, model, openclawUrl, openclawToken, copawUrl, copawToken, agentUrl, agentToken, agentProtocol });
-  }
+  // If client sends mode='builtin' with an apiKey, treat as BYOK (user's own key)
+  const effectiveMode = (mode === 'builtin' && apiKey) ? 'byok' : mode;
+  const llmProvider: LLMProvider | AgentAdapter | null = createProvider(effectiveMode, { provider: providerName, apiKey, model, openclawUrl, openclawToken, copawUrl, copawToken, agentUrl, agentToken, agentProtocol });
 
   const resolvedDeviceId = deviceId || 'anonymous';
 
@@ -1000,12 +754,11 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
     userPhone,
     provider: llmProvider,
     abortController: null,
-    isHosted,
     agentProtocol: mode === 'agent' ? (agentProtocol || 'openclaw-ws') : undefined,
   };
 
   // For agent adapter modes: register as push target and connect for chat
-  if ((mode === 'openclaw' || mode === 'copaw' || mode === 'agent' || isHosted) && llmProvider && isAgentAdapter(llmProvider)) {
+  if ((mode === 'openclaw' || mode === 'copaw' || mode === 'agent') && llmProvider && isAgentAdapter(llmProvider)) {
     const adapter = llmProvider;
 
     // Register as active push target and flush queued messages
@@ -1027,7 +780,7 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
 
   // Send skill names: use registry for builtin/byok, or generic tag for agent modes
   const userCtx = { userId, userPhone };
-  const skillNames = (mode !== 'openclaw' && mode !== 'copaw' && mode !== 'agent' && !isHosted)
+  const skillNames = (mode !== 'openclaw' && mode !== 'copaw' && mode !== 'agent')
     ? skillRegistry.listEnabledForUser(userCtx).map((s) => s.manifest.name)
     : ['agent'];
 
@@ -1039,11 +792,10 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
       sessionId: session.id,
       mode,
       skills: skillNames,
-      hostedQuota,
     },
   });
 
-  console.log(`[WS] Session ${session.id} connected (mode: ${mode}${isHosted ? ', hosted' : ''})`);
+  console.log(`[WS] Session ${session.id} connected (mode: ${mode})`);
   return session;
 }
 
@@ -1053,24 +805,6 @@ async function handleChatSend(
   message: ChatSendMessage
 ): Promise<void> {
   const { conversationId, content, history } = message.payload;
-
-  // Hosted quota check (OpenClaw hosted only)
-  if (session.isHosted) {
-    if (!session.userId) {
-      sendError(ws, ErrorCode.AUTH_FAILED, '请先登录', conversationId);
-      return;
-    }
-    const quota = checkHostedQuota(session.userId);
-    if (!quota.allowed) {
-      sendError(
-        ws,
-        ErrorCode.HOSTED_QUOTA_EXCEEDED,
-        `托管额度已用完 (${quota.used}/${quota.total})`,
-        conversationId
-      );
-      return;
-    }
-  }
 
   // Rate limiting (builtin mode only) — use userId if authenticated, else deviceId
   const rateLimitId = session.userId || session.deviceId;
@@ -1128,7 +862,7 @@ async function handleChatSend(
     // Bridge routing: if (openclaw, copaw, or agent) mode and bridge is available, route through bridge
     // Hosted mode uses the server's direct adapter to the hosted gateway, not the bridge.
     const bridgeAgentType: BridgeAgentType = (session.mode === 'copaw' || (session.mode === 'agent' && session.agentProtocol === 'ag-ui')) ? 'copaw' : 'openclaw';
-    if ((session.mode === 'openclaw' || session.mode === 'copaw' || session.mode === 'agent') && session.userId && !session.isHosted && hasBridgeOnline(session.userId, bridgeAgentType)) {
+    if ((session.mode === 'openclaw' || session.mode === 'copaw' || session.mode === 'agent') && session.userId && hasBridgeOnline(session.userId, bridgeAgentType)) {
       console.log(`[Chat] Routing through ${bridgeAgentType} bridge for user ${session.userId}`);
       const batcher = new ChunkBatcher(ws, conversationId);
       const sessionKey = (session.mode === 'copaw' || (session.mode === 'agent' && session.agentProtocol === 'ag-ui'))
@@ -1182,7 +916,7 @@ async function handleChatSend(
       });
     } else
     // Set up agent adapter session key and tool event forwarding
-    if ((session.mode === 'openclaw' || session.mode === 'copaw' || session.mode === 'agent' || session.isHosted) && session.provider && isAgentAdapter(session.provider)) {
+    if ((session.mode === 'openclaw' || session.mode === 'copaw' || session.mode === 'agent') && session.provider && isAgentAdapter(session.provider)) {
       // Stable per-user sessionKey so agent retains conversation context across reconnects and devices
       if (session.mode === 'copaw' || (session.mode === 'agent' && session.agentProtocol === 'ag-ui')) {
         session.provider.sessionKey = `agentos-copaw-${session.userId || session.deviceId}`;
@@ -1280,10 +1014,6 @@ async function handleChatSend(
 
     if (!abortController.signal.aborted) {
       incrementCount(session.userId || session.deviceId);
-
-      if (session.isHosted && session.userId) {
-        incrementHostedUsage(session.userId);
-      }
 
       send(ws, {
         id: uuidv4(),

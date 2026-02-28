@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore.ts';
+import { useAuthStore } from '../stores/authStore.ts';
 import type { AgentMode, SkillManifestInfo } from '../types/index.ts';
 import type { OpenClawDirectClient } from '../services/openclawDirect.ts';
 import type { useWebSocket } from '../hooks/useWebSocket.ts';
@@ -107,17 +109,15 @@ function SkillTypeBadge({ name }: { name: string }) {
 const skillsCache = new Map<string, SkillManifestInfo[]>();
 const libraryCache = new Map<string, SkillLibraryItem[]>();
 
-function getCacheKey(mode: AgentMode, openclawSubMode?: string): string {
-  if (mode === 'openclaw' && openclawSubMode === 'selfhosted') return 'openclaw-selfhosted';
-  if (mode === 'openclaw') return 'openclaw-hosted';
-  if (mode === 'copaw') return 'copaw';
-  return 'builtin';
+function getCacheKey(mode: AgentMode, agentSubMode?: string, agentId?: string): string {
+  if (mode === 'builtin') return 'builtin';
+  return `agent-${agentId || mode}-${agentSubMode || 'direct'}`;
 }
 
-function canManageSkills(mode: AgentMode, openclawSubMode?: string, deployType?: string): boolean {
+function canManageSkills(mode: AgentMode, agentSubMode?: string): boolean {
   if (mode === 'builtin') return true;
-  if (mode === 'openclaw' && openclawSubMode === 'deploy' && deployType === 'cloud') return true;
-  return false;
+  if (agentSubMode === 'deploy') return true;  // deploy mode = full management
+  return false;  // direct mode = read-only
 }
 
 export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken }: Props) {
@@ -129,10 +129,11 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     fnDesc: (fnName: string, fallback: string) => skill.locales?.[locale]?.functions?.[fnName] ?? fallback,
   }), [locale]);
   const mode = useSettingsStore((s) => s.mode);
-  const openclawSubMode = useSettingsStore((s) => s.openclawSubMode);
-  const deployType = useSettingsStore((s) => s.deployType);
-  const cacheKey = getCacheKey(mode, openclawSubMode);
-  const manageable = canManageSkills(mode, openclawSubMode, deployType);
+  const agentSubMode = useSettingsStore((s) => s.agentSubMode);
+  const agentId = useSettingsStore((s) => s.agentId);
+  const isDeployMode = mode !== 'builtin' && agentSubMode === 'deploy';
+  const cacheKey = getCacheKey(mode, agentSubMode, agentId);
+  const manageable = canManageSkills(mode, agentSubMode);
   const [activeTab, setActiveTab] = useState<TabKey>('installed');
   const [skills, setSkills] = useState<SkillManifestInfo[]>(skillsCache.get(cacheKey) || []);
   const [library, setLibrary] = useState<SkillLibraryItem[]>(libraryCache.get(cacheKey) || []);
@@ -200,29 +201,88 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     ws.requestSkillList().catch(() => setLoading(false));
   }, [cacheKey, ws]);
 
-  // Request library via WS
-  const requestLibrary = useCallback((force = false) => {
+  // Request library via WS (builtin mode) or ClawHub (deploy mode)
+  const requestLibrary = useCallback(async (force = false) => {
     if (!force && libraryCache.has(cacheKey)) {
       setLibrary(libraryCache.get(cacheKey)!);
       setLibraryLoading(false);
       return;
     }
+    setLibraryLoading(true);
+
+    if (isDeployMode) {
+      // Deploy mode: search ClawHub via Tauri command
+      try {
+        const userId = useAuthStore.getState().userId || 'default';
+        const results = await invoke<Array<{ name: string; slug: string; description: string; author: string; version: string }>>('clawhub_search', { query: searchQuery || '', userId });
+        const items: SkillLibraryItem[] = results.map((r) => ({
+          name: r.slug || r.name,
+          version: r.version || '1.0.0',
+          description: r.description || '',
+          author: r.author || 'ClawHub',
+          category: 'tools',
+          environments: ['cloud'],
+          permissions: [],
+          audit: 'ecosystem',
+          auditSource: 'ClawHub',
+          visibility: 'public',
+          installed: skills.some((s) => s.name === r.slug || s.name === r.name),
+          isDefault: false,
+          installCount: 0,
+          featured: false,
+          functions: [],
+        }));
+        libraryCache.set(cacheKey, items);
+        setLibrary(items);
+      } catch (err) {
+        console.error('[SkillsPanel] clawhub_search failed:', err);
+      } finally {
+        setLibraryLoading(false);
+      }
+      return;
+    }
+
+    // Builtin mode: request via WS
     if (!ws) {
       setLibraryLoading(false);
       return;
     }
-    setLibraryLoading(true);
     ws.setOnSkillLibrary?.((items: SkillLibraryItem[]) => {
       libraryCache.set(cacheKey, items);
       setLibrary(items);
       setLibraryLoading(false);
     });
     ws.requestSkillLibrary?.().catch(() => setLibraryLoading(false));
-  }, [cacheKey, ws]);
+  }, [cacheKey, ws, isDeployMode, searchQuery, skills]);
 
-  // Install skill (with permission confirmation for risky skills)
+  // Install skill
   const HIGH_RISK_PERMISSIONS = ['filesystem', 'exec', 'system', 'browser'];
-  const installSkill = useCallback((skillName: string) => {
+  const installSkill = useCallback(async (skillName: string) => {
+    if (isDeployMode) {
+      // Deploy mode: install via Tauri command
+      try {
+        const userId = useAuthStore.getState().userId || 'default';
+        await invoke('clawhub_install', { slug: skillName, userId });
+        // Optimistic update
+        setLibrary((prev) => {
+          const updated = prev.map((s) =>
+            s.name === skillName ? { ...s, installed: true } : s
+          );
+          libraryCache.set(cacheKey, updated);
+          return updated;
+        });
+        // Refresh installed list after a brief delay for gateway hot-reload
+        setTimeout(() => {
+          skillsCache.delete(cacheKey);
+          if (openclawClient) fetchDirectSkills(true);
+        }, 2000);
+      } catch (err) {
+        console.error('[SkillsPanel] clawhub_install failed:', err);
+        alert(`Install failed: ${err}`);
+      }
+      return;
+    }
+    // Builtin mode: install via WS
     if (!ws) return;
     const skill = library.find((s) => s.name === skillName);
     const riskyPerms = skill?.permissions?.filter((p: string) => HIGH_RISK_PERMISSIONS.includes(p)) || [];
@@ -241,10 +301,35 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
       libraryCache.set(cacheKey, updated);
       return updated;
     });
-  }, [ws, cacheKey, library]);
+  }, [ws, cacheKey, library, isDeployMode, openclawClient, fetchDirectSkills]);
 
   // Uninstall skill
-  const uninstallSkill = useCallback((skillName: string) => {
+  const uninstallSkill = useCallback(async (skillName: string) => {
+    if (isDeployMode) {
+      // Deploy mode: uninstall via Tauri command
+      try {
+        const userId = useAuthStore.getState().userId || 'default';
+        await invoke('clawhub_uninstall', { slug: skillName, userId });
+        // Optimistic update
+        setSkills((prev) => {
+          const updated = prev.filter((s) => s.name !== skillName);
+          skillsCache.set(cacheKey, updated);
+          return updated;
+        });
+        setLibrary((prev) => {
+          const updated = prev.map((s) =>
+            s.name === skillName ? { ...s, installed: false } : s
+          );
+          libraryCache.set(cacheKey, updated);
+          return updated;
+        });
+      } catch (err) {
+        console.error('[SkillsPanel] clawhub_uninstall failed:', err);
+        alert(`Uninstall failed: ${err}`);
+      }
+      return;
+    }
+    // Builtin mode: uninstall via WS
     if (!ws) return;
     ws.uninstallSkill?.(skillName).catch(() => {});
     // Optimistic update
@@ -260,12 +345,31 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
       libraryCache.set(cacheKey, updated);
       return updated;
     });
-  }, [ws, cacheKey]);
+  }, [ws, cacheKey, isDeployMode]);
+
+  // Import skill from local directory (deploy mode only)
+  const handleImportSkill = useCallback(async () => {
+    try {
+      const selected = window.prompt('Enter path to skill directory (containing SKILL.md):');
+      if (!selected?.trim()) return;
+      const userId = useAuthStore.getState().userId || 'default';
+      const skillName = await invoke<string>('import_skill_local', { sourcePath: selected.trim(), userId });
+      console.log('[SkillsPanel] Imported skill:', skillName);
+      // Refresh installed list
+      skillsCache.delete(cacheKey);
+      if (openclawClient) {
+        setTimeout(() => fetchDirectSkills(true), 1000);
+      }
+    } catch (err) {
+      console.error('[SkillsPanel] import_skill_local failed:', err);
+      alert(`Import failed: ${err}`);
+    }
+  }, [cacheKey, openclawClient, fetchDirectSkills]);
 
   const handleRefresh = useCallback(() => {
     skillsCache.delete(cacheKey);
     libraryCache.delete(cacheKey);
-    if (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawClient) {
+    if (mode !== 'builtin' && openclawClient) {
       fetchDirectSkills(true);
     } else {
       requestSkillListWS(true);
@@ -273,7 +377,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
         requestLibrary(true);
       }
     }
-  }, [mode, openclawSubMode, openclawClient, fetchDirectSkills, requestSkillListWS, requestLibrary, cacheKey, activeTab]);
+  }, [mode, openclawClient, fetchDirectSkills, requestSkillListWS, requestLibrary, cacheKey, activeTab]);
 
   // Cleanup WS callback on unmount only
   const wsRef = useRef(ws);
@@ -289,14 +393,14 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
   }, []);
 
   useEffect(() => {
-    if (mode === 'openclaw' && openclawSubMode === 'selfhosted' && openclawClient) {
+    if (mode !== 'builtin' && openclawClient) {
       if (!skillsCache.has(cacheKey)) {
         fetchDirectSkills();
       }
     } else {
       requestSkillListWS();
     }
-  }, [mode, openclawSubMode, openclawClient, cacheKey, fetchDirectSkills, requestSkillListWS]);
+  }, [mode, openclawClient, cacheKey, fetchDirectSkills, requestSkillListWS]);
 
   // Load library when tab switches
   useEffect(() => {
@@ -304,6 +408,17 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
       requestLibrary();
     }
   }, [activeTab, cacheKey, manageable, requestLibrary]);
+
+  // Deploy mode: debounced search when query changes
+  useEffect(() => {
+    if (!isDeployMode || activeTab !== 'library') return;
+    const timer = setTimeout(() => {
+      libraryCache.delete(cacheKey);
+      requestLibrary(true);
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, isDeployMode, activeTab]);
 
   // Filter and group library items
   const filteredLibrary = useMemo(() => {
@@ -674,12 +789,19 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
         )}
       </div>
 
-      {/* Add Skill Button (builtin mode only — hosted OpenClaw installs from Library) */}
-      {mode === 'builtin' && authToken && serverUrl && (
-        <div className="skills-register-bar">
-          <button className="skills-register-btn" onClick={() => setAddSkillMode('menu')}>
-            {t('skills.addSkill')}
-          </button>
+      {/* Add Skill Button (builtin mode or deploy mode) */}
+      {manageable && (
+        <div className="skills-register-bar" style={{ display: 'flex', gap: '8px' }}>
+          {mode === 'builtin' && authToken && serverUrl && (
+            <button className="skills-register-btn" onClick={() => setAddSkillMode('menu')}>
+              {t('skills.addSkill')}
+            </button>
+          )}
+          {isDeployMode && (
+            <button className="skills-register-btn" onClick={handleImportSkill}>
+              Import Skill
+            </button>
+          )}
         </div>
       )}
 
