@@ -345,7 +345,7 @@ function App() {
     // Admin users: no openclawHosted flag → server ADMIN_PHONES check → built-in OpenClaw
     // Normal users with hosted activated: pass openclawHosted flag
     const useHosted = mode === 'openclaw' && !isAdmin && openclawSubMode === 'deploy' && deployType === 'cloud' && hostedActivated;
-    const useCopawHosted = mode === 'copaw' && copawSubMode === 'hosted';
+    const useCopawHosted = mode === 'copaw' && (copawSubMode === 'hosted' || copawSubMode === 'deploy');
 
     // BYOK: pass apiKey and provider/model to server (server already supports this from mobile Sprint 3.5)
     const isByok = mode === 'builtin' && builtinSubMode === 'byok';

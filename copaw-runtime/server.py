@@ -253,6 +253,43 @@ async def ag_ui_endpoint(request: Request):
     return EventSourceResponse(event_generator())
 
 
+# ── /skills endpoint ──
+
+# Built-in skills — CoPaw runtime ships with a default set of capabilities.
+# These are reported to the client so the UI can display available skills.
+BUILTIN_SKILLS = [
+    {
+        "name": "chat",
+        "content": '---\ndescription: "General-purpose conversational AI assistant"\n---',
+        "source": "CoPaw",
+        "enabled": True,
+    },
+    {
+        "name": "code_assist",
+        "content": '---\ndescription: "Help with code writing, debugging, and explanation"\n---',
+        "source": "CoPaw",
+        "enabled": True,
+    },
+    {
+        "name": "translation",
+        "content": '---\ndescription: "Translate text between languages"\n---',
+        "source": "CoPaw",
+        "enabled": True,
+    },
+    {
+        "name": "summarization",
+        "content": '---\ndescription: "Summarize long texts and documents"\n---',
+        "source": "CoPaw",
+        "enabled": True,
+    },
+]
+
+
+@app.get("/skills")
+async def list_skills():
+    return BUILTIN_SKILLS
+
+
 # ── /health endpoint ──
 
 @app.get("/health")
@@ -261,7 +298,7 @@ async def health():
         "status": "ok",
         "runtime": "CoPaw (AgentScope)",
         "model": DEEPSEEK_MODEL,
-        "version": "0.1.0",
+        "version": "0.2.0",
     }
 
 

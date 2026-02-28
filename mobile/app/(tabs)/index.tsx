@@ -440,7 +440,7 @@ export default function ChatScreen() {
       });
 
       const isOpenclawHosted = mode === 'openclaw' && openclawSubMode === 'hosted';
-      const isCopawHosted = mode === 'copaw' && copawSubMode === 'hosted';
+      const isCopawHosted = mode === 'copaw' && (copawSubMode === 'hosted' || copawSubMode === 'deploy');
       const isByok = mode === 'builtin' && builtinSubMode === 'byok';
       const byokApiKey = isByok ? apiKey || undefined : undefined;
       const byokModel = isByok ? (selectedModel || provider) : (selectedModel || undefined);

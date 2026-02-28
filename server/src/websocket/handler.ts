@@ -918,11 +918,8 @@ async function handleConnect(ws: WebSocket, message: ConnectMessage): Promise<Se
   let isCopawHosted = false;
   if (mode === 'copaw') {
     if (copawHosted) {
-      if (process.env.HOSTED_ENABLED !== 'true') {
-        sendError(ws, ErrorCode.INTERNAL_ERROR, '云托管功能暂未开放');
-        throw new Error('Hosted feature is disabled');
-      }
-      // Hosted mode: shared instance, require auth
+      // CoPaw uses a shared instance (no per-user provisioning), no HOSTED_ENABLED gate needed
+      // Require auth
       if (!userId) {
         sendError(ws, ErrorCode.AUTH_FAILED, '请先登录后再使用 CoPaw 托管服务');
         throw new Error('CoPaw hosted mode requires authentication');
