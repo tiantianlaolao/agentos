@@ -450,7 +450,7 @@ export function SkillsPanel({ onClose, openclawClient, ws, serverUrl, authToken 
     return Array.from(groups.entries()).map(([category, items]) => ({ category, items }));
   }, [filteredLibrary, selectedCategory]);
 
-  const showTabs = manageable;
+  const showTabs = showLibrary;
   const installedSkills = skills.filter((s) => s.installed !== false);
 
   // Show detail view when a skill is selected
