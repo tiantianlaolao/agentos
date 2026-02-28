@@ -22,9 +22,15 @@ interface SettingsState {
   hostedInstanceStatus: string; // 'pending' | 'provisioning' | 'ready' | 'error'
 
   // CoPaw
-  copawSubMode: 'hosted' | 'selfhosted';
+  copawSubMode: 'hosted' | 'selfhosted' | 'deploy';
   copawUrl: string;
   copawToken: string;
+  copawDeployType: 'cloud' | 'local';
+  copawSelfhostedType: 'remote' | 'local';
+  copawDeployModelMode: 'default' | 'custom';
+  copawDeployProvider: string;
+  copawDeployApiKey: string;
+  copawDeployModel: string;
 
   // App
   locale: string;
@@ -45,9 +51,15 @@ interface SettingsState {
   setHostedActivated: (v: boolean) => void;
   setHostedQuota: (used: number, total: number) => void;
   setHostedInstanceStatus: (status: string) => void;
-  setCopawSubMode: (mode: 'hosted' | 'selfhosted') => void;
+  setCopawSubMode: (mode: 'hosted' | 'selfhosted' | 'deploy') => void;
   setCopawUrl: (url: string) => void;
   setCopawToken: (token: string) => void;
+  setCopawDeployType: (type: 'cloud' | 'local') => void;
+  setCopawSelfhostedType: (type: 'remote' | 'local') => void;
+  setCopawDeployModelMode: (mode: 'default' | 'custom') => void;
+  setCopawDeployProvider: (provider: string) => void;
+  setCopawDeployApiKey: (key: string) => void;
+  setCopawDeployModel: (model: string) => void;
   setLocale: (locale: string) => void;
   setSettingsLoaded: (loaded: boolean) => void;
 }
@@ -69,6 +81,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   copawSubMode: 'hosted',
   copawUrl: '',
   copawToken: '',
+  copawDeployType: 'local',
+  copawSelfhostedType: 'remote',
+  copawDeployModelMode: 'default',
+  copawDeployProvider: 'deepseek',
+  copawDeployApiKey: '',
+  copawDeployModel: '',
   locale: 'zh',
   settingsLoaded: false,
 
@@ -87,6 +105,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setCopawSubMode: (mode) => set({ copawSubMode: mode }),
   setCopawUrl: (url) => set({ copawUrl: url }),
   setCopawToken: (token) => set({ copawToken: token }),
+  setCopawDeployType: (type) => set({ copawDeployType: type }),
+  setCopawSelfhostedType: (type) => set({ copawSelfhostedType: type }),
+  setCopawDeployModelMode: (mode) => set({ copawDeployModelMode: mode }),
+  setCopawDeployProvider: (provider) => set({ copawDeployProvider: provider }),
+  setCopawDeployApiKey: (key) => set({ copawDeployApiKey: key }),
+  setCopawDeployModel: (model) => set({ copawDeployModel: model }),
   setLocale: (locale) => set({ locale }),
   setSettingsLoaded: (loaded) => set({ settingsLoaded: loaded }),
 }));

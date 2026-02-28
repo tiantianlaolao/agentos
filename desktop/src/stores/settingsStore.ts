@@ -33,7 +33,13 @@ interface SettingsState {
   // CoPaw
   copawUrl: string;
   copawToken: string;
-  copawSubMode: 'hosted' | 'selfhosted';
+  copawSubMode: 'hosted' | 'selfhosted' | 'deploy';
+  copawDeployType: 'cloud' | 'local';
+  copawSelfhostedType: 'remote' | 'local';
+  copawDeployModelMode: 'default' | 'custom';
+  copawDeployProvider: LLMProvider;
+  copawDeployApiKey: string;
+  copawDeployModel: string;
 
   // Deploy model mode
   deployModelMode: 'default' | 'custom';
@@ -77,7 +83,14 @@ interface SettingsState {
   setHostedInstanceStatus: (status: string) => void;
   setCopawUrl: (url: string) => void;
   setCopawToken: (token: string) => void;
-  setCopawSubMode: (mode: 'hosted' | 'selfhosted') => void;
+  setCopawSubMode: (mode: 'hosted' | 'selfhosted' | 'deploy') => void;
+  setCopawDeployType: (type: 'cloud' | 'local') => void;
+  setCopawSelfhostedType: (type: 'remote' | 'local') => void;
+  setCopawDeployModelMode: (mode: 'default' | 'custom') => void;
+  setCopawDeployProvider: (provider: LLMProvider) => void;
+  setCopawDeployApiKey: (key: string) => void;
+  setCopawDeployModel: (model: string) => void;
+  switchUser: (userId: string) => void;
   setDeployModelMode: (mode: 'default' | 'custom') => void;
   setDeployProvider: (provider: LLMProvider) => void;
   setDeployApiKey: (key: string) => void;
@@ -117,6 +130,12 @@ export const useSettingsStore = create<SettingsState>()(
       copawUrl: '',
       copawToken: '',
       copawSubMode: 'hosted',
+      copawDeployType: 'local',
+      copawSelfhostedType: 'remote',
+      copawDeployModelMode: 'default',
+      copawDeployProvider: 'deepseek',
+      copawDeployApiKey: '',
+      copawDeployModel: '',
       deployModelMode: 'default',
       deployProvider: 'deepseek',
       deployApiKey: '',
@@ -150,6 +169,37 @@ export const useSettingsStore = create<SettingsState>()(
       setCopawUrl: (url) => set({ copawUrl: url }),
       setCopawToken: (token) => set({ copawToken: token }),
       setCopawSubMode: (mode) => set({ copawSubMode: mode }),
+      setCopawDeployType: (type) => set({ copawDeployType: type }),
+      setCopawSelfhostedType: (type) => set({ copawSelfhostedType: type }),
+      setCopawDeployModelMode: (mode) => set({ copawDeployModelMode: mode }),
+      setCopawDeployProvider: (provider) => set({ copawDeployProvider: provider }),
+      setCopawDeployApiKey: (key) => set({ copawDeployApiKey: key }),
+      setCopawDeployModel: (model) => set({ copawDeployModel: model }),
+      switchUser: (userId) => {
+        const newKey = userId ? `agentos-settings-${userId}` : 'agentos-settings';
+        const oldKey = 'agentos-settings';
+
+        // Try to load user-specific settings from localStorage
+        const raw = localStorage.getItem(newKey);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            const data = parsed.state || parsed;
+            set({ ...data, settingsLoaded: true });
+          } catch { /* ignore */ }
+        } else if (userId) {
+          // Migrate from old global key to user-specific key
+          const oldRaw = localStorage.getItem(oldKey);
+          if (oldRaw) {
+            localStorage.setItem(newKey, oldRaw);
+            localStorage.removeItem(oldKey);
+          }
+        }
+
+        // Update persist storage name so future saves go to the right key
+        const persistApi = (useSettingsStore as unknown as { persist: { setOptions: (opts: { name: string }) => void; rehydrate: () => Promise<void> } }).persist;
+        persistApi.setOptions({ name: newKey });
+      },
       setDeployModelMode: (mode) => set({ deployModelMode: mode }),
       setDeployProvider: (provider) => set({ deployProvider: provider }),
       setDeployApiKey: (key) => set({ deployApiKey: key }),
@@ -196,6 +246,12 @@ export const useSettingsStore = create<SettingsState>()(
         copawUrl: state.copawUrl,
         copawToken: state.copawToken,
         copawSubMode: state.copawSubMode,
+        copawDeployType: state.copawDeployType,
+        copawSelfhostedType: state.copawSelfhostedType,
+        copawDeployModelMode: state.copawDeployModelMode,
+        copawDeployProvider: state.copawDeployProvider,
+        copawDeployApiKey: state.copawDeployApiKey,
+        copawDeployModel: state.copawDeployModel,
         deployModelMode: state.deployModelMode,
         deployProvider: state.deployProvider,
         deployApiKey: state.deployApiKey,
@@ -211,7 +267,7 @@ export const useSettingsStore = create<SettingsState>()(
         localOpenclawAutoBridge: state.localOpenclawAutoBridge,
         locale: state.locale,
       }),
-      version: 8,
+      version: 9,
       migrate: (persisted: unknown) => {
         const state = (persisted || {}) as Record<string, unknown>;
         // v1→v3: if selfhosted was set but no URL configured, reset to hosted
@@ -251,6 +307,13 @@ export const useSettingsStore = create<SettingsState>()(
         if (!state.deployProvider) state.deployProvider = 'deepseek';
         if (!state.deployApiKey) state.deployApiKey = '';
         if (!state.deployModel) state.deployModel = '';
+        // v8→v9: CoPaw deploy fields + copawSubMode 'deploy' support
+        if (!state.copawDeployType) state.copawDeployType = 'local';
+        if (!state.copawSelfhostedType) state.copawSelfhostedType = 'remote';
+        if (!state.copawDeployModelMode) state.copawDeployModelMode = 'default';
+        if (!state.copawDeployProvider) state.copawDeployProvider = 'deepseek';
+        if (!state.copawDeployApiKey) state.copawDeployApiKey = '';
+        if (!state.copawDeployModel) state.copawDeployModel = '';
         // Migrate old server IPs
         if (typeof state.serverUrl === 'string') {
           state.serverUrl = state.serverUrl

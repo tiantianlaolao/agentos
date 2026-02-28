@@ -33,6 +33,11 @@ router.post('/generate-codes', (req: Request, res: Response) => {
 
 // POST /hosted/activate — JWT auth required
 router.post('/activate', (req: Request, res: Response) => {
+  if (process.env.HOSTED_ENABLED !== 'true') {
+    res.json({ error: '云托管功能暂未开放' });
+    return;
+  }
+
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) {
     res.status(401).json({ error: '请先登录' });
@@ -84,6 +89,11 @@ router.get('/status', (req: Request, res: Response) => {
 
 // POST /hosted/update-model — JWT auth, update hosted instance model/provider
 router.post('/update-model', (req: Request, res: Response) => {
+  if (process.env.HOSTED_ENABLED !== 'true') {
+    res.json({ error: '云托管功能暂未开放' });
+    return;
+  }
+
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) {
     res.status(401).json({ error: '请先登录' });

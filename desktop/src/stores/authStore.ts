@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useSettingsStore } from './settingsStore.ts';
 
 interface AuthState {
   userId: string;
@@ -21,10 +22,12 @@ export const useAuthStore = create<AuthState>()(
 
       login: (userId, phone, token) => {
         set({ userId, phone, authToken: token, isLoggedIn: true });
+        useSettingsStore.getState().switchUser(userId);
       },
 
       logout: () => {
         set({ userId: '', phone: '', authToken: '', isLoggedIn: false });
+        useSettingsStore.getState().switchUser('');
       },
     }),
     {

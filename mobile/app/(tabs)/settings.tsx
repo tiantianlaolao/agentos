@@ -15,8 +15,8 @@ import { useRouter } from 'expo-router';
 import { useSettingsStore } from '../../src/stores/settingsStore';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useTranslation, setLocale as setI18nLocale } from '../../src/i18n';
-import { getSetting, setSetting } from '../../src/services/storage';
-import { activateHostedAccess, getHostedStatus } from '../../src/services/hostedApi';
+import { getSetting, setSetting, userKey } from '../../src/services/storage';
+import { getHostedStatus } from '../../src/services/hostedApi';
 import type { ConnectionMode, LLMProvider } from '../../src/types/protocol';
 import Constants from 'expo-constants';
 
@@ -113,38 +113,72 @@ export default function SettingsScreen() {
   const [formLocale, setFormLocale] = useState(store.locale);
   const [formModel, setFormModel] = useState(store.selectedModel);
   const [formSubMode, setFormSubMode] = useState<'hosted' | 'selfhosted'>(store.openclawSubMode);
-  const [formCopawSubMode, setFormCopawSubMode] = useState<'hosted' | 'selfhosted'>(store.copawSubMode);
+  const [formCopawSubMode, setFormCopawSubMode] = useState<'hosted' | 'selfhosted' | 'deploy'>(store.copawSubMode);
   const [formCopawUrl, setFormCopawUrl] = useState(store.copawUrl);
   const [formCopawToken, setFormCopawToken] = useState(store.copawToken);
-  const [invitationCode, setInvitationCode] = useState('');
-  const [activating, setActivating] = useState(false);
+  const [formCopawDeployType, setFormCopawDeployType] = useState<'cloud' | 'local'>(store.copawDeployType);
+  const [formCopawSelfhostedType, setFormCopawSelfhostedType] = useState<'remote' | 'local'>(store.copawSelfhostedType);
+  const [formCopawDeployModelMode, setFormCopawDeployModelMode] = useState<'default' | 'custom'>(store.copawDeployModelMode);
+  const [formCopawDeployProvider, setFormCopawDeployProvider] = useState(store.copawDeployProvider);
+  const [formCopawDeployApiKey, setFormCopawDeployApiKey] = useState(store.copawDeployApiKey);
+  const [formCopawDeployModel, setFormCopawDeployModel] = useState(store.copawDeployModel);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load persisted settings on mount
   useEffect(() => {
     (async () => {
       try {
-        const mode = await getSetting('mode');
-        const provider = await getSetting('provider');
-        const apiKey = await getSetting('apiKey');
-        const openclawUrl = await getSetting('openclawUrl');
-        const openclawToken = await getSetting('openclawToken');
-        const serverUrl = await getSetting('serverUrl');
-        const locale = await getSetting('locale');
-        const selectedModel = await getSetting('selectedModel');
-        const openclawSubMode = await getSetting('openclawSubMode');
-        const hostedActivated = await getSetting('hostedActivated');
-        const copawSubMode = await getSetting('copawSubMode');
-        const copawUrl = await getSetting('copawUrl');
-        const copawToken = await getSetting('copawToken');
-        const builtinSubMode = await getSetting('builtinSubMode');
+        const uid = authStore.userId || '';
+        const uk = (k: string) => userKey(uid, k);
+
+        // Helper: migrate old global key to user-scoped key
+        const migrate = async (key: string) => {
+          if (!uid) return;
+          const oldVal = await getSetting(key);
+          const newVal = await getSetting(uk(key));
+          if (oldVal && !newVal) {
+            await setSetting(uk(key), oldVal);
+            await setSetting(key, '');
+          }
+        };
+
+        // Migrate all user-scoped keys
+        const userScopedKeys = [
+          'mode', 'provider', 'apiKey', 'openclawUrl', 'openclawToken',
+          'serverUrl', 'selectedModel', 'openclawSubMode', 'hostedActivated',
+          'copawSubMode', 'copawUrl', 'copawToken', 'builtinSubMode',
+          'copawDeployType', 'copawSelfhostedType', 'copawDeployModelMode',
+          'copawDeployProvider', 'copawDeployApiKey', 'copawDeployModel',
+        ];
+        await Promise.all(userScopedKeys.map(migrate));
+
+        const mode = await getSetting(uk('mode'));
+        const provider = await getSetting(uk('provider'));
+        const apiKey = await getSetting(uk('apiKey'));
+        const openclawUrl = await getSetting(uk('openclawUrl'));
+        const openclawToken = await getSetting(uk('openclawToken'));
+        const serverUrl = await getSetting(uk('serverUrl'));
+        const locale = await getSetting('locale'); // global — no userKey
+        const selectedModel = await getSetting(uk('selectedModel'));
+        const openclawSubMode = await getSetting(uk('openclawSubMode'));
+        const hostedActivated = await getSetting(uk('hostedActivated'));
+        const copawSubMode = await getSetting(uk('copawSubMode'));
+        const copawUrl = await getSetting(uk('copawUrl'));
+        const copawToken = await getSetting(uk('copawToken'));
+        const builtinSubMode = await getSetting(uk('builtinSubMode'));
+        const copawDeployType = await getSetting(uk('copawDeployType'));
+        const copawSelfhostedType = await getSetting(uk('copawSelfhostedType'));
+        const copawDeployModelMode = await getSetting(uk('copawDeployModelMode'));
+        const copawDeployProvider = await getSetting(uk('copawDeployProvider'));
+        const copawDeployApiKey = await getSetting(uk('copawDeployApiKey'));
+        const copawDeployModel = await getSetting(uk('copawDeployModel'));
 
         // Migration: old 'byok' top-level mode → builtin + builtinSubMode='byok'
         if (mode === 'byok') {
           store.setMode('builtin'); setFormMode('builtin');
           store.setBuiltinSubMode('byok'); setFormBuiltinSubMode('byok');
-          setSetting('mode', 'builtin');
-          setSetting('builtinSubMode', 'byok');
+          setSetting(uk('mode'), 'builtin');
+          setSetting(uk('builtinSubMode'), 'byok');
         } else if (mode) {
           store.setMode(mode as ConnectionMode); setFormMode(mode as ConnectionMode);
         }
@@ -157,12 +191,27 @@ export default function SettingsScreen() {
         if (openclawUrl) { store.setOpenclawUrl(openclawUrl); setFormOpenclawUrl(openclawUrl); }
         if (openclawToken) { store.setOpenclawToken(openclawToken); setFormOpenclawToken(openclawToken); }
         if (copawSubMode) {
-          const csm = copawSubMode as 'hosted' | 'selfhosted';
+          const csm = copawSubMode as 'hosted' | 'selfhosted' | 'deploy';
           store.setCopawSubMode(csm);
           setFormCopawSubMode(csm);
         }
         if (copawUrl) { store.setCopawUrl(copawUrl); setFormCopawUrl(copawUrl); }
         if (copawToken) { store.setCopawToken(copawToken); setFormCopawToken(copawToken); }
+        if (copawDeployType) {
+          const v = copawDeployType as 'cloud' | 'local';
+          store.setCopawDeployType(v); setFormCopawDeployType(v);
+        }
+        if (copawSelfhostedType) {
+          const v = copawSelfhostedType as 'remote' | 'local';
+          store.setCopawSelfhostedType(v); setFormCopawSelfhostedType(v);
+        }
+        if (copawDeployModelMode) {
+          const v = copawDeployModelMode as 'default' | 'custom';
+          store.setCopawDeployModelMode(v); setFormCopawDeployModelMode(v);
+        }
+        if (copawDeployProvider) { store.setCopawDeployProvider(copawDeployProvider); setFormCopawDeployProvider(copawDeployProvider); }
+        if (copawDeployApiKey) { store.setCopawDeployApiKey(copawDeployApiKey); setFormCopawDeployApiKey(copawDeployApiKey); }
+        if (copawDeployModel) { store.setCopawDeployModel(copawDeployModel); setFormCopawDeployModel(copawDeployModel); }
         if (serverUrl) { store.setServerUrl(serverUrl); }
         if (locale) { store.setLocale(locale); setFormLocale(locale); setI18nLocale(locale); }
         if (selectedModel) { store.setSelectedModel(selectedModel); setFormModel(selectedModel); }
@@ -184,12 +233,12 @@ export default function SettingsScreen() {
               store.setHostedActivated(true);
               store.setHostedQuota(status.account.quotaUsed, status.account.quotaTotal);
               store.setHostedInstanceStatus(status.account.instanceStatus);
-              await setSetting('hostedActivated', 'true');
+              await setSetting(uk('hostedActivated'), 'true');
             } else {
               // Server says not activated — clear local cached state
               store.setHostedActivated(false);
               store.setHostedInstanceStatus('pending');
-              await setSetting('hostedActivated', '');
+              await setSetting(uk('hostedActivated'), '');
             }
           } catch { /* ignore */ }
         }
@@ -218,7 +267,7 @@ export default function SettingsScreen() {
             // Server says not activated — stop polling and clear state
             store.setHostedActivated(false);
             store.setHostedInstanceStatus('pending');
-            setSetting('hostedActivated', '');
+            setSetting(userKey(authStore.userId, 'hostedActivated'), '');
             if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           }
         } catch { /* ignore */ }
@@ -230,6 +279,9 @@ export default function SettingsScreen() {
   }, [store.hostedActivated, store.hostedInstanceStatus, authStore.authToken, store.serverUrl, store]);
 
   const handleSave = useCallback(async () => {
+    const uid = authStore.userId || '';
+    const uk = (k: string) => userKey(uid, k);
+
     // Update Zustand store
     store.setMode(formMode);
     store.setBuiltinSubMode(formBuiltinSubMode);
@@ -240,6 +292,12 @@ export default function SettingsScreen() {
     store.setCopawSubMode(formCopawSubMode);
     store.setCopawUrl(formCopawUrl);
     store.setCopawToken(formCopawToken);
+    store.setCopawDeployType(formCopawDeployType);
+    store.setCopawSelfhostedType(formCopawSelfhostedType);
+    store.setCopawDeployModelMode(formCopawDeployModelMode);
+    store.setCopawDeployProvider(formCopawDeployProvider);
+    store.setCopawDeployApiKey(formCopawDeployApiKey);
+    store.setCopawDeployModel(formCopawDeployModel);
     store.setLocale(formLocale);
     store.setSelectedModel(formModel);
     store.setOpenclawSubMode(formSubMode);
@@ -248,25 +306,31 @@ export default function SettingsScreen() {
     // Persist to SQLite
     try {
       await Promise.all([
-        setSetting('mode', formMode),
-        setSetting('builtinSubMode', formBuiltinSubMode),
-        setSetting('provider', formProvider),
-        setSetting('apiKey', formApiKey),
-        setSetting('openclawUrl', formOpenclawUrl),
-        setSetting('openclawToken', formOpenclawToken),
-        setSetting('copawSubMode', formCopawSubMode),
-        setSetting('copawUrl', formCopawUrl),
-        setSetting('copawToken', formCopawToken),
-        setSetting('locale', formLocale),
-        setSetting('selectedModel', formModel),
-        setSetting('openclawSubMode', formSubMode),
+        setSetting(uk('mode'), formMode),
+        setSetting(uk('builtinSubMode'), formBuiltinSubMode),
+        setSetting(uk('provider'), formProvider),
+        setSetting(uk('apiKey'), formApiKey),
+        setSetting(uk('openclawUrl'), formOpenclawUrl),
+        setSetting(uk('openclawToken'), formOpenclawToken),
+        setSetting(uk('copawSubMode'), formCopawSubMode),
+        setSetting(uk('copawUrl'), formCopawUrl),
+        setSetting(uk('copawToken'), formCopawToken),
+        setSetting(uk('copawDeployType'), formCopawDeployType),
+        setSetting(uk('copawSelfhostedType'), formCopawSelfhostedType),
+        setSetting(uk('copawDeployModelMode'), formCopawDeployModelMode),
+        setSetting(uk('copawDeployProvider'), formCopawDeployProvider),
+        setSetting(uk('copawDeployApiKey'), formCopawDeployApiKey),
+        setSetting(uk('copawDeployModel'), formCopawDeployModel),
+        setSetting('locale', formLocale), // global — no userKey
+        setSetting(uk('selectedModel'), formModel),
+        setSetting(uk('openclawSubMode'), formSubMode),
       ]);
     } catch {
       // ignore persistence errors
     }
 
     Alert.alert(t('settings.saved'));
-  }, [formMode, formBuiltinSubMode, formProvider, formApiKey, formOpenclawUrl, formOpenclawToken, formCopawSubMode, formCopawUrl, formCopawToken, formLocale, formModel, formSubMode, store, t]);
+  }, [formMode, formBuiltinSubMode, formProvider, formApiKey, formOpenclawUrl, formOpenclawToken, formCopawSubMode, formCopawUrl, formCopawToken, formCopawDeployType, formCopawSelfhostedType, formCopawDeployModelMode, formCopawDeployProvider, formCopawDeployApiKey, formCopawDeployModel, formLocale, formModel, formSubMode, store, authStore.userId, t]);
 
   const handleLogout = useCallback(() => {
     authStore.logout();
@@ -397,86 +461,21 @@ export default function SettingsScreen() {
       {/* OpenClaw sub-mode options */}
       {formMode === 'openclaw' && (
         <View style={styles.subModeContainer}>
-          {/* Hosted sub-option */}
-          <TouchableOpacity
-            style={[styles.subModeCard, formSubMode === 'hosted' && styles.subModeCardSelected]}
-            onPress={() => setFormSubMode('hosted')}
+          {/* Hosted sub-option — greyed out / disabled */}
+          <View
+            style={[styles.subModeCard, { opacity: 0.4 }]}
+            pointerEvents="none"
           >
             <View style={styles.cardRow}>
-              <View style={[styles.subRadio, formSubMode === 'hosted' && styles.radioSelected]}>
-                {formSubMode === 'hosted' && <View style={styles.subRadioDot} />}
+              <View style={styles.subRadio}>
               </View>
               <View style={styles.cardTextContainer}>
-                <Text style={styles.subModeTitle}>{t('settings.openclawHosted')}</Text>
+                <Text style={styles.subModeTitle}>{t('settings.openclawDeployCloud')}</Text>
                 <Text style={styles.cardDesc}>{t('settings.openclawHostedDesc')}</Text>
               </View>
             </View>
-          </TouchableOpacity>
-
-          {/* Hosted mode details */}
-          {formSubMode === 'hosted' && (
-            <View style={styles.subModeDetails}>
-              {!authStore.isLoggedIn ? (
-                <TouchableOpacity onPress={() => router.push('/login')}>
-                  <Text style={styles.hostedLoginHint}>{t('settings.hostedLoginRequired')}</Text>
-                </TouchableOpacity>
-              ) : store.hostedActivated ? (
-                <View>
-                  {store.hostedInstanceStatus === 'provisioning' && (
-                    <Text style={styles.hostedProvisioningBadge}>{t('settings.hostedProvisioning')}</Text>
-                  )}
-                  {store.hostedInstanceStatus === 'error' && (
-                    <Text style={styles.hostedErrorBadge}>{t('settings.hostedError')}</Text>
-                  )}
-                  {store.hostedInstanceStatus === 'ready' && (
-                    <Text style={styles.hostedQuotaBadge}>
-                      {t('settings.hostedQuota', { used: String(store.hostedQuotaUsed), total: String(store.hostedQuotaTotal) })}
-                    </Text>
-                  )}
-                  {store.hostedInstanceStatus !== 'provisioning' && store.hostedInstanceStatus !== 'error' && store.hostedInstanceStatus !== 'ready' && (
-                    <Text style={styles.hostedProvisioningBadge}>{t('settings.hostedProvisioning')}</Text>
-                  )}
-                </View>
-              ) : (
-                <View style={styles.activateRow}>
-                  <TextInput
-                    style={[styles.textInput, { flex: 1, marginRight: 10 }]}
-                    value={invitationCode}
-                    onChangeText={setInvitationCode}
-                    placeholder={t('settings.hostedInvitationCodePlaceholder')}
-                    placeholderTextColor="#888888"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={[styles.activateButton, activating && { opacity: 0.5 }]}
-                    disabled={activating || !invitationCode.trim()}
-                    onPress={async () => {
-                      setActivating(true);
-                      try {
-                        const res = await activateHostedAccess(invitationCode.trim(), authStore.authToken, store.serverUrl);
-                        if (res.success) {
-                          store.setHostedActivated(true);
-                          store.setHostedInstanceStatus(res.account?.instanceStatus || 'provisioning');
-                          if (res.account) store.setHostedQuota(res.account.quotaUsed, res.account.quotaTotal);
-                          await setSetting('hostedActivated', 'true');
-                          Alert.alert(t('settings.hostedActivated'));
-                        } else {
-                          Alert.alert(t('settings.hostedActivateFailed'), res.error || '');
-                        }
-                      } catch {
-                        Alert.alert(t('settings.hostedActivateFailed'));
-                      } finally {
-                        setActivating(false);
-                      }
-                    }}
-                  >
-                    <Text style={styles.activateButtonText}>{t('settings.hostedActivate')}</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
+            <Text style={styles.disabledHint}>{t('settings.openclawCloudNotAvailable')}</Text>
+          </View>
 
           {/* Self-hosted sub-option */}
           <TouchableOpacity
@@ -534,23 +533,117 @@ export default function SettingsScreen() {
       {/* CoPaw sub-mode options */}
       {formMode === 'copaw' && (
         <View style={styles.subModeContainer}>
-          {/* Hosted sub-option */}
+          {/* Level 1: Deploy (一键部署) */}
           <TouchableOpacity
-            style={[styles.subModeCard, formCopawSubMode === 'hosted' && styles.subModeCardSelected]}
-            onPress={() => setFormCopawSubMode('hosted')}
+            style={[styles.subModeCard, formCopawSubMode === 'deploy' && styles.subModeCardSelected]}
+            onPress={() => setFormCopawSubMode('deploy')}
           >
             <View style={styles.cardRow}>
-              <View style={[styles.subRadio, formCopawSubMode === 'hosted' && styles.radioSelected]}>
-                {formCopawSubMode === 'hosted' && <View style={styles.subRadioDot} />}
+              <View style={[styles.subRadio, formCopawSubMode === 'deploy' && styles.radioSelected]}>
+                {formCopawSubMode === 'deploy' && <View style={styles.subRadioDot} />}
               </View>
               <View style={styles.cardTextContainer}>
-                <Text style={styles.subModeTitle}>{t('settings.copawHosted')}</Text>
-                <Text style={styles.cardDesc}>{t('settings.copawHostedDesc')}</Text>
+                <Text style={styles.subModeTitle}>{t('settings.copawDeploy')}</Text>
+                <Text style={styles.cardDesc}>{t('settings.copawDeployDesc')}</Text>
               </View>
             </View>
           </TouchableOpacity>
 
-          {/* Self-hosted sub-option */}
+          {/* Deploy sub-options */}
+          {formCopawSubMode === 'deploy' && (
+            <View style={{ marginLeft: 26, marginBottom: 8 }}>
+              {/* Cloud — greyed out / disabled */}
+              <View
+                style={[styles.subModeCard, { opacity: 0.4 }]}
+                pointerEvents="none"
+              >
+                <View style={styles.cardRow}>
+                  <View style={styles.subRadio}>
+                  </View>
+                  <View style={styles.cardTextContainer}>
+                    <Text style={styles.subModeTitle}>{t('settings.copawDeployCloud')}</Text>
+                  </View>
+                </View>
+                <Text style={styles.disabledHint}>{t('settings.copawCloudNotAvailable')}</Text>
+              </View>
+
+              {/* Local deploy */}
+              <TouchableOpacity
+                style={[styles.subModeCard, formCopawDeployType === 'local' && styles.subModeCardSelected]}
+                onPress={() => setFormCopawDeployType('local')}
+              >
+                <View style={styles.cardRow}>
+                  <View style={[styles.subRadio, formCopawDeployType === 'local' && styles.radioSelected]}>
+                    {formCopawDeployType === 'local' && <View style={styles.subRadioDot} />}
+                  </View>
+                  <View style={styles.cardTextContainer}>
+                    <Text style={styles.subModeTitle}>{t('settings.copawDeployLocal')}</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* Model selection for deploy */}
+              {formCopawDeployType === 'local' && (
+                <View style={{ marginLeft: 26, marginTop: 4 }}>
+                  <View style={styles.providerRow}>
+                    <TouchableOpacity
+                      style={[styles.providerChip, formCopawDeployModelMode === 'default' && styles.providerChipSelected]}
+                      onPress={() => setFormCopawDeployModelMode('default')}
+                    >
+                      <Text style={[styles.providerChipText, formCopawDeployModelMode === 'default' && styles.providerChipTextSelected]}>
+                        {t('settings.copawModelDefault')}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.providerChip, formCopawDeployModelMode === 'custom' && styles.providerChipSelected]}
+                      onPress={() => setFormCopawDeployModelMode('custom')}
+                    >
+                      <Text style={[styles.providerChipText, formCopawDeployModelMode === 'custom' && styles.providerChipTextSelected]}>
+                        {t('settings.copawModelCustom')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {formCopawDeployModelMode === 'custom' && (
+                    <>
+                      <Dropdown
+                        label={t('settings.copawDeployProvider')}
+                        options={PROVIDERS}
+                        value={formCopawDeployProvider as LLMProvider}
+                        onChange={(v) => setFormCopawDeployProvider(v)}
+                      />
+                      <View style={styles.fieldContainer}>
+                        <Text style={styles.fieldLabel}>{t('settings.copawDeployApiKey')}</Text>
+                        <TextInput
+                          style={styles.textInput}
+                          value={formCopawDeployApiKey}
+                          onChangeText={setFormCopawDeployApiKey}
+                          placeholder={t('settings.copawDeployApiKeyPlaceholder')}
+                          placeholderTextColor="#888888"
+                          secureTextEntry
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                      </View>
+                      <View style={styles.fieldContainer}>
+                        <Text style={styles.fieldLabel}>{t('settings.copawDeployModel')}</Text>
+                        <TextInput
+                          style={styles.textInput}
+                          value={formCopawDeployModel}
+                          onChangeText={setFormCopawDeployModel}
+                          placeholder={t('settings.copawDeployModelPlaceholder')}
+                          placeholderTextColor="#888888"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                      </View>
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Level 1: Self-hosted (自建直连) */}
           <TouchableOpacity
             style={[styles.subModeCard, formCopawSubMode === 'selfhosted' && styles.subModeCardSelected]}
             onPress={() => setFormCopawSubMode('selfhosted')}
@@ -566,39 +659,81 @@ export default function SettingsScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* Self-hosted fields */}
+          {/* Self-hosted sub-options */}
           {formCopawSubMode === 'selfhosted' && (
-            <>
-              <View style={styles.fieldContainer}>
-                <Text style={styles.fieldLabel}>{t('settings.copawUrl')}</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formCopawUrl}
-                  onChangeText={setFormCopawUrl}
-                  placeholder={t('settings.copawUrlPlaceholder')}
-                  placeholderTextColor="#888888"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                />
-                <Text style={styles.fieldHint}>{t('settings.copawUrlHint')}</Text>
+            <View style={{ marginLeft: 26, marginBottom: 8 }}>
+              {/* Remote */}
+              <View style={styles.providerRow}>
+                <TouchableOpacity
+                  style={[styles.providerChip, formCopawSelfhostedType === 'remote' && styles.providerChipSelected]}
+                  onPress={() => setFormCopawSelfhostedType('remote')}
+                >
+                  <Text style={[styles.providerChipText, formCopawSelfhostedType === 'remote' && styles.providerChipTextSelected]}>
+                    {t('settings.copawSelfhostedRemote')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.providerChip, formCopawSelfhostedType === 'local' && styles.providerChipSelected]}
+                  onPress={() => setFormCopawSelfhostedType('local')}
+                >
+                  <Text style={[styles.providerChipText, formCopawSelfhostedType === 'local' && styles.providerChipTextSelected]}>
+                    {t('settings.copawSelfhostedLocal')}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              <View style={styles.fieldContainer}>
-                <Text style={styles.fieldLabel}>{t('settings.copawToken')}</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formCopawToken}
-                  onChangeText={setFormCopawToken}
-                  placeholder={t('settings.copawTokenPlaceholder')}
-                  placeholderTextColor="#888888"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <Text style={styles.fieldHint}>{t('settings.copawTokenHint')}</Text>
-              </View>
-            </>
+              {/* Remote: URL + Token */}
+              {formCopawSelfhostedType === 'remote' && (
+                <>
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>{t('settings.copawUrl')}</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={formCopawUrl}
+                      onChangeText={setFormCopawUrl}
+                      placeholder={t('settings.copawUrlPlaceholder')}
+                      placeholderTextColor="#888888"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="url"
+                    />
+                    <Text style={styles.fieldHint}>{t('settings.copawUrlHint')}</Text>
+                  </View>
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>{t('settings.copawToken')}</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={formCopawToken}
+                      onChangeText={setFormCopawToken}
+                      placeholder={t('settings.copawTokenPlaceholder')}
+                      placeholderTextColor="#888888"
+                      secureTextEntry
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <Text style={styles.fieldHint}>{t('settings.copawTokenHint')}</Text>
+                  </View>
+                </>
+              )}
+
+              {/* Local: localhost config */}
+              {formCopawSelfhostedType === 'local' && (
+                <View style={styles.fieldContainer}>
+                  <Text style={styles.fieldLabel}>{t('settings.copawUrl')}</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={formCopawUrl}
+                    onChangeText={setFormCopawUrl}
+                    placeholder="http://localhost:8088"
+                    placeholderTextColor="#888888"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                  />
+                  <Text style={styles.fieldHint}>{t('settings.copawUrlHint')}</Text>
+                </View>
+              )}
+            </View>
           )}
         </View>
       )}
@@ -960,5 +1095,11 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  disabledHint: {
+    color: '#666666',
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 26,
   },
 });

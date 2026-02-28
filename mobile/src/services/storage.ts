@@ -12,6 +12,11 @@ import * as SQLite from 'expo-sqlite';
 import type { ChatMessage, Conversation } from '../stores/chatStore';
 import type { ConnectionMode } from '../types/protocol';
 
+/** Build user-specific settings key (matches iOS ukey pattern) */
+export function userKey(userId: string, key: string): string {
+  return userId ? `${userId}:${key}` : key;
+}
+
 let db: SQLite.SQLiteDatabase | null = null;
 
 export async function initDatabase(): Promise<void> {
